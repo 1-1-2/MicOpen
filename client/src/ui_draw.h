@@ -39,6 +39,14 @@ void  ui_card(HDC dc, RECT r, const wchar_t *title, const wchar_t *hint);
 void  ui_button(HDC dc, RECT r, const wchar_t *label, int id, int danger, int enabled);
 void  ui_seg(HDC dc, RECT r, const wchar_t *label, int active, int id, int enabled);
 void  ui_slider(HDC dc, RECT r, int val, int maxv, int id);
+
+/* 环形电平（MicYOU 式线条语言：细描边圆环 + 进度弧 + 端点圆点） */
+void  ui_ring_level(HDC dc, int cx, int cy, int rad, float frac, COLORREF c);
+
+/* 增益 ↔ 滑杆位置：dB 刻度（位置 0 = -60dB/0%，0.909 = 0dB/100%，1 = +6dB/200%）
+ * 引擎侧仍是 0-200% 线性振幅乘子，这里只改"手感刻度"。 */
+int   ui_gain_pos(int gain);   /* 增益% → 滑杆位置 0..1000 */
+int   ui_pos_to_gain(int pos); /* 滑杆位置 0..1000 → 增益% 0..200 */
 void  ui_collapse_hdr(HDC dc, RECT r, const wchar_t *title, const wchar_t *hint,
                       int expanded, int id);
 void  ui_badge(HDC dc, RECT r, const wchar_t *text, COLORREF fg, COLORREF bg);

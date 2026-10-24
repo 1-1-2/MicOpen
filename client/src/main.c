@@ -138,10 +138,10 @@ void ui_on_click(int id, int x, int y)
         g_ui.drag_slider = 1;
         {
             int w = g_lo.slider.right - g_lo.slider.left;
-            int v = (x - g_lo.slider.left) * 200 / (w ? w : 1);
-            if (v < 0) { v = 0; }
-            if (v > 200) { v = 200; }
-            g_ui.gain = v;
+            int pos = (x - g_lo.slider.left) * 1000 / (w ? w : 1);
+            if (pos < 0) { pos = 0; }
+            if (pos > 1000) { pos = 1000; }
+            g_ui.gain = ui_pos_to_gain(pos);
         }
     }
     ui_layout_compute();
@@ -307,10 +307,10 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (g_ui.drag_slider) {
             int w = g_lo.slider.right - g_lo.slider.left;
-            int v = (x - g_lo.slider.left) * 200 / (w ? w : 1);
-            if (v < 0) { v = 0; }
-            if (v > 200) { v = 200; }
-            g_ui.gain = v;
+            int pos = (x - g_lo.slider.left) * 1000 / (w ? w : 1);
+            if (pos < 0) { pos = 0; }
+            if (pos > 1000) { pos = 1000; }
+            g_ui.gain = ui_pos_to_gain(pos);
             InvalidateRect(hwnd, NULL, FALSE);
         }
         SetCursor(LoadCursorW(NULL, (LPCWSTR)((h == ID_SLIDER) ? IDC_SIZEWE :
@@ -366,9 +366,12 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return HTCLIENT;
     }
     case WM_GETMINMAXINFO: {
+        /* 最小窗口 900×560（逻辑像素）：两列布局在该尺寸下不破版 */
         MINMAXINFO *mm = (MINMAXINFO *)lp;
-        mm->ptMinTrackSize.x = sd(560);
-        mm->ptMinTrackSize.y = sd(520);
+        RECT wr = { 0, 0, sd(900), sd(560) };
+        AdjustWindowRectEx(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0);
+        mm->ptMinTrackSize.x = wr.right - wr.left;
+        mm->ptMinTrackSize.y = wr.bottom - wr.top;
         return 0;
     }
     case WM_DESTROY:
@@ -488,7 +491,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
         ReleaseDC(NULL, screen);
         if (!g_ui.dpi) g_ui.dpi = 96;
     }
-    g_ui.w = sd(760); g_ui.h = sd(768);
+    g_ui.w = sd(1060); g_ui.h = sd(680);
     {
         RECT wr = { 0, 0, g_ui.w, g_ui.h };
         AdjustWindowRectEx(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0);

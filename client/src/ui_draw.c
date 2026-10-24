@@ -356,18 +356,96 @@ void ui_seg(HDC dc, RECT r, const wchar_t *label, int active, int id, int enable
 void ui_slider(HDC dc, RECT r, int val, int maxv, int id)
 {
     RECT tr = r, fillr;
-    int knob_x, kr = sd(7);
+    int knob_x, kr = sd(9);
     (void)id;
-    tr.bottom = tr.top + sd(6);
-    ui_fill_round(dc, tr, sd(3), g_th.card_hi, 255);
+    tr.bottom = tr.top + sd(8);
+    ui_fill_round(dc, tr, sd(4), g_th.card_hi, 255);
     fillr = tr;
     fillr.right = tr.left + (tr.right - tr.left) * (maxv ? val : 0) / (maxv ? maxv : 1);
-    ui_fill_round(dc, fillr, sd(3), g_th.accent, 255);
+    ui_fill_round(dc, fillr, sd(4), g_th.accent, 255);
     knob_x = fillr.right;
-    ui_fill_round(dc, (RECT){ knob_x - kr, tr.top - sd(4), knob_x + kr, tr.bottom + sd(4) },
+    /* 圆点滑块：白/卡色外圈 + accent 内芯圆点（手册 C-09） */
+    ui_fill_round(dc, (RECT){ knob_x - kr, tr.top + sd(4) - kr, knob_x + kr, tr.top + sd(4) + kr },
                   kr, g_th.card, 255);
-    ui_stroke_round(dc, (RECT){ knob_x - kr, tr.top - sd(4), knob_x + kr, tr.bottom + sd(4) },
-                    kr, g_th.accent, 255, 2);
+    ui_stroke_round(dc, (RECT){ knob_x - kr, tr.top + sd(4) - kr, knob_x + kr, tr.top + sd(4) + kr },
+                    kr, g_th.stroke, 255, 1);
+    {
+        int d = sd(4);
+        COLORREF dot = (val > 0) ? g_th.accent : g_th.text_mute;
+        ui_fill_round(dc, (RECT){ knob_x - d, tr.top + sd(4) - d, knob_x + d, tr.top + sd(4) + d },
+                      d, dot, 255);
+    }
+}
+
+void ui_ring_level(HDC dc, int cx, int cy, int rad, float frac, COLORREF c)
+{
+    /* 背景环（整圆，低alpha）+ 进度弧（自顶部顺时针）+ 端点圆点 */
+    if (gp.ready) {
+        GpGraphics gfx = NULL; GpPath p = NULL; GpPen pen = NULL;
+        gp.from_hdc(dc, &gfx);
+        if (!gfx) return;
+        gp.set_smooth(gfx, 4);
+        /* 背景环 */
+        gp.create_path(0, &p);
+        if (p) {
+            REAL d = (REAL)(rad * 2);
+            gp.add_arc(p, (REAL)(cx - rad), (REAL)(cy - rad), d, d, 0, 360);
+            gp.close_fig(p);
+            gp.create_pen(argb(g_th.stroke, 255), (REAL)sd(3), 0, &pen);
+            if (pen) { gp.draw_path(gfx, pen, p); gp.del_pen(pen); }
+            gp.del_path(p);
+        }
+        /* 进度弧 */
+        if (frac > 0.004f) {
+            float f = frac > 1.0f ? 1.0f : frac;
+            gp.create_path(0, &p);
+            if (p) {
+                REAL d = (REAL)(rad * 2);
+                gp.add_arc(p, (REAL)(cx - rad), (REAL)(cy - rad), d, d, -90, 360 * f);
+                gp.create_pen(argb(c, 255), (REAL)sd(4), 0, &pen);
+                if (pen) { gp.draw_path(gfx, pen, p); gp.del_pen(pen); }
+                gp.del_path(p);
+            }
+            /* 端点圆点 */
+            {
+                double a = (-90.0 + 360.0 * f) * 3.14159265358979 / 180.0;
+                int ex = cx + (int)(rad * cos(a)), ey2 = cy + (int)(rad * sin(a));
+                int dr = sd(4);
+                ui_fill_round(dc, (RECT){ ex - dr, ey2 - dr, ex + dr, ey2 + dr }, dr, c, 255);
+            }
+        }
+        gp.del_graphics(gfx);
+    } else {
+        /* GDI 退化：圆弧描边（无端点圆点） */
+        HPEN pen = CreatePen(PS_SOLID, sd(3), c);
+        HPEN old = (HPEN)SelectObject(dc, pen);
+        Arc(dc, cx - rad, cy - rad, cx + rad, cy + rad,
+            cx, cy - rad, cx - rad, cy);
+        SelectObject(dc, old);
+        DeleteObject(pen);
+    }
+}
+
+int ui_gain_pos(int gain)
+{
+    /* gain%(0..200) → 位置 0..1000，按 dB 线性：dB = -60 + 66 * p */
+    double g = gain <= 0 ? 1e-4 : gain / 100.0;
+    double db = 20.0 * log10(g);
+    double p = (db + 60.0) / 66.0;
+    if (p < 0) p = 0;
+    if (p > 1) p = 1;
+    return (int)(p * 1000.0 + 0.5);
+}
+
+int ui_pos_to_gain(int pos)
+{
+    double p = pos / 1000.0;
+    double db = -60.0 + 66.0 * p;
+    double g = pow(10.0, db / 20.0) * 100.0;
+    int v = (int)(g + 0.5);
+    if (v <= 1) v = 0;
+    if (v > 200) v = 200;
+    return v;
 }
 
 void ui_collapse_hdr(HDC dc, RECT r, const wchar_t *title, const wchar_t *hint,
@@ -479,26 +557,24 @@ void ui_draw_conn_card(HDC dc)
 {
     RECT r = g_lo.card_conn;
     ui_card(dc, r, L"连接", L"控制端口默认 8125");
+    /* 第一行：地址 + TCP 控制端口 */
     {
-        RECT ir = { r.left + sd(18), r.top + sd(40), r.left + sd(36), r.top + sd(58) };
-        ui_icon(dc, ir, IC_SEARCH, g_th.text_mute, sd(2));
-    }
-    {
-        RECT box = { r.left + sd(14), r.top + sd(32), r.right - sd(14), r.top + sd(66) };
+        RECT box = { r.left + sd(14), r.top + sd(38), r.right - sd(14), r.top + sd(70) };
         ui_stroke_round(dc, box, sd(8), g_th.stroke, 255, 1);
     }
-    /* 第二行：UDP 媒体端口。留空 = 随机分配（默认，与加输入框之前一致）；
-     * 跨网段/过防火墙时填固定端口，等价于命令行 --media-port。 */
+    /* 第二行：UDP 媒体端口。留空 = 随机分配（默认）；跨网段/过防火墙时填固定端口，
+     * 等价于命令行 --media-port。 */
     {
-        RECT box2 = { r.left + sd(14), r.top + sd(68), r.right - sd(14), r.top + sd(102) };
-        RECT lab = { r.left + sd(24), r.top + sd(68),
-                     g_lo.ed_media.left - sd(8), r.top + sd(102) };
-        ui_stroke_round(dc, box2, sd(8), g_th.stroke, 255, 1);
-        ui_text(dc, lab, L"媒体端口（留空=随机）", ui_font(9, FW_NORMAL, 0),
-                g_th.text_dim, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        RECT lab = { r.left + sd(16), r.top + sd(70), r.left + sd(220), r.top + sd(86) };
+        ui_text(dc, lab, L"媒体端口（留空 = 随机）", ui_font(8, FW_NORMAL, 0),
+                g_th.text_mute, DT_LEFT | DT_SINGLELINE);
     }
     {
-        RECT hint = { r.left + sd(16), r.top + sd(106), r.right - sd(16), r.top + sd(124) };
+        RECT box2 = { r.left + sd(14), r.top + sd(86), r.right - sd(14), r.top + sd(118) };
+        ui_stroke_round(dc, box2, sd(8), g_th.stroke, 255, 1);
+    }
+    {
+        RECT hint = { r.left + sd(16), r.top + sd(120), r.right - sd(16), r.top + sd(140) };
         ui_text(dc, hint, L"手机与电脑需在同一局域网；手机端打开 WO Mic 选 Wi-Fi",
                 ui_font(8, FW_NORMAL, 0), g_th.text_mute, DT_LEFT | DT_SINGLELINE);
     }
@@ -510,7 +586,7 @@ void ui_draw_drv_card(HDC dc)
 {
     RECT r = g_lo.card_drv;
     DrvStatus *d = &g_ui.drv;
-    int cx = r.left + sd(26), cy = r.top + sd(40);
+    int cx = r.left + sd(26), cy = r.top + sd(46);
     COLORREF dot = drv_state_color(d->state);
 
     ui_card(dc, r, L"虚拟麦克风驱动", drvpkg_arch_label(d->arch));
@@ -525,7 +601,7 @@ void ui_draw_drv_card(HDC dc)
         ui_fill_round(dc, dr, dd, dot, 255);
     }
     {
-        RECT tr = { cx + sd(16), r.top + sd(28), r.right - sd(16), r.top + sd(50) };
+        RECT tr = { cx + sd(16), r.top + sd(34), r.right - sd(16), r.top + sd(56) };
         ui_text(dc, tr, drv_state_text(d->state), ui_font(12, FW_SEMIBOLD, 0),
                 g_th.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
@@ -538,7 +614,7 @@ void ui_draw_drv_card(HDC dc)
                        d->version[0] ? d->version : L"版本未知");
         else
             _snwprintf(sub, 220, L"%ls", drv_last_error_w());
-        RECT sr = { cx + sd(16), r.top + sd(52), r.right - sd(16), r.top + sd(70) };
+        RECT sr = { cx + sd(16), r.top + sd(58), r.right - sd(16), r.top + sd(80) };
         ui_text(dc, sr, sub, ui_font(8, FW_NORMAL, 0), g_th.text_dim,
                 DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
@@ -581,13 +657,24 @@ void ui_draw_audio_card(HDC dc)
         ui_seg(dc, g_lo.seg_buf[i], buf_lbl[i], g_ui.buf_idx == i, ID_BUF0 + i, 1);
 
     {
-        wchar_t v[48];
+        wchar_t v[64];
         RECT lr = { g_lo.card_audio.left + sd(16), g_lo.seg_buf[0].bottom + sd(6),
                     g_lo.card_audio.right - sd(16), g_lo.seg_buf[0].bottom + sd(22) };
-        swprintf(v, 48, L"本地增益 %d%%", g_ui.gain);
+        if (g_ui.gain > 0) {
+            double db = 20.0 * log10(g_ui.gain / 100.0);
+            swprintf(v, 64, L"本地增益 %d%% · %+.1f dB（0 dB = 原样）", g_ui.gain, db);
+        } else {
+            swprintf(v, 64, L"本地增益 静音（-inf dB）");
+        }
         ui_text(dc, lr, v, ui_font(8, FW_NORMAL, 0), g_th.text_dim, DT_LEFT | DT_SINGLELINE);
+        /* 0 dB 刻度线：增益 100% 落在滑杆 90.9% 处（dB 刻度） */
+        {
+            int tx = g_lo.slider.left + (g_lo.slider.right - g_lo.slider.left) * 909 / 1000;
+            RECT tick = { tx - sd(1), g_lo.slider.top - sd(7), tx + sd(1), g_lo.slider.top - sd(2) };
+            ui_fill_round(dc, tick, sd(1), g_th.text_mute, 220);
+        }
     }
-    ui_slider(dc, g_lo.slider, g_ui.gain, 200, ID_SLIDER);
+    ui_slider(dc, g_lo.slider, ui_gain_pos(g_ui.gain), 1000, ID_SLIDER);
 }
 
 static void stat_item(HDC dc, int x, int y, int cw, const wchar_t *v, const wchar_t *k)
