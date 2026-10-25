@@ -277,23 +277,32 @@ private fun MainActionButton(
     val shape = RoundedCornerShape(8.dp)
     val glowAlpha = rememberBreathingGlow(enabled = running)
 
+    // R-16b：容器高度**恒为 60dp**（发光层与按钮都常驻），呼吸动画只作用于
+    // 绘制层的 alpha，绝不参与布局。
+    //
+    // 旧实现 `if (running && glowAlpha > 0.001f)` 会把 60dp 的发光层在 alpha
+    // 归零时**移出组合** → 容器 60dp → 48dp；下一轮插回来又 48 → 60：
+    // 每 1.2s 伸缩 12dp，用户看到"页面每隔几秒跳一下"。
+    // 纪律：任何动画只许改绘制（alpha / 变换 / 颜色），不许改布局尺寸。
     Box(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(60.dp),
         contentAlignment = Alignment.Center
     ) {
-        // 呼吸外发光层：比按钮大一圈 + 羽化；alpha 归零时不渲染（省无效模糊）
-        if (running && glowAlpha > 0.001f) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
-                    .blur(16.dp)
-                    .background(
-                        color = tokens.err.copy(alpha = glowAlpha),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-            )
-        }
+        // 呼吸外发光层：常驻组合，只改 alpha（0 时不可见，但**不退出布局**）。
+        // 空闲态/alpha 归零时连 blur 都不挂，省掉无意义的模糊开销。
+        val glowVisible = running && glowAlpha > 0.001f
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+                .then(if (glowVisible) Modifier.blur(16.dp) else Modifier)
+                .background(
+                    color = tokens.err.copy(alpha = if (glowVisible) glowAlpha else 0f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
