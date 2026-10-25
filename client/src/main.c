@@ -45,6 +45,10 @@ void ui_toggle_theme(void)
     theme_apply(g_ui.dark);
     if (g_ui.br_card) DeleteObject(g_ui.br_card);
     g_ui.br_card = CreateSolidBrush(g_th.card);
+    if (g_ui.br_sunken) DeleteObject(g_ui.br_sunken);
+    g_ui.br_sunken = CreateSolidBrush(g_th.sunken);
+    /* 字体与主题无关（缓存键里没有颜色），不重建：编辑框还持有旧 HFONT，
+     * DeleteObject 会让它们悬挂。只有 DPI 变化时才 ui_fonts_reset()。 */
     g_dirty = 1;
     if (g_ui.hwnd) InvalidateRect(g_ui.hwnd, NULL, FALSE);
 }
@@ -58,6 +62,7 @@ static void toggle_connection(void)
     if (g_ui.running) {
         eng_stop();
         g_ui.running = 0;
+        g_ui.disc_at = GetTickCount();      /* D-08：断开时刻（10s 后清空历史） */
         ui_log_add("已断开连接", 0);
         g_dirty = 1;
         return;
@@ -86,13 +91,23 @@ static void toggle_connection(void)
                 return;
             }
         }
+        /* 驱动未就绪时 GUI 主按钮已置灰（D-04）；键盘/CLI 路径走到这里时
+         * 保留既有的「只做协议与统计、不出声」诊断模式，并把话说清楚。 */
         if (g_ui.drv.state != DRV_READY)
             ui_log_add("提示：驱动未就绪，将只做协议与统计，不出声", 0);
         eng_set_media_port(media);
         g_ui.running = eng_start(hostA, cp, rate_idx_of(g_ui.seg_rate),
                                  buf_ms_of(g_ui.buf_idx), g_ui.gain);
-        ui_log_add(g_ui.running ? "正在建立会话…" : "启动引擎失败",
-                   g_ui.running ? 0 : 1);
+        if (g_ui.running) {
+            /* 新会话：计数 +1，历史与峰值归零（D-08/D-12） */
+            g_ui.conn_count++;
+            g_ui.hist_count = 0;
+            g_ui.kbps_peak = g_ui.lat_peak = 0;
+            g_ui.lost_peak = 0.0f;
+            ui_log_add("正在建立会话…", 0);
+        } else {
+            ui_log_add("启动引擎失败", 1);
+        }
         g_dirty = 1;
     }
 }
@@ -116,21 +131,56 @@ static void request_driver_op(int install)
     g_dirty = 1;
 }
 
+/* ------------------------------------------------- 打开 Windows 声音设置 */
+/* 驱动就绪后用户最常做的一件事就是把默认麦克风设成虚拟设备。
+ * 优先现代设置页（ms-settings:sound），失败（老系统/策略禁用）退回经典
+ * 声音面板（mmsys.cpl）——两条路都是系统组件，不引入新依赖。 */
+static void open_sound_settings(void)
+{
+    HINSTANCE r = ShellExecuteW(g_ui.hwnd, L"open", L"ms-settings:sound",
+                                NULL, NULL, SW_SHOWNORMAL);
+    if ((INT_PTR)r <= 32) {
+        ShellExecuteW(g_ui.hwnd, L"open", L"control.exe",
+                      L"mmsys.cpl", NULL, SW_SHOWNORMAL);
+    }
+}
+
 /* ---------------------------------------------------------------- 交互 */
 void ui_on_click(int id, int x, int y)
 {
     switch (id) {
     case ID_MIN:   ShowWindow(g_ui.hwnd, SW_MINIMIZE); return;
+    case ID_MAX:
+        ShowWindow(g_ui.hwnd, IsZoomed(g_ui.hwnd) ? SW_RESTORE : SW_MAXIMIZE);
+        return;
     case ID_CLOSE: DestroyWindow(g_ui.hwnd); return;
-    case ID_THEME: ui_toggle_theme(); return;
+    case ID_THEME_LIGHT: if (g_ui.dark) ui_toggle_theme(); return;
+    case ID_THEME_DARK:  if (!g_ui.dark) ui_toggle_theme(); return;
     case ID_CONN:  toggle_connection(); return;
     case ID_INSTALL:   request_driver_op(1); return;
     case ID_UNINSTALL: request_driver_op(0); return;
+    case ID_OPENSET:   open_sound_settings(); return;
     case ID_HELP:  ui_show_help(GetModuleHandleW(NULL), g_ui.hwnd); return;
+    case ID_MUTE:
+        /* D-06 静音行：真实生效（engine 灌音前零填充），电平表照常显示输入 */
+        g_ui.mute = !g_ui.mute;
+        eng_set_mute(g_ui.mute);
+        ui_log_add(g_ui.mute ? "已静音（输出截断，输入电平照常显示）"
+                             : "已取消静音", 0);
+        break;
+    case ID_COPYLOG:
+        if (ui_log_copy_all()) ui_log_add("事件已全部复制到剪贴板", 2);
+        else ui_log_add("复制失败：剪贴板被其他程序占用", 1);
+        break;
     case ID_EXP_AUDIO: g_ui.exp_audio = !g_ui.exp_audio; break;
     case ID_EXP_STATS: g_ui.exp_stats = !g_ui.exp_stats; break;
     case ID_EXP_LOG:   g_ui.exp_log = !g_ui.exp_log; break;
     default: break;
+    }
+    /* D-03：传输方式仅 Wi-Fi 已实现，其余段可见但禁用（点了不响应） */
+    if (id == ID_TRANS0 && g_ui.transport != 0) {
+        g_ui.transport = 0;
+        ui_log_add("传输方式已切回 Wi-Fi", 0);
     }
     if (id >= ID_RATE0 && id <= ID_RATE2) g_ui.seg_rate = id - ID_RATE0;
     if (id >= ID_BUF0 && id <= ID_BUF2) g_ui.buf_idx = id - ID_BUF0;
@@ -156,20 +206,21 @@ void ui_on_release(void)
 }
 
 /* ---------------------------------------------------------------- 窗口 */
+/* 编辑框内缩 1px：让 draw_input 画的 1px border 不被编辑框客户区盖住 */
 static void place_edits(void)
 {
     if (g_ui.edit_host)
-        MoveWindow(g_ui.edit_host, g_lo.ed_host.left, g_lo.ed_host.top,
-                   g_lo.ed_host.right - g_lo.ed_host.left,
-                   g_lo.ed_host.bottom - g_lo.ed_host.top, TRUE);
+        MoveWindow(g_ui.edit_host, g_lo.ed_host.left + 1, g_lo.ed_host.top + 1,
+                   g_lo.ed_host.right - g_lo.ed_host.left - 2,
+                   g_lo.ed_host.bottom - g_lo.ed_host.top - 2, TRUE);
     if (g_ui.edit_port)
-        MoveWindow(g_ui.edit_port, g_lo.ed_port.left, g_lo.ed_port.top,
-                   g_lo.ed_port.right - g_lo.ed_port.left,
-                   g_lo.ed_port.bottom - g_lo.ed_port.top, TRUE);
+        MoveWindow(g_ui.edit_port, g_lo.ed_port.left + 1, g_lo.ed_port.top + 1,
+                   g_lo.ed_port.right - g_lo.ed_port.left - 2,
+                   g_lo.ed_port.bottom - g_lo.ed_port.top - 2, TRUE);
     if (g_ui.edit_media)
-        MoveWindow(g_ui.edit_media, g_lo.ed_media.left, g_lo.ed_media.top,
-                   g_lo.ed_media.right - g_lo.ed_media.left,
-                   g_lo.ed_media.bottom - g_lo.ed_media.top, TRUE);
+        MoveWindow(g_ui.edit_media, g_lo.ed_media.left + 1, g_lo.ed_media.top + 1,
+                   g_lo.ed_media.right - g_lo.ed_media.left - 2,
+                   g_lo.ed_media.bottom - g_lo.ed_media.top - 2, TRUE);
 }
 
 static void paint(HWND hwnd)
@@ -193,6 +244,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_CREATE:
         g_ui.hwnd = hwnd;
         g_ui.br_card = CreateSolidBrush(g_th.card);
+        g_ui.br_sunken = CreateSolidBrush(g_th.sunken);
         g_ui.seg_rate = 0;
         g_ui.buf_idx = 1;
         g_ui.gain = 100;
@@ -213,7 +265,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         SetWindowTheme(g_ui.edit_port, L" ", L" ");
         SetWindowTheme(g_ui.edit_media, L" ", L" ");
         {
-            HFONT f = ui_font(10, FW_NORMAL, 0);
+            HFONT f = ui_font(13, FW_NORMAL, 1);   /* 输入文字 13px Consolas */
             SendMessageW(g_ui.edit_host, WM_SETFONT, (WPARAM)f, TRUE);
             SendMessageW(g_ui.edit_port, WM_SETFONT, (WPARAM)f, TRUE);
             SendMessageW(g_ui.edit_media, WM_SETFONT, (WPARAM)f, TRUE);
@@ -222,7 +274,6 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         ui_log_add("客户端已启动，等待连接", 0);
         SetTimer(hwnd, 1, 16, NULL);
         return 0;
-
     case WM_SIZE:
         g_ui.w = LOWORD(lp); g_ui.h = HIWORD(lp);
         ui_layout_compute();
@@ -236,16 +287,69 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_TIMER: {
         EngineStats st;
         int was = g_ui.running;
+        DWORD now = GetTickCount();
         eng_snapshot(&st);
         g_ui.st = st;
         if (g_ui.running && (st.state == ST_IDLE || st.state == ST_ERROR)) {
             g_ui.running = 0;
+            g_ui.disc_at = now;                 /* D-08：断开时刻 */
             if (st.state == ST_ERROR) ui_log_add(st.last_error, 1);
             g_dirty = 1;
         }
         ui_meter_update(&st, g_ui.running);
-        g_ui.anim_phase += 0.06f;
-        if (g_ui.anim_phase > 6.283f) g_ui.anim_phase -= 6.283f;
+
+        /* ---- D-08：历史采样（约 208ms/柱，10 秒 48 柱）---- */
+        if (g_ui.running && now - g_ui.hist_last >= 208) {
+            float db = ui_meter_cur_db();
+            float t = (db + 60.0f) / 60.0f;     /* dB → 柱高比例 */
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            if (g_ui.hist_count < HIST_BARS) {
+                g_ui.hist[g_ui.hist_count++] = t;
+            } else {
+                memmove(g_ui.hist, g_ui.hist + 1,
+                        (HIST_BARS - 1) * sizeof(float));
+                g_ui.hist[HIST_BARS - 1] = t;
+            }
+            g_ui.hist_last = now;
+            g_dirty = 1;
+        }
+        /* 断开超过 10s 清空历史（D-08：不再显示上一次会话的残留） */
+        if (!g_ui.running && g_ui.hist_count && g_ui.disc_at &&
+            now - g_ui.disc_at > 10000) {
+            g_ui.hist_count = 0;
+            g_dirty = 1;
+        }
+
+        /* ---- D-14：500ms 节拍（状态栏/面板摘要快照 + 峰值保持）---- */
+        if (++g_ui.stat_half >= 31) {           /* 16ms × 31 ≈ 500ms */
+            double lp;
+            g_ui.stat_half = 0;
+            g_ui.st_disp = st;
+            if (st.kbps > g_ui.kbps_peak) g_ui.kbps_peak = st.kbps;
+            if (st.latency_ms > g_ui.lat_peak) g_ui.lat_peak = st.latency_ms;
+            lp = (st.frames + st.lost)
+                 ? (double)st.lost * 100.0 / (double)(st.frames + st.lost) : 0.0;
+            if (lp > g_ui.lost_peak) g_ui.lost_peak = (float)lp;
+            g_dirty = 1;
+        }
+
+        /* ---- D-10：hover 描边过渡 120ms（fade 0..1000，T1）---- */
+        if (g_ui.hover_fade_id) {
+            int step = 1000 * 16 / 120;
+            if (g_ui.hover == g_ui.hover_fade_id) {
+                g_ui.hover_fade += step;
+                if (g_ui.hover_fade >= 1000) g_ui.hover_fade = 1000;
+            } else {
+                g_ui.hover_fade -= step;
+                if (g_ui.hover_fade <= 0) {
+                    g_ui.hover_fade = 0;
+                    g_ui.hover_fade_id = 0;
+                }
+            }
+            g_dirty = 1;
+        }
+
         g_ui.tick++;
         if (g_ui.tick % 125 == 0) {          /* ~2 s 复检一次驱动状态 */
             DrvStatus d;
@@ -258,7 +362,8 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 g_ui.drv = d;
             }
         }
-        /* 只在运行或电平未归零时高频重绘，空闲不占 CPU */
+        /* 只在运行或电平未归零时高频重绘，空闲不占 CPU。
+         * 呼吸外发光（D-04）只画在运行/连接中，随运行态重绘一起动。 */
         if (g_ui.running || was || ui_meter_state() != 0 || g_ui.st.level > 0.0f) {
             InvalidateRect(hwnd, NULL, FALSE);
         } else if (g_dirty) {
@@ -294,6 +399,11 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         int h = ui_hit_test(x, y);
         if (h != g_ui.hover) {
             g_ui.hover = h;
+            /* D-10：新目标从 0 开始淡入（旧目标的淡出由 WM_TIMER 收尾） */
+            if (h != ID_NONE) {
+                g_ui.hover_fade_id = h;
+                g_ui.hover_fade = 0;
+            }
             g_dirty = 1;
             {
                 TRACKMOUSEEVENT tme;
@@ -339,12 +449,19 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_CTLCOLOREDIT: {
         HDC dc = (HDC)wp;
         SetTextColor(dc, g_th.text);
-        SetBkColor(dc, g_th.card);
-        return (LRESULT)g_ui.br_card;
+        SetBkColor(dc, g_th.sunken);      /* 输入框底 = bg-sunken（C-06） */
+        return (LRESULT)g_ui.br_sunken;
     }
     case WM_KEYDOWN:
         if (wp == VK_RETURN) toggle_connection();
         if (wp == VK_ESCAPE && ui_help_is_open()) ui_help_close();
+        /* D-13：Ctrl+C 复制全部事件（与「复制全部」按钮同效） */
+        if (wp == 'C' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            if (ui_log_copy_all()) ui_log_add("事件已全部复制到剪贴板", 2);
+            else ui_log_add("复制失败：剪贴板被其他程序占用", 1);
+            g_dirty = 1;
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
         return 0;
 
     case WM_NCCALCSIZE:
@@ -362,7 +479,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (p.y > g_ui.h - bw) return HTBOTTOM;
         if (p.x < bw) return HTLEFT;
         if (p.x > g_ui.w - bw) return HTRIGHT;
-        if (p.y < ui_title_h() && p.x < g_lo.btn_theme.left) return HTCAPTION;
+        if (p.y < ui_title_h() && p.x < g_lo.seg_theme[0].left) return HTCAPTION;
         return HTCLIENT;
     }
     case WM_GETMINMAXINFO: {
@@ -495,7 +612,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
     {
         RECT wr = { 0, 0, g_ui.w, g_ui.h };
         AdjustWindowRectEx(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0);
-        hwnd = CreateWindowExW(0, L"WomicLinkWnd", L"WO Mic Link",
+        hwnd = CreateWindowExW(0, L"WomicLinkWnd", L"MicLink",
                                WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                                wr.right - wr.left, wr.bottom - wr.top,
                                NULL, NULL, hInst, NULL);

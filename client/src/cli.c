@@ -44,7 +44,7 @@ void cli_set_defaults(CliArgs *a)
 const char *cli_help_text(void)
 {
     return
-    "WO Mic Link " APP_VERSION " — 把 Android 手机麦克风变成 Windows 虚拟麦克风\n"
+    "MicLink " APP_VERSION " — 把 Android 手机麦克风变成 Windows 虚拟麦克风\n"
     "\n"
     "用法:\n"
     "  womic.exe [--host <IP|主机名>] [--port <1..65535>] [--media-port <1..65535>]\n"
@@ -299,7 +299,7 @@ static int do_status(const CliArgs *a)
     if (a->driver_pack) drv_set_external_pack(a->driver_pack);
     drv_detect(&st, probe);
 
-    out("WO Mic Link " APP_VERSION "\n");
+    out("MicLink " APP_VERSION "\n");
     _snprintf(buf, sizeof(buf), "  架构        : %ls (%ls)\n",
               drvpkg_arch_label(st.arch), drvpkg_arch_dir(st.arch));
     out(buf);

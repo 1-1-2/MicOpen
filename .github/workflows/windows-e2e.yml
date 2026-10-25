@@ -1167,7 +1167,7 @@ jobs:
       #     没有任何画面证据）。截图两条路：
       #       PrintWindow(PW_RENDERFULLCONTENT) —— 抓窗口自身，DWM 合成也可用；
       #       CopyFromScreen 整屏 —— PrintWindow 偶发黑图时的兜底。
-      #     判据：拿不到窗口句柄 → FAIL；标题不含 "WO Mic" → FAIL；
+      #     判据：拿不到窗口句柄 → FAIL；标题不含 "MicLink" → FAIL；
       #     截图失败只 WARN（headless 会话下可能无桌面，不因此卡验收）。
       # ---------------------------------------------------------------
       - name: h2. GUI 界面截图（标题断言 + 窗口截图）
@@ -1194,8 +1194,8 @@ jobs:
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             exit 1
           }
-          if ($title -notlike '*WO Mic*') {
-            Write-Host "::error::h2: 主窗口标题不含 'WO Mic'（实得 '$title'）"
+          if ($title -notlike '*MicLink*') {
+            Write-Host "::error::h2: 主窗口标题不含 'MicLink'（实得 '$title'）"
             "ITEM_H2=FAIL" | Out-File -FilePath $env:GITHUB_ENV -Append
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             exit 1

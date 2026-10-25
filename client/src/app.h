@@ -1,4 +1,4 @@
-/* app.h — WO Mic Link 客户端公共定义
+/* app.h — MicLink 客户端公共定义
  *
  * 设计约束（来自需求）：
  *  1. 体积几十 KB 级：纯 Win32 + GDI/GDI+（系统自带 dll，动态加载），静态链接 CRT，
@@ -16,9 +16,12 @@
 #include <stdint.h>
 
 /* ------------------------------------------------------------------ 版本 */
-#define APP_NAME        "WO Mic Link"
-#define APP_VERSION     "1.1.0"
-#define APP_VERSION_Q   1, 1, 0, 0
+/* 产品名统一 MicLink（D-01：截图不得出现任何参照产品名）。
+ * 注意：驱动相关字符串（Root\WOMic、\\.\WOMic、WO Mic 字样）不随产品名改动，
+ * 那是第三方驱动的既有身份，见 docs/driver-whitepaper.md §9。 */
+#define APP_NAME        "MicLink"
+#define APP_VERSION     "1.0.0"
+#define APP_VERSION_Q   1, 0, 0, 0
 
 /* 内置驱动归属声明（--help / --status 输出与 NOTICE.md 保持一致） */
 #define DRV_OWNER       "Wolicheng (WO Mic)"
@@ -26,21 +29,36 @@
 #define DRV_SOURCE_URL  "https://www.wolicheng.com/womic/"
 
 /* ------------------------------------------------------------------ 主题 */
+/* 令牌全部出自《产品设计手册》§4.1–§4.3 与《定稿规范》§0（定稿图即验收）：
+ *   text-1/2/3、bg-app/card/sunken、border、accent/ok/warn/err
+ *   on_accent  = accent 上的文字（深色近黑 / 浅色白）
+ *   ok_12/acc_12/err_12 = 徽标底 = 语义色 12% 混合 bg-card（C-11 派生，禁止手调）
+ *   pill       = pill 底 = accent 8% 混合 bg-card（D-08/D-09 派生）
+ * 旧字段名保留兼容映射：text=text-1、text_dim=text-2、text_mute=text-3、
+ *   stroke=border、bg=bg-app、card=bg-card、sunken=bg-sunken。
+ */
 typedef struct {
-    COLORREF bg;          /* 窗口底色 */
-    COLORREF bg2;         /* 渐变次色 */
-    COLORREF card;        /* 卡片 */
-    COLORREF card_hi;     /* 卡片悬停/选中 */
-    COLORREF stroke;      /* 描边 */
-    COLORREF text;        /* 主文字 */
-    COLORREF text_dim;    /* 次文字 */
-    COLORREF text_mute;   /* 弱文字 */
-    COLORREF accent;      /* 强调色 */
-    COLORREF accent_dim;  /* 强调色弱化 */
-    COLORREF ok;          /* 正常 */
-    COLORREF warn;        /* 警告 */
-    COLORREF err;         /* 错误 */
-    COLORREF meter_off;   /* 电平表未点亮段 */
+    COLORREF bg;          /* bg-app 窗口底色 */
+    COLORREF bg2;         /* 渐变次色（定稿为纯色，= bg） */
+    COLORREF card;        /* bg-card 卡片 */
+    COLORREF card_hi;     /* 卡片悬停/选中提亮 */
+    COLORREF sunken;      /* bg-sunken 轨道·日志底·状态栏 */
+    COLORREF stroke;      /* border 1px 描边 */
+    COLORREF text;        /* text-1 主文字 */
+    COLORREF text_dim;    /* text-2 次文字 */
+    COLORREF text_mute;   /* text-3 弱文字/禁用 */
+    COLORREF accent;      /* accent primary 底、选中分段、滑杆填充 */
+    COLORREF accent_dim;  /* 强调色弱化（= acc_12） */
+    COLORREF on_accent;   /* accent 上的文字 */
+    COLORREF ok;          /* ok 已连接、驱动就绪、健康区间 */
+    COLORREF warn;        /* warn 临界（延迟 80–200ms / 丢包 1%–5% / >-3 dBFS） */
+    COLORREF err;         /* err 断开、驱动未就绪、破坏性操作 */
+    COLORREF ok_12;       /* 徽标底 = ok 12% 混合 bg-card */
+    COLORREF warn_12;     /* 徽标底 = warn 12% 混合 bg-card（同公式派生） */
+    COLORREF acc_12;      /* 徽标底 = accent 12% 混合 bg-card */
+    COLORREF err_12;      /* 徽标底 = err 12% 混合 bg-card */
+    COLORREF pill;        /* pill 底 = accent 8% 混合 bg-card */
+    COLORREF meter_off;   /* 电平表未点亮段（= sunken） */
     int      dark;
 } Theme;
 
@@ -81,6 +99,7 @@ typedef struct {
     wchar_t  inf_full[MAX_PATH];    /* C:\Windows\INF\oemNN.inf */
     wchar_t  provider[64];
     wchar_t  version[32];
+    wchar_t  friendly[64];          /* 设备描述名（DriverDesc，D-09 pill 用真实值） */
     wchar_t  sys_path[MAX_PATH];
     char     detail[256];           /* 最近一次操作的说明/错误 */
 } DrvStatus;
@@ -165,6 +184,9 @@ void eng_stop(void);
 void eng_snapshot(EngineStats *out);   /* 线程安全快照 */
 int  eng_device_available(void);       /* 不再独立开句柄：返回 devio_is_open() */
 void eng_set_monitor(int on);          /* 本地监听（预留，当前无 waveOut 实现） */
+/* 静音（D-06 静音行）：真实生效 —— 灌入驱动前把 PCM 零填充，
+ * 电平表照常显示输入电平（静音只截输出，不变红）。 */
+void eng_set_mute(int on);
 /* 媒体（UDP）端口：0 = 由系统随机分配（默认，向后兼容）；1..65535 = 固定端口。
  * 跨网络/过防火墙时必须固定，否则手机端无从放行。必须在 eng_start 之前调用。 */
 int  eng_set_media_port(int port);
@@ -229,44 +251,64 @@ void cli_set_defaults(CliArgs *a);
 /* ------------------------------------------------------------- 界面 */
 #define LOG_LINES 200
 #define LOG_LEN   220
+#define HIST_BARS 48          /* 最近 10 秒电平历史柱数（约 208ms/柱，D-08） */
 
-typedef struct { char text[LOG_LEN]; wchar_t ts[12]; int kind; } LogLine;
+typedef struct { char text[LOG_LEN]; wchar_t ts[16]; int kind; } LogLine;
 
 typedef struct {
     HWND  hwnd;
     HWND  edit_host, edit_port, edit_media;
     HBRUSH br_card;
+    HBRUSH br_sunken;           /* 输入框底色刷（= bg-sunken，随主题重建） */
     UINT  dpi;
     int   w, h;                /* 客户区逻辑尺寸 */
     int   scroll;              /* 纵向滚动偏移 */
     int   content_h;           /* 内容总高（布局后得出） */
     int   hover, pressed;
     int   drag_slider;
+    int   hover_fade;          /* D-10：hover 描边过渡 0..1000（T1 120ms） */
+    int   hover_fade_id;       /* 正在过渡的命中 id */
     int   seg_rate;            /* 0 48k 1 16k 2 8k */
     int   buf_idx;             /* 0 26ms 1 60ms 2 120ms */
     int   gain;                /* 0..200 % */
     int   dark;
     int   running;
-    int   exp_audio, exp_stats, exp_log, exp_driver;  /* 折叠面板展开标志 */
+    int   transport;           /* 0 Wi-Fi（默认且唯一已实现）/1 Wi-Fi 直连 /2 蓝牙 /3 USB */
+    int   mute;                /* 静音开关（D-06，eng_set_mute 真实生效） */
+    int   exp_audio, exp_stats, exp_log;      /* 折叠面板展开标志（D-11 默认收起） */
+    float hist[HIST_BARS];     /* 最近 10 秒电平历史（0=旧 … hist_count-1=新） */
+    int   hist_count;
+    DWORD hist_last;           /* 上次历史采样时刻 */
+    DWORD disc_at;             /* 断开时刻（>10s 清空历史，D-08） */
+    int   stat_half;           /* 500ms 节拍计数（D-14） */
+    int   conn_count;          /* 会话建立次数（重连次数 = conn_count-1，D-12） */
+    int   kbps_peak, lat_peak; /* 码率/延迟峰值（D-12 当前/峰值小字） */
+    float lost_peak;           /* 丢包峰值（%） */
     LogLine logs[LOG_LINES];
     int   log_head, log_count;
-    EngineStats st;
+    EngineStats st;            /* 每帧快照（电平/环形/横条用） */
+    EngineStats st_disp;       /* 500ms 快照（状态栏与面板摘要用，D-14） */
     DrvStatus drv;
-    float anim_phase;
     int   tick;
-    int   installing;
 } Ui;
 
 extern Ui g_ui;
 
 /* 命中 id */
 enum {
-    ID_NONE = 0, ID_MIN, ID_CLOSE, ID_THEME, ID_CONN,
+    ID_NONE = 0,
+    ID_MIN, ID_MAX, ID_CLOSE,
+    ID_THEME_LIGHT, ID_THEME_DARK,
+    ID_CONN,
+    ID_TRANS0, ID_TRANS1, ID_TRANS2, ID_TRANS3,
+    ID_MUTE,
+    ID_SLIDER,
+    ID_INSTALL, ID_OPENSET, ID_UNINSTALL, ID_HELP,
+    ID_EXP_AUDIO, ID_EXP_STATS, ID_EXP_LOG,
     ID_RATE0, ID_RATE1, ID_RATE2,
     ID_BUF0, ID_BUF1, ID_BUF2,
-    ID_SLIDER, ID_INSTALL, ID_UNINSTALL, ID_HELP, ID_HELP_CLOSE,
-    ID_EXP_AUDIO, ID_EXP_STATS, ID_EXP_LOG, ID_EXP_DRIVER,
-    ID_FEED0, ID_FEED1, ID_MAX_
+    ID_COPYLOG,
+    ID_MAX_
 };
 
 /* 界面模块（详见各 .h） */

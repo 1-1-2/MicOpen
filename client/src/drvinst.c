@@ -138,6 +138,9 @@ static int scan_class_registry(DrvStatus *out)
             if (reg_get_sz(sub, L"DriverDesc", desc, 256)) {
                 WideCharToMultiByte(CP_UTF8, 0, desc, -1, out->detail,
                                     sizeof(out->detail), NULL, NULL);
+                /* D-09：pill 显示真实设备名（驱动自带的身份，不随产品名改写） */
+                wcsncpy(out->friendly, desc, 63);
+                out->friendly[63] = 0;
             }
             RegCloseKey(sub);
             RegCloseKey(root);

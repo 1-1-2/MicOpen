@@ -1,8 +1,10 @@
 /* ui_draw.h — 绘制原语与通用控件
  *
  * 全部用 GDI / GDI+ 手绘（GDI+ 是运行时 LoadLibrary，缺失自动退化为纯 GDI），
- * 不引入任何 UI 框架、不嵌图片、不嵌字体 —— 这是「单文件几十 KB + 零依赖」的
- * 前提。控件只有 8 类：卡片 / 按钮 / 分段 / 滑块 / 开关 / 折叠面板 / 电平表 / 日志。
+ * 不引入任何 UI 框架、不嵌图片、不嵌字体 —— 这是「单文件几十 KB + 零依赖」的前提。
+ * 排版数值全部来自《定稿规范》§0（Win px @96dpi）：
+ *   应用标题 18/24 Semibold · 卡片标题 14/20 Semibold · 正文 13/18 ·
+ *   次要 12/16 · 标签 11/15 · 数值 Consolas 13/18。
  */
 #ifndef MICLINK_UI_DRAW_H
 #define MICLINK_UI_DRAW_H
@@ -12,9 +14,14 @@
 /* DPI 缩放：所有尺寸都必须过一遍 sd()，否则 125%/150% 下会错位 */
 int sd(int v);
 
-/* 字体缓存：同一 (size,weight,mono,dpi) 只创建一次，DPI 变化时 ui_fonts_reset() */
-HFONT ui_font(int size_pt, int weight, int mono);
+/* 字体缓存：同一 (px,weight,mono,dpi) 只创建一次，DPI 变化时 ui_fonts_reset()。
+ * 尺寸单位是逻辑像素（96dpi 下 1px = 1px），内部再按 DPI 放大。 */
+HFONT ui_font(int px, int weight, int mono);
 void  ui_fonts_reset(void);
+int   ui_measure_text(const wchar_t *s, HFONT f);
+
+/* 颜色混合：a 与 b 按 pct%（b 的占比）混合。电平卡 dim 段等派生色复用。 */
+COLORREF ui_mix(COLORREF a, COLORREF b, int pct);
 
 /* GDI+：动态加载，失败自动退化（直角 + 无抗锯齿） */
 void  ui_gdiplus_init(void);
@@ -23,33 +30,44 @@ int   ui_gdiplus_ready(void);
 /* 原语 */
 void  ui_fill_round(HDC dc, RECT r, int rad, COLORREF c, int alpha);
 void  ui_stroke_round(HDC dc, RECT r, int rad, COLORREF c, int alpha, int width);
-void  ui_bg_gradient(HDC dc, RECT r);
+void  ui_bg(HDC dc, RECT r);                    /* 窗口纯色底（bg-app） */
 void  ui_text(HDC dc, RECT r, const wchar_t *s, HFONT f, COLORREF c, UINT fmt);
 void  ui_text_u8(HDC dc, RECT r, const char *s, HFONT f, COLORREF c, UINT fmt);
+/* 屏幕坐标圆弧/直线（角度 0=正右，顺时针为正；alpha 0..255） */
+void  ui_arc(HDC dc, int cx, int cy, int rad, double a0, double a1,
+             COLORREF c, int width, int alpha);
+void  ui_line(HDC dc, int x0, int y0, int x1, int y1, COLORREF c, double width, int alpha);
 
-/* 图标（手绘线条，不用 Segoe MDL2 字形：字体缺失会变方块） */
-enum {
-    IC_WIFI = 0, IC_USB, IC_BT, IC_MIC, IC_SEARCH, IC_MIN, IC_CLOSE,
-    IC_SUN, IC_MOON, IC_CHEV, IC_DOC, IC_SHIELD
-};
-void  ui_icon(HDC dc, RECT r, int kind, COLORREF c, int w);
+/* 图标（标题栏三键 + 三步勾，手绘线条，不用字形字体） */
+enum { IC_MIN = 0, IC_MAX, IC_CLOSE, IC_CHECK };
+void  ui_icon(HDC dc, RECT r, int kind, COLORREF c, int width);
 
 /* 控件 */
-void  ui_card(HDC dc, RECT r, const wchar_t *title, const wchar_t *hint);
-void  ui_button(HDC dc, RECT r, const wchar_t *label, int id, int danger, int enabled);
-void  ui_seg(HDC dc, RECT r, const wchar_t *label, int active, int id, int enabled);
-void  ui_slider(HDC dc, RECT r, int val, int maxv, int id);
+void  ui_card(HDC dc, RECT r);                  /* bg-card + R3 + 1px border */
+void  ui_card_title(HDC dc, RECT r, const wchar_t *title);
 
-/* 环形电平（MicYOU 式线条语言：细描边圆环 + 进度弧 + 端点圆点） */
-void  ui_ring_level(HDC dc, int cx, int cy, int rad, float frac, COLORREF c);
-
-/* 增益 ↔ 滑杆位置：dB 刻度（位置 0 = -60dB/0%，0.909 = 0dB/100%，1 = +6dB/200%）
- * 引擎侧仍是 0-200% 线性振幅乘子，这里只改"手感刻度"。 */
-int   ui_gain_pos(int gain);   /* 增益% → 滑杆位置 0..1000 */
-int   ui_pos_to_gain(int pos); /* 滑杆位置 0..1000 → 增益% 0..200 */
-void  ui_collapse_hdr(HDC dc, RECT r, const wchar_t *title, const wchar_t *hint,
-                      int expanded, int id);
+enum { BTN_PRIMARY = 0, BTN_SECONDARY, BTN_DANGER, BTN_TEXT, BTN_ACCENT_OUT };
+/* D-10：hover 描边 border→accent 40%（T1 120ms 过渡，fade 由 g_ui.hover_fade 驱动）；
+ *       press 矩形内缩 1px 重绘。enabled=0 为可见禁用（text-3）。 */
+void  ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int enabled);
+/* 分段控件：共享外框 + 1px 内分隔；选中段 accent 底 + on-accent 文字；
+ * enabled[i]=0 的段可见但禁用（D-03：仅 Wi-Fi 已实现）。 */
+void  ui_seg_group(HDC dc, RECT r, const wchar_t * const *labels, int n,
+                   int active, int id_base, const int *enabled);
+void  ui_slider(HDC dc, RECT r, int pos, int id);       /* pos 0..1000 */
+void  ui_switch(HDC dc, RECT r, int on);                /* C-08 开关 40×20 */
 void  ui_badge(HDC dc, RECT r, const wchar_t *text, COLORREF fg, COLORREF bg);
+void  ui_pill(HDC dc, RECT r, const wchar_t *key, const wchar_t *val);
+void  ui_panel_hdr(HDC dc, RECT r, const wchar_t *title, const wchar_t *sum,
+                   int expanded, int id);
+/* D-04/D-22：运行态 err 呼吸外发光（周期 1200ms、alpha 0.08→0.30→0.08、扩散 6→10px）。
+ * 与 Android infiniteTransition 同参数；只在会话运行/连接中调用。 */
+void  ui_breath_glow(HDC dc, RECT r);
+
+/* 增益 ↔ 滑杆位置：dB 刻度（位置 0 = -60dB/0%，0.909 = 0dB/100%，1 = +6dB/200%） */
+int   ui_gain_pos(int gain);
+int   ui_pos_to_gain(int pos);
+void  ui_gain_reading(wchar_t *out, int cap, int gain);  /* 「增益 N% · ±X.X dB」±0.5dB 吸附 */
 
 /* 各业务卡片的绘制（放在这里而不是 main.c，是为了让 main.c 保持成薄壳：
  * 事件分发 + 模块装配，不掺绘制细节） */
@@ -66,5 +84,6 @@ void  ui_draw_statusbar(HDC dc);
 void  ui_log_add(const char *s, int kind);
 int   ui_log_count(void);
 const LogLine *ui_log_get(int i);
+int   ui_log_copy_all(void);        /* 全部事件写入剪贴板（D-13，Ctrl+C 同效） */
 
 #endif /* MICLINK_UI_DRAW_H */

@@ -45,6 +45,13 @@ static int           g_rate_idx = 2;      /* 2=48k 1=16k 0=8k */
 static int           g_buf_ms   = 60;
 static int           g_gain     = 100;
 static DevFeedMode   g_mode     = DEV_FEED_IOCTL;
+static volatile LONG g_mute;               /* D-06：静音（灌音前零填充） */
+
+/* 延迟估计：UDP 帧间隔的 EMA（D-14 状态栏/会话统计的真实延迟读数）。
+ * 手机端固定 20 ms 一帧，到达间隔的抖动就是网络抖动的直接体现；
+ * 旧的硬编码 20 会让「延迟」永远显示 20 ms，是个假读数。 */
+static DWORD         g_last_frame_at;
+static double        g_lat_ema;
 
 /* 媒体（UDP）端口：0 = 随机分配（默认）；1..65535 = 固定。
  * 由 eng_set_media_port() 设置，必须在 eng_start() 之前调用。 */
@@ -224,6 +231,24 @@ static void on_udp_frame(const unsigned char *buf, int n)
     g_st.bytes += (uint64_t)n;
     LeaveCriticalSection(&g_cs);
 
+    /* 延迟 = 帧间隔 EMA（α=0.1）。间隔 >1s 视为进程刚被唤醒/卡顿，不采样，
+     * 避免一次调度抖动把读数拉到几百 ms。 */
+    {
+        DWORD now = GetTickCount();
+        if (g_last_frame_at) {
+            int d = (int)(now - g_last_frame_at);
+            if (d > 0 && d < 1000) {
+                double ema = g_lat_ema ? g_lat_ema : (double)d;
+                ema = ema * 0.9 + (double)d * 0.1;
+                g_lat_ema = ema;
+                EnterCriticalSection(&g_cs);
+                g_st.latency_ms = (int)(ema + 0.5);
+                LeaveCriticalSection(&g_cs);
+            }
+        }
+        g_last_frame_at = now;
+    }
+
     if (!opusdec_ready()) {
         /* 无解码器：用包大小作为活动度代理，界面仍有反馈 */
         float act = paylen / 400.0f; if (act > 1) act = 1;
@@ -245,6 +270,10 @@ static void on_udp_frame(const unsigned char *buf, int n)
     upsample_int(g_decbuf, samples, g_feedbuf, factor);
     samples *= factor;                       /* 正好 960（20 ms @48k） */
     apply_gain(g_feedbuf, samples, g_gain);
+
+    /* D-06 静音：灌入驱动前把 PCM 零填充。电平表照常显示输入电平
+     * （上面的 rms/level 统计在静音之前就算完了），静音只截输出。 */
+    if (g_mute) memset(g_feedbuf, 0, (size_t)samples * sizeof(int16_t));
 
     {
         double acc = 0;
@@ -407,7 +436,6 @@ static unsigned __stdcall worker(void *arg)
             g_st.kbps = (int)((b - prev_bytes) * 8 / 1000);
             g_st.peak *= 0.72f;                   /* release 慢 */
             if (g_st.peak < 0.002f) g_st.peak = 0;
-            g_st.latency_ms = 20;
             LeaveCriticalSection(&g_cs);
             prev_bytes = b;
             last_stat = now;
@@ -465,6 +493,8 @@ int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, 
     EnterCriticalSection(&g_cs);
     memset(&g_st, 0, sizeof(g_st));
     LeaveCriticalSection(&g_cs);
+    g_last_frame_at = 0;                 /* 延迟 EMA 状态随会话复位 */
+    g_lat_ema = 0.0;
 
     g_st.state = ST_CONNECTING;
     g_st.rate = g_rate_idx == 0 ? 8000 : g_rate_idx == 1 ? 16000 : 48000;
@@ -533,6 +563,10 @@ void eng_snapshot(EngineStats *out)
 }
 
 void eng_set_monitor(int on) { (void)on; }
+
+/* D-06 静音：只截输出（灌音前零填充），不碰电平统计，
+ * 所以电平表照常显示输入电平、静音不会「变红」。 */
+void eng_set_mute(int on) { InterlockedExchange(&g_mute, on ? 1 : 0); }
 
 /* 供 CLI/GUI 选择灌音路径（默认 IOCTL，见 devio.c 顶部注释） */
 void eng_set_feed_mode(int mode) { g_mode = (DevFeedMode)mode; }

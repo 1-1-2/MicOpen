@@ -92,7 +92,7 @@ static void relayout(HDC dc)
     }
     if (w[start]) wrap_line(dc, w + start, text_w);
 
-    g_line_h = sd(17);
+    g_line_h = sd(20);                 /* 12px 等宽正文行高 */
     g_page = (cr.bottom - cr.top - sd(56)) / (g_line_h ? g_line_h : 1);
     if (g_page < 1) g_page = 1;
     if (g_scroll > g_nlines - g_page) g_scroll = g_nlines - g_page;
@@ -119,7 +119,7 @@ static void draw(HWND hwnd)
     }
     {
         RECT tr = { sd(20), 0, cr.right - sd(80), sd(44) };
-        ui_text(mem, tr, L"命令行使用说明书", ui_font(12, FW_SEMIBOLD, 0), g_th.text,
+        ui_text(mem, tr, L"命令行使用说明书", ui_font(16, FW_SEMIBOLD, 0), g_th.text,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
     {
@@ -131,7 +131,7 @@ static void draw(HWND hwnd)
         }
     }
     {
-        HFONT f = ui_font(9, FW_NORMAL, 1);
+        HFONT f = ui_font(12, FW_NORMAL, 1);
         int y = sd(52);
         int i;
         for (i = g_scroll; i < g_nlines && y < cr.bottom - sd(8); i++, y += g_line_h) {
