@@ -20,6 +20,14 @@ import com.miclink.open.theme.ThemeState
 data class MainUiState(
     // 可编辑配置（启动服务时锁定）
     val controlPortText: String = Prefs.DEFAULT_CONTROL_PORT.toString(),
+    /**
+     * 上一次输入被 5 位上限截掉的位数（0 = 未截断）。
+     *
+     * QA 缺陷 D-04：粘贴 30 位旧实现只静默留前 5 位、无任何提示。这里把"被忽略了
+     * 几位"带到 UI，输入框下方明示（校验链路不变：数字过滤 → take(5) → 1..65535
+     * → 启动时明确拒绝）。
+     */
+    val controlPortDropped: Int = 0,
     val volume: Int = Prefs.DEFAULT_VOLUME,
     val debugTone: Boolean = false,
     /** 静音开关（瞬态 UI 状态，不落盘；协议层以音量 0 实现真静音）。 */
@@ -127,10 +135,22 @@ class MainViewModel : ViewModel() {
         )
     }
 
+    /**
+     * 控制端口输入（D-04：超长输入不再"静默"截断）。
+     *
+     * 校验链路保持原样：数字过滤 → `take(5)`（65535 是最长合法端口）→ 由
+     * [readConfig] 做 1..65535 范围校验 → 启动时明确拒绝。唯一的增量是把
+     * **被截掉的位数**记进 [MainUiState.controlPortDropped]，由采集设置的高级卡
+     * 在输入框下方给出可见提示（用户删到 5 位以内时提示自动消失）。
+     */
     fun onControlPortTextChanged(text: String) {
         // 只允许数字，避免非法字符进入配置
-        val filtered = text.filter { it.isDigit() }.take(5)
-        uiState = uiState.copy(controlPortText = filtered)
+        val digits = text.filter { it.isDigit() }
+        val filtered = digits.take(5)
+        uiState = uiState.copy(
+            controlPortText = filtered,
+            controlPortDropped = (digits.length - filtered.length).coerceAtLeast(0)
+        )
     }
 
     /**

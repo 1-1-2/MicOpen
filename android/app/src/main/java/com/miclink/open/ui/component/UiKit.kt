@@ -118,13 +118,22 @@ fun CardDivider() {
     HorizontalDivider(color = LocalMicLinkTokens.current.border)
 }
 
-/** 小号说明文字（12sp text-2）。 */
+/**
+ * 小号说明文字（12sp，默认 text-2）。
+ *
+ * @param color 覆盖文字色：用于把「输入被截断」这类需要用户注意的说明转 err 色
+ *   （D-04），默认保持 text-2 不改变既有观感。
+ */
 @Composable
-fun HintText(text: String, modifier: Modifier = Modifier) {
+fun HintText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = LocalMicLinkTokens.current.text2
+) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodySmall,
-        color = LocalMicLinkTokens.current.text2,
+        color = color,
         modifier = modifier
     )
 }

@@ -239,13 +239,17 @@ fun CaptureScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                 )
             }
             Spacer(Modifier.height(4.dp))
-            HintText(
-                text = if (state.isRunning) {
-                    stringResource(R.string.capture_port_locked)
-                } else {
-                    stringResource(R.string.hint_control_port)
-                }
-            )
+            // D-04：超长输入不再静默截断——被忽略的位数在这里明示（err 色）。
+            // 运行中优先显示"已锁定"（此时输入框禁用，截断提示无意义）。
+            val dropped = state.controlPortDropped
+            when {
+                state.isRunning -> HintText(text = stringResource(R.string.capture_port_locked))
+                dropped > 0 -> HintText(
+                    text = stringResource(R.string.capture_port_overflow, dropped),
+                    color = LocalMicLinkTokens.current.err
+                )
+                else -> HintText(text = stringResource(R.string.hint_control_port))
+            }
             Spacer(Modifier.height(12.dp))
             // ② 采样率：只读行（协议协商在 PC 端发起，app 侧不可选——禁止假开关）
             ReadOnlyValueRow(
