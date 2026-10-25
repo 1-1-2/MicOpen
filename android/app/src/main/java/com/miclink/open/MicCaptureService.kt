@@ -625,6 +625,13 @@ class MicCaptureService : Service() {
                     val thread = Thread({ connectionLoop(client) }, "womic-conn")
                     connThread = thread
                     thread.start()
+                    // 上一会话的推流可能还没收尾（看门狗只关了 TCP，采集线程由旧
+                    // 连接线程负责停；若新会话已抢先接管，旧清理会按归属校验跳过
+                    // stopStreaming）——这里补一手，交主线程收尾，避免新会话
+                    // startStreaming 被 `if (isStreaming) return` 顶掉。
+                    if (isStreaming) {
+                        mainHandler.post { stopStreaming("上一会话遗留推流，新会话接管") }
+                    }
                 }
                 android.util.Log.i(TAG, "PC 客户端已连接：${peerDescription}")
                 notifyState(STATE_CONNECTED, "PC 已连接：${peerDescription}")
@@ -645,6 +652,7 @@ class MicCaptureService : Service() {
      */
     private fun connectionLoop(client: Socket) {
         var closeReason = "连接结束"
+        var watchdog: Thread? = null
         try {
             client.tcpNoDelay = true
             val input = client.getInputStream()
@@ -656,7 +664,7 @@ class MicCaptureService : Service() {
             session = sess
 
             // 心跳看门狗：镜像官方 V1/k.java（每 5s，无心跳即断）
-            startWatchdog(sess, client)
+            watchdog = startWatchdog(sess, client)
 
             val buf = ByteArray(4096)
             while (!Thread.currentThread().isInterrupted && !client.isClosed) {
@@ -679,19 +687,22 @@ class MicCaptureService : Service() {
                     // 再分派副作用事件（start/stop/disconnect）
                     val events = sess.drainEvents()
                     for (event in events) {
-                        dispatchEvent(event, peerDescription)
+                        dispatchEvent(event, peerDescription, client)
                     }
                 }
             }
         } catch (e: IOException) {
             closeReason = "连接异常：${e.message}"
         } finally {
-            teardownConnection(closeReason)
+            // 看门狗按连接归属收尾：只停自己这条连接的看门狗，绝不碰新会话的
+            watchdog?.interrupt()
+            // 带上本条连接自己的 socket：清理只允许作用于自己的连接（见 teardownConnection）
+            teardownConnection(closeReason, client)
         }
     }
 
     /** 会话事件 -> 主线程执行（start/stop 触摸编码器与采集线程，只允许主线程）。 */
-    private fun dispatchEvent(event: SessionEvent, peer: String) {
+    private fun dispatchEvent(event: SessionEvent, peer: String, client: Socket) {
         mainHandler.post {
             when (event) {
                 is SessionEvent.StartStreaming -> {
@@ -704,14 +715,19 @@ class MicCaptureService : Service() {
                     stopStreaming("PC 客户端请求停止")
                 }
                 is SessionEvent.Disconnected -> {
-                    teardownConnection("连接断开（reason ${event.reason}）")
+                    teardownConnection("连接断开（reason ${event.reason}）", client)
                 }
             }
         }
     }
 
-    /** 看门狗线程：每 5s 调一次 [WomicSession.checkHeartbeatWatchdog]，超时则关闭 socket。 */
-    private fun startWatchdog(sess: WomicSession, client: Socket) {
+    /**
+     * 看门狗线程：每 5s 调一次 [WomicSession.checkHeartbeatWatchdog]，超时则关闭 socket。
+     *
+     * 返回该线程，交给 [connectionLoop] 在 `finally` 里按**连接归属**打断——
+     * 共享字段 [watchdogThread] 可能已被新会话覆盖，不能拿来收尾旧连接。
+     */
+    private fun startWatchdog(sess: WomicSession, client: Socket): Thread {
         val thread = Thread({
             while (!Thread.currentThread().isInterrupted && !client.isClosed) {
                 try {
@@ -734,24 +750,55 @@ class MicCaptureService : Service() {
         watchdogThread = thread
         thread.isDaemon = true
         thread.start()
+        return thread
     }
 
-    /** 连接级清理：停推流、关 socket、清会话；服务器保持监听。 */
-    private fun teardownConnection(reason: String, notify: Boolean = true) {
-        stopStreaming(reason)
+    /**
+     * 连接级清理：停推流、关 socket、清会话；服务器保持监听。
+     *
+     * [owner] 是发起本次清理的那条连接自己的 socket（[connectionLoop] 传入）。
+     *
+     * **归属校验（C15 重连回归，见 logcat 实证）**：看门狗超时是"先 `close()` 旧
+     * socket，再由旧连接线程收尾"两步；在旧连接线程被唤醒（10~40ms）之前，accept
+     * 线程完全可能已经接下**新会话**并把 [connection] 换成新 socket（判定条件
+     * `existing.isClosed` 恰好被看门狗的 close 置真）。此时若仍按 [connection]
+     * 字段清理，就会把新会话的 socket 关掉、把 `session` / `negotiated*` 清零——
+     * 新连接随即在 `tcpNoDelay` 处抛 `Socket is closed`，PC 侧看到 EOF。
+     *
+     * 因此：只有"我仍是当前连接"时才清共享状态、打断看门狗/连接线程引用；
+     * 否则只关自己的 socket，不去动新会话的任何状态。
+     */
+    private fun teardownConnection(reason: String, owner: Socket? = null, notify: Boolean = true) {
+        var owned = false
+        var toClose: Socket? = null
+        synchronized(this) {
+            val current = connection
+            if (owner == null || current === owner) {
+                // 我仍是当前连接（含 owner 缺省的旧调用点）：按原语义整体清理
+                owned = true
+                toClose = current
+                connection = null
+                session = null
+                negotiatedSampleRate = 0
+                negotiatedMediaPort = -1
+                peerDescription = ""
 
-        val client = connection
-        connection = null
-        session = null
-        negotiatedSampleRate = 0
-        negotiatedMediaPort = -1
-        peerDescription = ""
+                watchdogThread?.interrupt()
+                watchdogThread = null
+                connThread?.interrupt()
+                connThread = null
+            } else {
+                // 过期清理：新会话已接管，只关自己这条（不能碰 connection/session）
+                toClose = owner
+            }
+        }
 
-        watchdogThread?.interrupt()
-        watchdogThread = null
-        connThread?.interrupt()
-        connThread = null
+        if (owned) {
+            // 推流是服务级资源（单会话）：仍归我时才停，避免把新会话的推流停掉
+            stopStreaming(reason)
+        }
 
+        val client = toClose
         if (client != null && !client.isClosed) {
             try {
                 client.close()
@@ -759,9 +806,12 @@ class MicCaptureService : Service() {
                 android.util.Log.w(TAG, "关闭连接异常：${t.message}")
             }
         }
-        android.util.Log.i(TAG, "连接已清理：$reason")
+        android.util.Log.i(
+            TAG,
+            if (owned) "连接已清理：$reason" else "过期连接清理（新会话已接管，不动其状态）：$reason"
+        )
 
-        if (notify && isRunning) {
+        if (owned && notify && isRunning) {
             notifyState(STATE_LISTENING, "等待 PC 连接 · 手机 ${listeningAddress()}")
             updateNotification("等待 PC 连接 · ${listeningAddress()}")
         }
