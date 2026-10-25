@@ -375,6 +375,15 @@ class MicCaptureService : Service() {
         else -> STATE_IDLE
     }
 
+    /**
+     * 本次会话**协商**下来的采样率（Hz；0 = 尚未协商）。
+     *
+     * 采样率是 PC 客户端在 CONFIG 握手时选档、经协议带给手机的（规格 v1 第 2.2
+     * 节），手机侧真的按这个值开 AudioRecord —— 采集设置页的「采样率」只读行
+     * 显示的就是它（R-18：旧文案写「协议固定」是错的）。
+     */
+    fun negotiatedSampleRateHz(): Int = negotiatedSampleRate
+
     /** 当前状态细节（监听地址 / 对端 / 协商参数 + 统计）。 */
     fun currentDetail(): String {
         val sender = udpSender

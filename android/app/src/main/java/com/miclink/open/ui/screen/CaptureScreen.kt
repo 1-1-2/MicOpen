@@ -2,6 +2,7 @@ package com.miclink.open.ui.screen
 
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
+import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -299,10 +300,20 @@ fun CaptureScreen(vm: MainViewModel, focus: String = "", modifier: Modifier = Mo
                 else -> HintText(text = stringResource(R.string.hint_control_port))
             }
             Spacer(Modifier.height(12.dp))
-            // ② 采样率：只读行（协议协商在 PC 端发起，app 侧不可选——禁止假开关）
+            // ② 采样率：只读行（app 侧不可选——禁止假开关）。
+            // R-18：旧文案「48 kHz（协议固定）」是错的——真实口径是 PC 客户端在
+            // CONFIG 握手时选档（8k/16k/48k 三档，规格 v1 第 2.2 节），手机端按
+            // 协商值 openRecorder。未连接时显示默认口径，已连接显示本次协商值。
             ReadOnlyValueRow(
                 label = stringResource(R.string.capture_sample_rate),
-                value = stringResource(R.string.capture_sample_rate_value)
+                value = if (state.negotiatedSampleRate > 0) {
+                    stringResource(
+                        R.string.capture_sample_rate_negotiated,
+                        formatRateKHz(state.negotiatedSampleRate)
+                    )
+                } else {
+                    stringResource(R.string.capture_sample_rate_value)
+                }
             )
             Spacer(Modifier.height(4.dp))
             HintText(text = stringResource(R.string.capture_sample_rate_hint))
@@ -318,6 +329,14 @@ fun CaptureScreen(vm: MainViewModel, focus: String = "", modifier: Modifier = Mo
         }
     }
 }
+
+/** 采样率 -> 「48 kHz」样式：整千显示整数，否则保留一位小数（如 44100 → 44.1 kHz）。 */
+private fun formatRateKHz(rateHz: Int): String =
+    if (rateHz % 1000 == 0) {
+        "${rateHz / 1000} kHz"
+    } else {
+        String.format(Locale.US, "%.1f kHz", rateHz / 1000.0)
+    }
 
 /** 设备组子标签（D-20：14sp Medium text-2；音源组同规格）。 */
 @Composable

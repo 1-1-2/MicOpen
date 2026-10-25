@@ -44,6 +44,13 @@ data class MainUiState(
     val sessionStartElapsedMs: Long = 0L,
     /** 网络传输方式（ConnectivityManager 实读；空 = 未知，UI 显示「—」）。 */
     val transport: String = "",
+    /**
+     * 本次会话协商的采样率（Hz；0 = 尚未协商）。
+     *
+     * 由 PC 客户端在 CONFIG 握手时选档（规格 v1 第 2.2 节），手机侧按该值开
+     * AudioRecord；采集设置页「采样率」只读行显示它（R-18）。
+     */
+    val negotiatedSampleRate: Int = 0,
     // 统计（轮询）
     val packets: Long = 0L,
     val bytes: Long = 0L,
@@ -340,9 +347,9 @@ class MainViewModel : ViewModel() {
     fun pollStats(service: MicCaptureService?) {
         val svc = service
         if (svc == null) {
-            // 服务断开（停止/崩溃）：清会话时长，不显示上一会话的残留值
-            if (uiState.sessionStartElapsedMs != 0L) {
-                uiState = uiState.copy(sessionStartElapsedMs = 0L)
+            // 服务断开（停止/崩溃）：清会话时长与协商采样率，不显示上一会话的残留值
+            if (uiState.sessionStartElapsedMs != 0L || uiState.negotiatedSampleRate != 0) {
+                uiState = uiState.copy(sessionStartElapsedMs = 0L, negotiatedSampleRate = 0)
             }
             return
         }
@@ -351,6 +358,8 @@ class MainViewModel : ViewModel() {
             bytes = svc.bytesSent(),
             failures = svc.sendFailures(),
             routedDeviceLabel = svc.routedDeviceLabel(),
+            // 采样率是 PC 客户端握手时协商的（R-18：采集设置页只读行显示真实值）
+            negotiatedSampleRate = svc.negotiatedSampleRateHz(),
             // 会话开始时刻是服务级全局状态（单连接服务，同 isStreaming 风格）
             sessionStartElapsedMs = MicCaptureService.sessionStartElapsedMs
         )

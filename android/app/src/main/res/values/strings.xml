@@ -88,7 +88,10 @@
     <!-- D-04：超长输入被 5 位上限截掉时明示（%1$d = 被忽略的位数） -->
     <string name="capture_port_overflow">最多 5 位数字，已忽略多余的 %1$d 位（端口范围 1–65535）</string>
     <string name="capture_sample_rate">采样率</string>
-    <string name="capture_sample_rate_value">48 kHz（协议固定）</string>
+    <!-- 未连接时的默认口径：采样率不是协议写死的，而是 PC 客户端握手时选档 -->
+    <string name="capture_sample_rate_value">48 kHz（由电脑端协商，默认 48k）</string>
+    <!-- 已协商：%1$s = 形如「48 kHz」的协商值 -->
+    <string name="capture_sample_rate_negotiated">%1$s（本次协商值）</string>
     <string name="capture_sample_rate_hint">编码采样率由 PC 客户端连接时协商决定，手机侧不可选。</string>
     <string name="label_debug_tone">调试音</string>
     <string name="hint_debug_tone">发送 440Hz 正弦波而不采集麦克风，用于无麦克风权限时验证链路</string>
