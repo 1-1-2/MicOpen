@@ -51,7 +51,7 @@ typedef struct {
     COLORREF accent_dim;  /* 强调色弱化（= acc_12） */
     COLORREF on_accent;   /* accent 上的文字 */
     COLORREF ok;          /* ok 已连接、驱动就绪、健康区间 */
-    COLORREF warn;        /* warn 临界（延迟 80–200ms / 丢包 1%–5% / >-3 dBFS） */
+    COLORREF warn;        /* warn 临界（抖动 80–200ms / 丢包 1%–5% / >-3 dBFS） */
     COLORREF err;         /* err 断开、驱动未就绪、破坏性操作 */
     COLORREF ok_12;       /* 徽标底 = ok 12% 混合 bg-card */
     COLORREF warn_12;     /* 徽标底 = warn 12% 混合 bg-card（同公式派生） */
@@ -164,11 +164,16 @@ typedef struct {
     int      media_fixed;     /* 1 = --media-port 指定；0 = 系统随机分配 */
     uint32_t lost;            /* 序号缺口估算 */
     uint32_t last_seq;
+    uint32_t expected;        /* 期望收到的帧总数（已收 + 跳号），丢包率的分母 */
+    int      vol;             /* 协议音量字节 0..9（5=原样，0=静音）；-1 = 还没收到包 */
     float    level;           /* 0..1 平滑电平 */
     float    peak;            /* 0..1 峰值保持 */
     float    db;              /* dBFS */
     int      kbps;            /* 瞬时码率 */
-    int      latency_ms;      /* 估计延迟（帧间隔抖动） */
+    /* 注意口径：这是 UDP 帧**到达间隔**的 EMA，是网络抖动（jitter），
+     * 不是端到端延迟（编码+网络+解码+驱动缓冲都算上才是延迟）。
+     * 以前标成「延迟」是错名，UI 一律显示「抖动」。 */
+    int      jitter_ms;
     uint64_t injected;        /* 已注入驱动的 PCM 字节 */
     int      device_ok;       /* 虚拟麦克风可写（复用同一句柄，不额外 CreateFile） */
     int      dev_handshake_ok;/* 驱动握手成功 */
@@ -198,6 +203,8 @@ void eng_set_mute(int on);
  * 跨网络/过防火墙时必须固定，否则手机端无从放行。必须在 eng_start 之前调用。 */
 int  eng_set_media_port(int port);
 int  eng_media_port(void);
+/* 本地增益 0..200（%），运行中生效（滑杆拖动即时听到）。返回实际值（已钳制）。 */
+int  eng_set_gain(int gain_pct);
 void eng_set_feed_mode(int mode);      /* DEV_FEED_IOCTL（默认）/ DEV_FEED_WRITE */
 
 /* 日志回调：引擎线程调用，UI 通过 PostMessage 转投 */
@@ -289,7 +296,7 @@ typedef struct {
     DWORD disc_at;             /* 断开时刻（>10s 清空历史，D-08） */
     int   stat_half;           /* 500ms 节拍计数（D-14） */
     int   conn_count;          /* 会话建立次数（重连次数 = conn_count-1，D-12） */
-    int   kbps_peak, lat_peak; /* 码率/延迟峰值（D-12 当前/峰值小字） */
+    int   kbps_peak, jit_peak; /* 码率/抖动峰值（D-12 当前/峰值小字） */
     float lost_peak;           /* 丢包峰值（%） */
     LogLine logs[LOG_LINES];
     int   log_head, log_count;

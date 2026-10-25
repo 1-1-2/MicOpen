@@ -930,11 +930,13 @@ void ui_draw_stats_card(HDC dc)
     wchar_t sum[96], v[3][32], cur[3][96];
     int i;
 
-    if (live && s->state == ST_STREAMING) {
+    /* 丢包率 = 跳号数 / 期望总数（engine 侧已按 seq 统计）；
+     * 没有任何期望帧时显示「—」，不要拿 0.0% 冒充"测过且很好"。 */
+    if (live && s->state == ST_STREAMING && s->expected) {
         int dur = (int)((GetTickCount() - s->started_at) / 1000);
         swprintf(sum, 96, L"%d:%02d · %d ms · 丢包 %.1f%%",
-                 dur / 60, dur % 60, s->latency_ms,
-                 (s->frames + s->lost) ? (double)s->lost * 100.0 / (double)(s->frames + s->lost) : 0.0);
+                 dur / 60, dur % 60, s->jitter_ms,
+                 (double)s->lost * 100.0 / (double)s->expected);
     } else {
         swprintf(sum, 96, L"— · — · 丢包 —");
     }
@@ -942,14 +944,16 @@ void ui_draw_stats_card(HDC dc)
     ui_panel_hdr(dc, g_lo.hdr_stats, L"会话统计", sum, g_ui.exp_stats, ID_EXP_STATS);
     if (!g_ui.exp_stats) return;
 
-    /* 三行指标条：码率 / 延迟 / 丢包（D-12） */
+    /* 三行指标条：码率 / 抖动 / 丢包（D-12）
+     * 「抖动」不是「延迟」：读数是 UDP 帧到达间隔的 EMA，只反映网络抖动，
+     * 不含编码/解码/驱动缓冲，叫延迟是错名。 */
     {
-        static const wchar_t *lb[3] = { L"码率", L"延迟", L"丢包" };
+        static const wchar_t *lb[3] = { L"码率", L"抖动", L"丢包" };
         double frac[3] = { 0, 0, 0 };
         COLORREF fill[3] = { g_th.ok, g_th.ok, g_th.ok };
         double thr[3][2] = { { 0, 0 }, { 0.20, 0.50 }, { 0.10, 0.50 } };  /* 80/200ms、1%/5% */
-        double lost_pct = (s->frames + s->lost)
-                          ? (double)s->lost * 100.0 / (double)(s->frames + s->lost) : 0.0;
+        double lost_pct = s->expected
+                          ? (double)s->lost * 100.0 / (double)s->expected : 0.0;
         RECT c = g_lo.card_stats;
         int W = c.right - c.left - sd(32);
         int bx0 = c.left + sd(16) + sd(152);
@@ -958,23 +962,35 @@ void ui_draw_stats_card(HDC dc)
 
         if (live) {
             swprintf(v[0], 32, L"%d kbps", s->kbps);
-            swprintf(v[1], 32, L"%d ms", s->latency_ms);
-            swprintf(v[2], 32, L"%.1f%%", lost_pct);
             frac[0] = s->kbps / 512.0;
-            frac[1] = s->latency_ms / 400.0;
-            frac[2] = lost_pct / 10.0;
             swprintf(cur[0], 96, L"当前 %d · 峰值 %d", s->kbps, g_ui.kbps_peak);
-            swprintf(cur[1], 96, L"当前 %d · 峰值 %d", s->latency_ms, g_ui.lat_peak);
-            swprintf(cur[2], 96, L"当前 %.1f · 峰值 %.1f", lost_pct, g_ui.lost_peak);
+            /* 抖动只在真有帧间隔样本时才有意义（否则 0 ms 是假读数） */
+            if (s->jitter_ms > 0) {
+                swprintf(v[1], 32, L"%d ms", s->jitter_ms);
+                frac[1] = s->jitter_ms / 400.0;
+                swprintf(cur[1], 96, L"当前 %d · 峰值 %d", s->jitter_ms, g_ui.jit_peak);
+            } else {
+                swprintf(v[1], 32, L"—");
+                swprintf(cur[1], 96, L"—");
+            }
         } else {
-            for (i = 0; i < 3; i++) {
+            for (i = 0; i < 2; i++) {
                 swprintf(v[i], 32, L"—");
                 swprintf(cur[i], 96, L"—");
             }
         }
+        /* 丢包：一帧都没期望到时显示「—」，不拿 0.0% 冒充"测过且很好" */
+        if (live && s->expected) {
+            swprintf(v[2], 32, L"%.1f%%", lost_pct);
+            frac[2] = lost_pct / 10.0;
+            swprintf(cur[2], 96, L"当前 %.1f · 峰值 %.1f", lost_pct, g_ui.lost_peak);
+        } else {
+            swprintf(v[2], 32, L"—");
+            swprintf(cur[2], 96, L"—");
+        }
         if (live) {
-            if (s->latency_ms > 200)      fill[1] = g_th.err;
-            else if (s->latency_ms >= 80) fill[1] = g_th.warn;
+            if (s->jitter_ms > 200)      fill[1] = g_th.err;
+            else if (s->jitter_ms >= 80) fill[1] = g_th.warn;
             if (lost_pct > 5.0)           fill[2] = g_th.err;
             else if (lost_pct >= 1.0)     fill[2] = g_th.warn;
         }
@@ -1143,7 +1159,7 @@ void ui_draw_statusbar(HDC dc)
     ui_fill_round(dc, r, 0, g_th.sunken, 255);
     ui_fill_round(dc, ln, 0, g_th.stroke, 255);
 
-    /* [状态徽标] · 传输方式 · 延迟 XX ms · 丢包 X.X% · 时长 MM:SS（缺项「—」） */
+    /* [状态徽标] · 传输方式 · 抖动 XX ms · 丢包 X.X% · 音量 ±dB · 时长 MM:SS（缺项「—」） */
     if (g_ui.running && s->state == ST_STREAMING) {
         badge_txt = L"已连接"; badge_fg = g_th.ok; badge_bg = g_th.ok_12;
     } else if (g_ui.running) {
@@ -1167,14 +1183,14 @@ void ui_draw_statusbar(HDC dc)
             L"Wi-Fi", f, g_th.text_dim,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     x += ui_measure_text(L"Wi-Fi", f) + sd(8);
-    /* 延迟 */
+    /* 抖动（旧名「延迟」是错名：这是帧到达间隔 EMA，不含编解码与驱动缓冲） */
     ui_text(dc, (RECT){ x, r.top, x + sd(8), r.bottom }, L"·", f, g_th.text_mute,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     x += sd(16);
-    ui_text(dc, (RECT){ x, r.top, x + sd(40), r.bottom }, L"延迟", f, g_th.text_dim,
+    ui_text(dc, (RECT){ x, r.top, x + sd(40), r.bottom }, L"抖动", f, g_th.text_dim,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    x += ui_measure_text(L"延迟", f) + sd(4);
-    if (live && s->latency_ms > 0) swprintf(item, 128, L"%d ms", s->latency_ms);
+    x += ui_measure_text(L"抖动", f) + sd(4);
+    if (live && s->jitter_ms > 0) swprintf(item, 128, L"%d ms", s->jitter_ms);
     else swprintf(item, 128, L"—");
     ui_text(dc, (RECT){ x, r.top, x + sd(80), r.bottom }, item, mf, g_th.text,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -1186,9 +1202,28 @@ void ui_draw_statusbar(HDC dc)
     ui_text(dc, (RECT){ x, r.top, x + sd(40), r.bottom }, L"丢包", f, g_th.text_dim,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     x += ui_measure_text(L"丢包", f) + sd(4);
-    if (live && (s->frames + s->lost) > 0) {
-        double pct = (double)s->lost * 100.0 / (double)(s->frames + s->lost);
+    if (live && s->expected) {
+        double pct = (double)s->lost * 100.0 / (double)s->expected;
         swprintf(item, 128, L"%.1f%%", pct);
+    } else {
+        swprintf(item, 128, L"—");          /* 没数据时是「—」，不是 0.0% */
+    }
+    ui_text(dc, (RECT){ x, r.top, x + sd(80), r.bottom }, item, mf, g_th.text,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    x += ui_measure_text(item, mf) + sd(8);
+    /* 手机端推流音量（协议 vol 字节）：0=静音，5=原样，其余 ±6 dB/档。
+     * 放在状态栏是为了让"手机上调音量"在 PC 端有可见落点。 */
+    ui_text(dc, (RECT){ x, r.top, x + sd(8), r.bottom }, L"·", f, g_th.text_mute,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    x += sd(16);
+    ui_text(dc, (RECT){ x, r.top, x + sd(40), r.bottom }, L"音量", f, g_th.text_dim,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    x += ui_measure_text(L"音量", f) + sd(4);
+    if (live && s->vol >= 0) {
+        static const wchar_t *vd[10] = { L"静音", L"−24 dB", L"−18 dB", L"−12 dB",
+                                         L"−6 dB", L"0 dB", L"+6 dB", L"+12 dB",
+                                         L"+18 dB", L"+24 dB" };
+        swprintf(item, 128, L"%ls", (s->vol <= 9) ? vd[s->vol] : L"—");
     } else {
         swprintf(item, 128, L"—");
     }

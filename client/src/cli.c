@@ -492,10 +492,14 @@ int cli_run(CliArgs *a)
             char line[256];
             _snprintf(line, sizeof(line),
                       "OK  帧=%llu 字节=%llu 注入=%llu 电平=%.3f dB=%.1f "
+                      "抖动=%dms 丢包=%.1f%%(跳号%u/%u) 手机音量=vol%d "
                       "解码=%s 设备=%s 媒体端口=%d(%s)\n",
                       (unsigned long long)st.frames, (unsigned long long)st.bytes,
                       (unsigned long long)st.injected, (double)st.level,
-                      (double)st.db, st.opus_src, st.device_ok ? "就绪" : "未就绪",
+                      (double)st.db, st.jitter_ms,
+                      st.expected ? (double)st.lost * 100.0 / (double)st.expected : 0.0,
+                      st.lost, st.expected, st.vol,
+                      st.opus_src, st.device_ok ? "就绪" : "未就绪",
                       st.media_port, st.media_fixed ? "固定" : "随机");
             out(line);
             g_exit_code = CLI_EXIT_OK;

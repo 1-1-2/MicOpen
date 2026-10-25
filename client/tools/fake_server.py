@@ -88,12 +88,18 @@ class ToneEncoder:
 class UdpPump(threading.Thread):
     """按 20ms 节奏向 PC 下发格式 C 帧。"""
 
-    def __init__(self, host: str, port: int, tone: ToneEncoder | None):
+    def __init__(self, host: str, port: int, tone: ToneEncoder | None,
+                 vol: int = 5, drop_every: int = 0,
+                 vol_cycle: list | None = None, cycle_sec: float = 3.0):
         super().__init__(daemon=True)
         self.addr = (host, port)
         self.stop = threading.Event()
         self.seq = 0
         self.tone = tone
+        self.vol = vol                    # 协议音量字节 0..9（5 = 原样）
+        self.drop_every = drop_every      # >0：每 N 个 seq 真的不发包一次（制造跳号）
+        self.vol_cycle = vol_cycle or []  # 非空：按 cycle_sec 轮换 vol（验证运行期生效）
+        self.cycle_sec = cycle_sec
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def run(self):
@@ -108,21 +114,28 @@ class UdpPump(threading.Thread):
                 base = 90 + (abs(5 - phase) * 22)
                 paylen = max(40, min(400, base + random.randint(-25, 25)))
                 payload = bytes(random.getrandbits(8) for _ in range(paylen))
+            if self.vol_cycle:            # 运行期轮换 vol：用来观察 PC 端是否跟着变
+                idx = int((time.time() - t0) / self.cycle_sec) % len(self.vol_cycle)
+                self.vol = self.vol_cycle[idx]
             ts = int((time.time() - t0) * 1000) & 0xFFFFFFFF
-            body = struct.pack(">HIB", self.seq & 0xFFFF, ts, 5) + payload  # seq,ts,vol
+            body = struct.pack(">HIB", self.seq & 0xFFFF, ts, self.vol) + payload
             pkt = b"\x04\x00" + struct.pack(">H", len(body)) + body
-            try:
-                self.sock.sendto(pkt, self.addr)
-            except OSError:
-                pass
-            self.seq += 1
+            drop = self.drop_every > 0 and (self.seq % self.drop_every) == 0
+            if not drop:
+                try:
+                    self.sock.sendto(pkt, self.addr)
+                except OSError:
+                    pass
+            self.seq += 1          # 丢包时 seq 照样前进 → 对端看到跳号
             next_t += 0.020
             sleep = next_t - time.time()
             if sleep > 0:
                 time.sleep(sleep)
 
 
-def serve(host: str, port: int, once: bool, tone_hz: float, amp: int):
+def serve(host: str, port: int, once: bool, tone_hz: float, amp: int,
+          vol: int = 5, drop_every: int = 0,
+          vol_cycle: list | None = None, cycle_sec: float = 3.0):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host, port))
@@ -160,12 +173,17 @@ def serve(host: str, port: int, once: bool, tone_hz: float, amp: int):
                     send_frame(conn, 102, bytes([0]))
                     if tone_hz > 0:
                         pump = UdpPump(peer[0], media_port,
-                                       ToneEncoder(RATE[rate_idx], tone_hz, amp))
+                                       ToneEncoder(RATE[rate_idx], tone_hz, amp),
+                                       vol, drop_every, vol_cycle, cycle_sec)
                     else:
-                        pump = UdpPump(peer[0], media_port, None)
+                        pump = UdpPump(peer[0], media_port, None,
+                                       vol, drop_every, vol_cycle, cycle_sec)
                     pump.start()
                     log(f"UDP 下发开始 → {peer[0]}:{media_port} @ {RATE[rate_idx]}Hz"
-                        + (f"，{tone_hz:g}Hz 正弦（Opus 编码）" if tone_hz > 0 else "，随机负载"))
+                        + (f"，{tone_hz:g}Hz 正弦（Opus 编码）" if tone_hz > 0 else "，随机负载")
+                        + (f"，vol 轮换 {vol_cycle}（每 {cycle_sec:g}s）" if vol_cycle
+                           else f"，vol={vol}")
+                        + (f"，每 {drop_every} 帧丢 1 帧" if drop_every else ""))
                 elif mtype == 103:
                     log("103 开始推流")
                     send_frame(conn, 103, bytes([0]))
@@ -198,8 +216,20 @@ if __name__ == "__main__":
     ap.add_argument("--tone", type=float, default=0.0,
                     help=">0 时发送该频率的正弦波（真实 Opus 编码，需 opuslib）")
     ap.add_argument("--amp", type=int, default=12000, help="--tone 的幅度（0..32767）")
+    ap.add_argument("--vol", type=int, default=5,
+                    help="协议音量字节 0..9（0=静音 5=原样 <5 右移 >5 左移）")
+    ap.add_argument("--drop-every", type=int, default=0,
+                    help=">0 时每 N 个 seq 真的不发一个包，制造可统计的丢包")
+    ap.add_argument("--vol-cycle", default="",
+                    help="运行期轮换 vol，如 9,5,0,3（每 --cycle-sec 秒换一次）")
+    ap.add_argument("--cycle-sec", type=float, default=3.0)
     a = ap.parse_args()
+    vol_cycle = [int(x) for x in a.vol_cycle.split(",") if x.strip()] or None
+    if not 0 <= a.vol <= 9:
+        ap.error("--vol 须在 0..9")
     try:
-        serve(a.host, a.port, once=not a.loop, tone_hz=a.tone, amp=a.amp)
+        serve(a.host, a.port, once=not a.loop, tone_hz=a.tone, amp=a.amp,
+              vol=a.vol, drop_every=a.drop_every,
+              vol_cycle=vol_cycle, cycle_sec=a.cycle_sec)
     except KeyboardInterrupt:
         sys.exit(0)

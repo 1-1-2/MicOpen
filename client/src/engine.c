@@ -43,13 +43,25 @@ static LogFn         g_log;
 
 static int           g_rate_idx = 2;      /* 2=48k 1=16k 0=8k */
 static int           g_buf_ms   = 60;
-static int           g_gain     = 100;
+static volatile LONG g_gain     = 100;     /* UI 线程可随时改（eng_set_gain） */
 static DevFeedMode   g_mode     = DEV_FEED_IOCTL;
 static volatile LONG g_mute;               /* D-06：静音（灌音前零填充） */
 
-/* 延迟估计：UDP 帧间隔的 EMA（D-14 状态栏/会话统计的真实延迟读数）。
+/* 协议音量字节 vol（格式 C 头第 10 字节，0..9）。只在变化时打一次日志，
+ * 免得每 20 ms 刷一行把事件面板冲掉。 */
+static int           g_vol      = 5;       /* 当前生效的 vol（5 = 原样） */
+static int           g_vol_seen;           /* 本会话是否已经见过 vol 字节 */
+static int           g_vol_warn;           /* vol 越界只提示一次 */
+
+/* 丢包统计：seq 是 16 位循环计数，只认「向前跳号」。
+ * 直接拿 (seq - last - 1) 会在乱序/重连时下溢成 65535，丢包率瞬间爆表。 */
+static int           g_seq_valid;
+static uint16_t      g_next_seq;
+
+/* 抖动估计：UDP 帧间隔的 EMA（D-14 状态栏/会话统计的「抖动」读数）。
  * 手机端固定 20 ms 一帧，到达间隔的抖动就是网络抖动的直接体现；
- * 旧的硬编码 20 会让「延迟」永远显示 20 ms，是个假读数。 */
+ * 旧的硬编码 20 会让读数永远是 20 ms，是个假读数。
+ * 口径：只反映到达间隔的抖动，不是端到端延迟。 */
 static DWORD         g_last_frame_at;
 static double        g_lat_ema;
 
@@ -102,6 +114,50 @@ static void apply_gain(int16_t *p, int n, int gain_pct)
         if (v < -32768) v = -32768;
         p[i] = (int16_t)v;
     }
+}
+
+/* 协议音量字节 vol（0..9，5 = 原样，每档 6 dB）—— 必须在灌入驱动前对 PCM 生效。
+ * 老实现把 vol 从包头里读出来就丢掉了，于是手机上调推流音量，PC 这边的听感
+ * 毫无变化（CI 的 C08 只验"包里字节对不对"，没验"PC 有没有按它处理"）。
+ *
+ *   0     → 静音：零填充，**推流继续**（不中断会话、不停止写驱动）
+ *   1..4  → 算术右移 (5 - vol) 位：−24/−18/−12/−6 dB
+ *   5     → 原样
+ *   6..9  → 左移 (vol - 5) 位：+6/+12/+18/+24 dB，**int16 饱和钳制**
+ *           （左移溢出若回绕就是一耳朵爆音，必须钳在 ±32767）
+ *
+ * 顺序固定：先 vol 位移，再 apply_gain() 叠加本地增益。 */
+static void apply_vol(int16_t *p, int n, int vol)
+{
+    int i, s;
+    if (n <= 0 || vol == 5) return;
+    if (vol == 0) {
+        memset(p, 0, (size_t)n * sizeof(int16_t));
+        return;
+    }
+    if (vol < 5) {
+        s = 5 - vol;                                  /* 1..4 */
+        for (i = 0; i < n; i++)
+            p[i] = (int16_t)((int)p[i] >> s);         /* 算术右移：负数高位补 1 */
+        return;
+    }
+    s = vol - 5;                                      /* 1..4 */
+    for (i = 0; i < n; i++) {
+        int v = (int)p[i] << s;
+        if (v > 32767) v = 32767;                     /* 饱和，不回绕 */
+        if (v < -32768) v = -32768;
+        p[i] = (int16_t)v;
+    }
+}
+
+/* vol 的档位说明（给事件日志用的可读文案） */
+static const char *vol_desc(int vol)
+{
+    static const char *d[10] = {
+        "静音", "−24 dB", "−18 dB", "−12 dB", "−6 dB",
+        "原样 0 dB", "+6 dB", "+12 dB", "+18 dB", "+24 dB"
+    };
+    return (vol >= 0 && vol <= 9) ? d[vol] : "越界";
 }
 
 /* ------------------------------------------------------- TCP 小工具 */
@@ -223,15 +279,44 @@ static void on_udp_frame(const unsigned char *buf, int n)
     int paylen = plen - 7;                 /* 去掉 seq2 + ts4 + vol1 */
     if (paylen <= 0 || 11 + paylen > n) return;
 
+    /* vol：格式 C 头部第 10 字节（payload 前一字节）。老代码只是把它从 paylen
+     * 里减掉，从未使用 —— 手机上调音量 PC 端毫无变化就是这么来的。 */
+    int vol = buf[10];
+    if (vol > 9) {
+        if (!g_vol_warn) {
+            g_vol_warn = 1;
+            elog("协议音量字节异常 vol=%d（合法 0..9），本会话按 9 处理", vol);
+        }
+        vol = 9;
+    }
+    if (!g_vol_seen || vol != g_vol) {
+        elog("手机端音量 vol=%d（%s）", vol, vol_desc(vol));
+        g_vol = vol;
+        g_vol_seen = 1;
+    }
+
     EnterCriticalSection(&g_cs);
-    if (g_st.frames && seq != (uint16_t)(g_st.last_seq + 1))
-        g_st.lost += (uint16_t)(seq - g_st.last_seq - 1);
+    /* 丢包 = seq 跳号数 / 期望总数。seq 是 16 位循环计数，只统计「向前跳号」：
+     * 重复包与乱序包不记丢失 —— 否则 seq 回退（手机端重启推流、网络乱序）会
+     * 让 (seq - last - 1) 下溢成 65535，丢包率一夜之间变成天文数字。 */
+    if (g_seq_valid) {
+        uint16_t ahead = (uint16_t)(seq - g_next_seq);
+        if (ahead && ahead < 0x8000) {
+            g_st.lost += ahead;           /* 跳过的号 = 丢包 */
+            g_st.expected += ahead;
+        }
+    } else {
+        g_seq_valid = 1;
+    }
+    g_next_seq = (uint16_t)(seq + 1);
     g_st.last_seq = seq;
     g_st.frames++;
+    g_st.expected++;
     g_st.bytes += (uint64_t)n;
+    g_st.vol = vol;
     LeaveCriticalSection(&g_cs);
 
-    /* 延迟 = 帧间隔 EMA（α=0.1）。间隔 >1s 视为进程刚被唤醒/卡顿，不采样，
+    /* 抖动 = 帧间隔 EMA（α=0.1）。间隔 >1s 视为进程刚被唤醒/卡顿，不采样，
      * 避免一次调度抖动把读数拉到几百 ms。 */
     {
         DWORD now = GetTickCount();
@@ -242,7 +327,7 @@ static void on_udp_frame(const unsigned char *buf, int n)
                 ema = ema * 0.9 + (double)d * 0.1;
                 g_lat_ema = ema;
                 EnterCriticalSection(&g_cs);
-                g_st.latency_ms = (int)(ema + 0.5);
+                g_st.jitter_ms = (int)(ema + 0.5);
                 LeaveCriticalSection(&g_cs);
             }
         }
@@ -269,7 +354,8 @@ static void on_udp_frame(const unsigned char *buf, int n)
     if (factor < 1) factor = 1;
     upsample_int(g_decbuf, samples, g_feedbuf, factor);
     samples *= factor;                       /* 正好 960（20 ms @48k） */
-    apply_gain(g_feedbuf, samples, g_gain);
+    apply_vol(g_feedbuf, samples, vol);      /* 先协议 vol（含饱和钳制） */
+    apply_gain(g_feedbuf, samples, g_gain);  /* 再本地增益，顺序固定 */
 
     /* D-06 静音：灌入驱动前把 PCM 零填充。电平表照常显示输入电平
      * （上面的 rms/level 统计在静音之前就算完了），静音只截输出。 */
@@ -478,6 +564,15 @@ int eng_set_media_port(int port)
 
 int eng_media_port(void) { return g_media_port_req; }
 
+/* 本地增益：0..200（%），运行中可随时改（滑杆拖动即时生效）。
+ * 旧实现只在 eng_start() 里赋一次值，滑杆要等下次连接才起作用。 */
+int eng_set_gain(int gain_pct)
+{
+    int g = (gain_pct < 0) ? 0 : (gain_pct > 200) ? 200 : gain_pct;
+    InterlockedExchange(&g_gain, g);
+    return g;
+}
+
 /* --------------------------------------------------------- 对外 API */
 void eng_set_logger(LogFn fn) { g_log = fn; }
 
@@ -499,13 +594,21 @@ int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, 
 
     g_rate_idx = (rate_idx >= 0 && rate_idx <= 2) ? rate_idx : 2;
     g_buf_ms = (buffer_ms == 26 || buffer_ms == 60 || buffer_ms == 120) ? buffer_ms : 60;
-    g_gain = (gain >= 0 && gain <= 200) ? gain : 100;
+    eng_set_gain(gain);
 
     EnterCriticalSection(&g_cs);
     memset(&g_st, 0, sizeof(g_st));
     LeaveCriticalSection(&g_cs);
-    g_last_frame_at = 0;                 /* 延迟 EMA 状态随会话复位 */
+    g_last_frame_at = 0;                 /* 抖动 EMA 状态随会话复位 */
     g_lat_ema = 0.0;
+    /* 丢包/vol 的会话内状态一并复位：不清的话重连后第一帧会被当成跳号，
+     * 或者沿用上一次会话的 vol（界面一开始就显示错的档位）。 */
+    g_seq_valid = 0;
+    g_next_seq = 0;
+    g_vol = 5;
+    g_vol_seen = 0;
+    g_vol_warn = 0;
+    g_st.vol = -1;                       /* -1 = 还没收到包，UI 显示「—」 */
 
     g_st.state = ST_CONNECTING;
     g_st.rate = g_rate_idx == 0 ? 8000 : g_rate_idx == 1 ? 16000 : 48000;

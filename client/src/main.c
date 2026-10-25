@@ -148,7 +148,7 @@ static void toggle_connection(void)
             /* 新会话：计数 +1，历史与峰值归零（D-08/D-12） */
             g_ui.conn_count++;
             g_ui.hist_count = 0;
-            g_ui.kbps_peak = g_ui.lat_peak = 0;
+            g_ui.kbps_peak = g_ui.jit_peak = 0;
             g_ui.lost_peak = 0.0f;
             ui_log_add("正在建立会话…", 0);
         } else {
@@ -238,6 +238,7 @@ void ui_on_click(int id, int x, int y)
             if (pos < 0) { pos = 0; }
             if (pos > 1000) { pos = 1000; }
             g_ui.gain = ui_pos_to_gain(pos);
+            eng_set_gain(g_ui.gain);   /* 实时生效（旧实现要等下次连接） */
         }
     }
     ui_layout_compute();
@@ -382,7 +383,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             g_ui.stat_half = 0;
             g_ui.st_disp = st;
             if (st.kbps > g_ui.kbps_peak) g_ui.kbps_peak = st.kbps;
-            if (st.latency_ms > g_ui.lat_peak) g_ui.lat_peak = st.latency_ms;
+            if (st.jitter_ms > g_ui.jit_peak) g_ui.jit_peak = st.jitter_ms;
             lp = (st.frames + st.lost)
                  ? (double)st.lost * 100.0 / (double)(st.frames + st.lost) : 0.0;
             if (lp > g_ui.lost_peak) g_ui.lost_peak = (float)lp;
@@ -476,6 +477,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (pos < 0) { pos = 0; }
             if (pos > 1000) { pos = 1000; }
             g_ui.gain = ui_pos_to_gain(pos);
+            eng_set_gain(g_ui.gain);   /* 实时生效（旧实现要等下次连接） */
             InvalidateRect(hwnd, NULL, FALSE);
         }
         SetCursor(LoadCursorW(NULL, (LPCWSTR)((h == ID_SLIDER) ? IDC_SIZEWE :
