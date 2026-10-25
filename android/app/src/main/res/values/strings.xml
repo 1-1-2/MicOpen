@@ -15,8 +15,7 @@
 
     <!-- ==================== 主页状态卡（D-16） ==================== -->
     <string name="home_field_transport">传输方式</string>
-    <string name="home_field_latency">延迟</string>
-    <string name="home_field_loss">丢包</string>
+    <!-- R-20：延迟 / 丢包两行已删除（app 侧无测量通道，不摆没有真实来源的字段） -->
     <string name="home_field_duration">时长</string>
     <string name="home_transport_wifi">Wi-Fi</string>
     <string name="home_transport_cellular">移动数据</string>

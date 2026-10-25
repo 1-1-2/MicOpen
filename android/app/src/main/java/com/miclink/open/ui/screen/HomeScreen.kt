@@ -154,20 +154,13 @@ private fun StatusSection(
 
         Spacer(Modifier.height(16.dp))
 
-        // ② 分行字段四行（禁「·」分隔）：传输方式 / 延迟 / 丢包 / 时长
-        // 诚实性：延迟与丢包 app 不测量，恒显示「—」，不造假遥测。
+        // ② 分行字段（禁「·」分隔）：只保留**有真实来源**的字段。
+        // R-20：延迟 / 丢包两行已删除——app 侧没有测量通道，摆两行恒为「—」的
+        // 伪遥测字段只会误导用户（诚实性纪律：没有来源就不要有字段）。
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             StatusFieldRow(
                 label = stringResource(R.string.home_field_transport),
                 value = state.transport.ifBlank { stringResource(R.string.home_value_unknown) }
-            )
-            StatusFieldRow(
-                label = stringResource(R.string.home_field_latency),
-                value = stringResource(R.string.home_value_unknown)
-            )
-            StatusFieldRow(
-                label = stringResource(R.string.home_field_loss),
-                value = stringResource(R.string.home_value_unknown)
             )
             StatusFieldRow(
                 label = stringResource(R.string.home_field_duration),
