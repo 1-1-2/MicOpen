@@ -23,7 +23,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.miclink.open.MainUiState
@@ -40,6 +40,10 @@ import com.miclink.open.MainViewModel
 import com.miclink.open.MicCaptureService
 import com.miclink.open.R
 import com.miclink.open.theme.ThemeMode
+import com.miclink.open.ui.component.CardDivider
+import com.miclink.open.ui.component.DotSlider
+import com.miclink.open.ui.component.HintText
+import com.miclink.open.ui.component.SectionCard
 import com.miclink.open.ui.component.VoiceMeter
 import com.miclink.open.ui.theme.WomicTheme
 
@@ -98,76 +102,71 @@ fun HomeScreen(
             )
         }
 
-        // ---- 平铺设置（不套嵌套层级）----
-        Text(
-            text = stringResource(R.string.group_settings),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary
-        )
+        // ---- 平铺设置（收进分区卡，不套嵌套层级）----
+        SectionCard(title = stringResource(R.string.group_settings)) {
+            // 控制端口
+            OutlinedTextField(
+                value = state.controlPortText,
+                onValueChange = { vm.onControlPortTextChanged(it) },
+                label = { Text(stringResource(R.string.label_control_port)) },
+                supportingText = { Text(stringResource(R.string.hint_control_port)) },
+                singleLine = true,
+                enabled = !state.isRunning,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = state.controlPortText.toIntOrNull()?.let { it !in 1..65535 } ?: true,
+                modifier = Modifier.fillMaxWidth()
+            )
 
-        // 控制端口
-        OutlinedTextField(
-            value = state.controlPortText,
-            onValueChange = { vm.onControlPortTextChanged(it) },
-            label = { Text(stringResource(R.string.label_control_port)) },
-            supportingText = { Text(stringResource(R.string.hint_control_port)) },
-            singleLine = true,
-            enabled = !state.isRunning,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            isError = state.controlPortText.toIntOrNull()?.let { it !in 1..65535 } ?: true,
-            modifier = Modifier.fillMaxWidth()
-        )
+            CardDivider()
 
-        // 音量
-        Column {
+            // 音量：协议 0-9 十档（不是 0-255 连续值），每档 ±6 dB
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.label_volume),
                     style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.width(96.dp)
+                    modifier = Modifier.width(84.dp)
                 )
-                Slider(
-                    value = state.volume.toFloat(),
+                DotSlider(
+                    value = state.volume.coerceIn(0, 9).toFloat(),
                     onValueChange = { vm.onVolumeChanged(it.toInt()) },
-                    valueRange = 0f..255f,
-                    steps = 254,
+                    valueRange = 0f..9f,
+                    steps = 8,
                     enabled = !state.isRunning,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = state.volume.toString(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.width(40.dp)
+                    text = stringResource(R.string.volume_value, state.volume, volumeDb(state.volume)),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.width(88.dp),
+                    textAlign = TextAlign.End
                 )
             }
-            Text(
-                text = stringResource(R.string.hint_volume),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+            HintText(text = stringResource(R.string.hint_volume))
 
-        // 调试音
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.label_debug_tone),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = stringResource(R.string.hint_debug_tone),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            CardDivider()
+
+            // 调试音
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.label_debug_tone),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = stringResource(R.string.hint_debug_tone),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = state.debugTone,
+                    onCheckedChange = { vm.onDebugToneChanged(it) },
+                    enabled = !state.isRunning
                 )
             }
-            Switch(
-                checked = state.debugTone,
-                onCheckedChange = { vm.onDebugToneChanged(it) },
-                enabled = !state.isRunning
-            )
         }
 
         // 采集选项入口提示（麦克风 / 音源 / 系统效果在抽屉的"采集设置"页）
@@ -177,6 +176,14 @@ fun HomeScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+/** 协议音量档位 → dB 语义：0 静音；1-4 右移（-6/-12/-18/-24 dB）；5 原样；6-9 左移（+6…+24 dB） */
+private fun volumeDb(v: Int): String = when {
+    v == 0 -> "-inf"
+    v == 5 -> "0 dB"
+    v < 5 -> "-${(5 - v) * 6} dB"
+    else -> "+${(v - 5) * 6} dB"
 }
 
 /** 状态卡：连接状态 + 手机地址 + 统计 + 电平（原 MainActivity 内联组件，整体搬出）。 */

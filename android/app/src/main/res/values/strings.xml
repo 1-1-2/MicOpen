@@ -29,7 +29,8 @@
     <string name="label_control_port">控制端口</string>
     <string name="hint_control_port">PC 客户端连接的 TCP 端口，默认 8125</string>
     <string name="label_volume">推流音量</string>
-    <string name="hint_volume">写入 UDP 媒体头的音量字段（0-255），默认 5 为单位增益</string>
+    <string name="hint_volume">协议音量十档：0 静音；1-4 每档 -6 dB；5 原样（0 dB）；6-9 每档 +6 dB</string>
+    <string name="volume_value">档位 %1$d · %2$s</string>
     <string name="label_debug_tone">调试音</string>
     <string name="hint_debug_tone">发送 440Hz 正弦波而不采集麦克风，用于无麦克风权限时验证链路</string>
 

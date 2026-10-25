@@ -117,7 +117,8 @@ class MainViewModel : ViewModel() {
     }
 
     fun onVolumeChanged(value: Int) {
-        uiState = uiState.copy(volume = value.coerceIn(0, 255))
+        // 协议音量字节只认 0-9 档位（0 静音 / 5 原样 / 每档 ±6 dB），不是 0-255 连续值
+        uiState = uiState.copy(volume = value.coerceIn(0, 9))
     }
 
     fun onDebugToneChanged(value: Boolean) {

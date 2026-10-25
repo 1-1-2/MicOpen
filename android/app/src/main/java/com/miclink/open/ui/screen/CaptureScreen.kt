@@ -36,6 +36,8 @@ import com.miclink.open.CaptureSettings
 import com.miclink.open.MainViewModel
 import com.miclink.open.R
 import com.miclink.open.theme.ThemeMode
+import com.miclink.open.ui.component.CardDivider
+import com.miclink.open.ui.component.SectionCard
 import com.miclink.open.ui.theme.WomicTheme
 
 /**
@@ -98,95 +100,90 @@ fun CaptureScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
 
         // ---- 音源模式 ----
-        SectionTitle(stringResource(R.string.capture_section_source))
-        AudioSourceOption.entries.forEach { option ->
-            val enabled = option.id != AudioSourceIds.UNPROCESSED || unprocessedSupported
-            OptionRow(
-                title = stringResource(option.labelRes),
-                description = if (enabled) {
-                    stringResource(option.descRes)
-                } else {
-                    stringResource(R.string.capture_source_unprocessed_unsupported)
-                },
-                selected = state.capture.audioSource == option.id,
-                enabled = enabled,
-                onClick = { vm.onAudioSourceChanged(option.id) }
-            )
+        SectionCard(title = stringResource(R.string.capture_section_source)) {
+            AudioSourceOption.entries.forEach { option ->
+                val enabled = option.id != AudioSourceIds.UNPROCESSED || unprocessedSupported
+                OptionRow(
+                    title = stringResource(option.labelRes),
+                    description = if (enabled) {
+                        stringResource(option.descRes)
+                    } else {
+                        stringResource(R.string.capture_source_unprocessed_unsupported)
+                    },
+                    selected = state.capture.audioSource == option.id,
+                    enabled = enabled,
+                    onClick = { vm.onAudioSourceChanged(option.id) }
+                )
+            }
         }
 
         // ---- 麦克风 ----
-        SectionTitle(stringResource(R.string.capture_section_mic))
-        OptionRow(
-            title = stringResource(R.string.capture_mic_auto),
-            description = stringResource(R.string.capture_mic_auto_desc),
-            selected = state.capture.micDeviceId == CaptureSettings.MIC_DEVICE_AUTO,
-            enabled = true,
-            onClick = { vm.onMicDeviceChanged(CaptureSettings.MIC_DEVICE_AUTO) }
-        )
-        devices.forEach { device ->
+        SectionCard(title = stringResource(R.string.capture_section_mic)) {
             OptionRow(
-                title = device.label,
-                description = null,
-                selected = state.capture.micDeviceId == device.id,
+                title = stringResource(R.string.capture_mic_auto),
+                description = stringResource(R.string.capture_mic_auto_desc),
+                selected = state.capture.micDeviceId == CaptureSettings.MIC_DEVICE_AUTO,
                 enabled = true,
-                onClick = { vm.onMicDeviceChanged(device.id) }
+                onClick = { vm.onMicDeviceChanged(CaptureSettings.MIC_DEVICE_AUTO) }
+            )
+            devices.forEach { device ->
+                OptionRow(
+                    title = device.label,
+                    description = null,
+                    selected = state.capture.micDeviceId == device.id,
+                    enabled = true,
+                    onClick = { vm.onMicDeviceChanged(device.id) }
+                )
+            }
+            // 当前实际生效的设备（来自 AudioRecord.getRoutedDevice，而非"用户选了啥"）
+            Text(
+                text = if (state.isStreaming) {
+                    state.routedDeviceLabel?.let { stringResource(R.string.capture_mic_routed, it) } ?: "—"
+                } else {
+                    stringResource(R.string.capture_mic_not_recording)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(R.string.capture_mic_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        // 当前实际生效的设备（来自 AudioRecord.getRoutedDevice，而非"用户选了啥"）
-        Text(
-            text = if (state.isStreaming) {
-                state.routedDeviceLabel?.let { stringResource(R.string.capture_mic_routed, it) } ?: "—"
-            } else {
-                stringResource(R.string.capture_mic_not_recording)
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = stringResource(R.string.capture_mic_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
 
         // ---- 系统降噪 / 回声 / 增益 ----
-        SectionTitle(stringResource(R.string.capture_section_effects))
-        EffectSwitchRow(
-            title = stringResource(R.string.capture_effect_ns),
-            description = stringResource(R.string.capture_effect_ns_desc),
-            available = noiseSuppressorAvailable,
-            checked = state.capture.noiseSuppressor,
-            onCheckedChange = { vm.onNoiseSuppressorChanged(it) }
-        )
-        EffectSwitchRow(
-            title = stringResource(R.string.capture_effect_aec),
-            description = stringResource(R.string.capture_effect_aec_desc),
-            available = echoCancelerAvailable,
-            checked = state.capture.echoCanceler,
-            onCheckedChange = { vm.onEchoCancelerChanged(it) }
-        )
-        EffectSwitchRow(
-            title = stringResource(R.string.capture_effect_agc),
-            description = stringResource(R.string.capture_effect_agc_desc),
-            available = gainControlAvailable,
-            checked = state.capture.gainControl,
-            onCheckedChange = { vm.onGainControlChanged(it) }
-        )
-        Text(
-            text = stringResource(R.string.capture_effect_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        SectionCard(title = stringResource(R.string.capture_section_effects)) {
+            EffectSwitchRow(
+                title = stringResource(R.string.capture_effect_ns),
+                description = stringResource(R.string.capture_effect_ns_desc),
+                available = noiseSuppressorAvailable,
+                checked = state.capture.noiseSuppressor,
+                onCheckedChange = { vm.onNoiseSuppressorChanged(it) }
+            )
+            CardDivider()
+            EffectSwitchRow(
+                title = stringResource(R.string.capture_effect_aec),
+                description = stringResource(R.string.capture_effect_aec_desc),
+                available = echoCancelerAvailable,
+                checked = state.capture.echoCanceler,
+                onCheckedChange = { vm.onEchoCancelerChanged(it) }
+            )
+            CardDivider()
+            EffectSwitchRow(
+                title = stringResource(R.string.capture_effect_agc),
+                description = stringResource(R.string.capture_effect_agc_desc),
+                available = gainControlAvailable,
+                checked = state.capture.gainControl,
+                onCheckedChange = { vm.onGainControlChanged(it) }
+            )
+            Text(
+                text = stringResource(R.string.capture_effect_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
-}
-
-/** 小节标题（与 AppearanceScreen 的 SectionTitle 同风格）。 */
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary
-    )
 }
 
 /** 单选行（标题 + 可选说明 + RadioButton；禁用态不给点击反馈）。 */
@@ -203,7 +200,7 @@ private fun OptionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 2.dp)
+            .padding(vertical = 6.dp)
     ) {
         RadioButton(selected = selected, onClick = onClick, enabled = enabled)
         Spacer(Modifier.width(4.dp))

@@ -101,8 +101,8 @@ class Prefs(context: Context) {
                 "Prefs.DEFAULT_VOLUME(${DEFAULT_VOLUME}) 与 " +
                     "BuildConfig.DEFAULT_VOLUME(${BuildConfig.DEFAULT_VOLUME}) 不一致"
             }
-            require(DEFAULT_VOLUME in 0..255) {
-                "默认音量 $DEFAULT_VOLUME 越界（u8）"
+            require(DEFAULT_VOLUME in 0..9) {
+                "默认音量 $DEFAULT_VOLUME 越界（协议档位 0-9）"
             }
             // 协议采样率表必须非空且默认索引可达（:core SampleRates 与规格 v1 表 2-4 一致）
             require(SampleRates.DEFAULT_INDEX in SampleRates.TABLE.indices) {
@@ -148,7 +148,7 @@ class Prefs(context: Context) {
             controlPort = prefs.getInt(KEY_CONTROL_PORT, DEFAULT_CONTROL_PORT)
                 .let { if (it in 1..65535) it else DEFAULT_CONTROL_PORT },
             volume = prefs.getInt(KEY_VOLUME, DEFAULT_VOLUME)
-                .let { if (it in 0..255) it else DEFAULT_VOLUME },
+                .let { if (it in 0..9) it else DEFAULT_VOLUME },
             debugTone = prefs.getBoolean(KEY_DEBUG_TONE, false),
             capture = loadCaptureSettings()
         )
