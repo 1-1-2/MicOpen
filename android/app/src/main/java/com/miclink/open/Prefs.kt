@@ -165,6 +165,20 @@ class Prefs(context: Context) {
     }
 
     /**
+     * 单独写音量档位（主页十档点轨即时生效用，不等「启动服务」）。
+     *
+     * 与 [save] 分开的原因：端口/调试音是"启动前锁定"的编辑态，而音量是
+     * "改完立刻生效"的偏好态（运行中经 [MicCaptureService.updateVolume]
+     * 推送），两者写盘时机不同——混在一条路径里会把"端口编辑到一半"的
+     * 中间态也一起落盘（同 capture 选项的独立写路径，缺陷 D-11 教训）。
+     */
+    fun saveVolume(volume: Int) {
+        prefs.edit()
+            .putInt(KEY_VOLUME, volume.coerceIn(0, 9))
+            .apply()
+    }
+
+    /**
      * 读取采集选项（缺项/脏值回落默认；UNPROCESSED 需设备支持，不支持时回落
      * DEFAULT——不能"选了没效果"）。
      */

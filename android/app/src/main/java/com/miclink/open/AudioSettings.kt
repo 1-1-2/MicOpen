@@ -29,46 +29,41 @@ object AudioSourceIds {
 }
 
 /**
- * 音源选项目录（UI 单选列表 + 合法性校验表共用同一份，避免两处漂移）。
+ * 音源选项目录（UI chips 单选 + 合法性校验表共用同一份，避免两处漂移）。
+ *
+ * chips 化后（D-19）选项只有「图标 + 标签」，没有说明位：逐档差异统一在
+ * 「关于与帮助」页说明，避免六段长文本把 chips 区撑爆（定稿图即验收）。
  *
  * @param id 音源 id（见 [AudioSourceIds]）。
  * @param labelRes 选项名。
- * @param descRes 选项说明（实际差异直接影响用户选择，必须写清）。
  */
 enum class AudioSourceOption(
     val id: Int,
-    @param:StringRes val labelRes: Int,
-    @param:StringRes val descRes: Int
+    @param:StringRes val labelRes: Int
 ) {
     DEFAULT(
         AudioSourceIds.DEFAULT,
-        R.string.capture_source_default,
-        R.string.capture_source_default_desc
+        R.string.capture_source_default
     ),
     MIC(
         AudioSourceIds.MIC,
-        R.string.capture_source_mic,
-        R.string.capture_source_mic_desc
+        R.string.capture_source_mic
     ),
     VOICE_RECOGNITION(
         AudioSourceIds.VOICE_RECOGNITION,
-        R.string.capture_source_voice_recognition,
-        R.string.capture_source_voice_recognition_desc
+        R.string.capture_source_voice_recognition
     ),
     VOICE_COMMUNICATION(
         AudioSourceIds.VOICE_COMMUNICATION,
-        R.string.capture_source_voice_communication,
-        R.string.capture_source_voice_communication_desc
+        R.string.capture_source_voice_communication
     ),
     CAMCORDER(
         AudioSourceIds.CAMCORDER,
-        R.string.capture_source_camcorder,
-        R.string.capture_source_camcorder_desc
+        R.string.capture_source_camcorder
     ),
     UNPROCESSED(
         AudioSourceIds.UNPROCESSED,
-        R.string.capture_source_unprocessed,
-        R.string.capture_source_unprocessed_desc
+        R.string.capture_source_unprocessed
     );
 
     companion object {
@@ -150,7 +145,7 @@ fun inputDeviceLabel(type: Int, productName: String?): String {
         android.media.AudioDeviceInfo.TYPE_HDMI -> "HDMI 音频设备"
         android.media.AudioDeviceInfo.TYPE_HEARING_AID -> "助听器"
         android.media.AudioDeviceInfo.TYPE_FM_TUNER -> "FM 调谐器"
-        android.media.AudioDeviceInfo.TYPE_REMOTE_SUBMIX -> "远程混音（录屏等）"
+        android.media.AudioDeviceInfo.TYPE_REMOTE_SUBMIX -> "远程混音"
         android.media.AudioDeviceInfo.TYPE_DOCK -> "Dock 音频设备"
         android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB 配件"
         else -> "输入设备（type=$type）"

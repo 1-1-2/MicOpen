@@ -95,6 +95,18 @@ fun AppNav(
         scope.launch { drawerState.close() }
     }
 
+    // 主页设置摘要行的跳转：与抽屉切换同一条扁平导航路径
+    // （popUpTo(HOME){saveState} + restoreState，不堆栈）
+    val navigateTo: (Dest) -> Unit = { dest ->
+        if (dest.route != currentRoute) {
+            navController.navigate(dest.route) {
+                popUpTo(Dest.HOME.route) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
@@ -158,7 +170,8 @@ fun AppNav(
                         HomeScreen(
                             vm = vm,
                             onStartClicked = onStartClicked,
-                            onStopClicked = onStopClicked
+                            onOpenCaptureSettings = { navigateTo(Dest.CAPTURE) },
+                            onOpenAppearance = { navigateTo(Dest.APPEARANCE) }
                         )
                     }
                     composable(Dest.CAPTURE.route) {
@@ -172,9 +185,48 @@ fun AppNav(
                     }
                 }
                 StateMessageDialog(vm = vm)
+                StopConfirmDialog(vm = vm, onConfirm = onStopClicked)
             }
         }
     }
+}
+
+/**
+ * 「停止」二次确认弹窗（C-05 / D-15）：覆盖在当前目的地之上。
+ *
+ * 主页按钮与前台服务通知的「停止」共用本弹窗（同走
+ * [MainViewModel.stopConfirmPending]）——单次误操作不应当不可逆。
+ */
+@Composable
+private fun StopConfirmDialog(vm: MainViewModel, onConfirm: () -> Unit) {
+    val state = vm.uiState
+    if (!state.stopConfirmPending) {
+        return
+    }
+    AlertDialog(
+        onDismissRequest = { vm.consumeStopConfirmation() },
+        title = { Text(stringResource(R.string.home_stop_confirm_title)) },
+        text = { Text(stringResource(R.string.home_stop_confirm_text)) },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    vm.consumeStopConfirmation()
+                    onConfirm()
+                }
+            ) {
+                // 确认键用 err 语义色：破坏性操作的可视警示
+                Text(
+                    text = stringResource(R.string.home_stop_confirm_ok),
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { vm.consumeStopConfirmation() }) {
+                Text(stringResource(R.string.home_stop_confirm_cancel))
+            }
+        }
+    )
 }
 
 /**

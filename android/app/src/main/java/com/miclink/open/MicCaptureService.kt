@@ -155,9 +155,20 @@ class MicCaptureService : Service() {
         @Volatile
         var lastError: String? = null
 
-        /** 最近一次采集的实际采样率（平台可能调整请求值，见 [MicCaptureService.openRecorder]）。 */
-        @Volatile
-        var actualSampleRate: Int = 0
+    /** 最近一次采集的实际采样率（平台可能调整请求值，见 [MicCaptureService.openRecorder]）。 */
+    @Volatile
+    var actualSampleRate: Int = 0
+
+    /**
+     * 本回推流会话的开始时刻（`SystemClock.elapsedRealtime()`；0 = 无会话）。
+     *
+     * 主页「时长」字段的唯一事实来源（D-16 数据诚实性）：只有 PC 发 START
+     * 且采集线程真正跑起来后才置位，停止/断开即清零——不拿"服务启动了多久"
+     * 冒充"采集了多久"。
+     */
+    @Volatile
+    var sessionStartElapsedMs: Long = 0L
+        private set
 
         /**
          * 构造启动 Intent（建议用本方法，避免漏传参数）。
@@ -187,6 +198,20 @@ class MicCaptureService : Service() {
             Codec.OPUS -> "Opus"
             Codec.SPEEX -> "Speex"
             else -> "codec#$codec"
+        }
+
+        /**
+         * 服务状态 -> 中文状态词（D-16）：主页大状态徽标与前台服务通知标题
+         * 的**唯一事实来源**——两端逐字一致，不允许各写一份。
+         */
+        fun stateWord(state: String): String = when (state) {
+            STATE_STREAMING -> "正在采集"
+            STATE_CONNECTED -> "已连接"
+            STATE_LISTENING -> "等待连接"
+            STATE_STARTING -> "启动中"
+            STATE_STOPPED -> "已停止"
+            STATE_ERROR -> "错误"
+            else -> "未启动"
         }
     }
 
@@ -412,6 +437,16 @@ class MicCaptureService : Service() {
             android.util.Log.w(TAG, "读取 routedDevice 失败：${t.message}")
             null
         }
+    }
+
+    /**
+     * 更新协议音量档位（UI 在主线程调用，见 [MainViewModel.pushVolume]）。
+     *
+     * 主页十档点轨运行中可调（D-18）：采集线程每包封包时读取 [volume]，
+     * 因此改档在下一包即生效，无需重建链路。取值范围协议档位 0-9。
+     */
+    fun updateVolume(value: Int) {
+        volume = value.coerceIn(0, 9)
     }
 
     /**
@@ -807,6 +842,7 @@ class MicCaptureService : Service() {
         captureThread = thread
         thread.start()
         isStreaming = true
+        sessionStartElapsedMs = SystemClock.elapsedRealtime()
 
         notifyState(
             STATE_STREAMING,
@@ -828,6 +864,7 @@ class MicCaptureService : Service() {
             }
         }
         isStreaming = false
+        sessionStartElapsedMs = 0L
 
         releaseRecorder()
         encoder?.destroy()
@@ -1305,7 +1342,7 @@ class MicCaptureService : Service() {
      * microphone -> 0（无类型）的顺序降级，全部失败才返回 false。
      */
     private fun startForegroundSafely(): Boolean {
-        val notification = buildNotification("正在启动…")
+        val notification = buildNotification(stateWord(STATE_STARTING), "正在启动…")
         val attempts = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             listOf(ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE, 0)
         } else {
@@ -1342,7 +1379,15 @@ class MicCaptureService : Service() {
         }
     }
 
-    private fun buildNotification(text: String): Notification {
+    /**
+     * 构建前台通知。
+     *
+     * 标题 = [stateWord]（与主页大状态徽标逐字一致，D-16 单一事实来源）；
+     * 「停止」动作与主页按钮同语义：不直接停服务，而是打开 MainActivity 并
+     * 携带 [MainActivity.EXTRA_CONFIRM_STOP]，由 AppNav 弹二次确认（C-05）
+     * ——通知里一键直停同样属于"单次误操作即不可逆"，必须走确认。
+     */
+    private fun buildNotification(title: String, text: String): Notification {
         val contentIntent = PendingIntent.getActivity(
             this,
             1,
@@ -1352,15 +1397,19 @@ class MicCaptureService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or pendingIntentImmutableFlag()
         )
 
-        val stopIntent = PendingIntent.getService(
+        val confirmStopIntent = PendingIntent.getActivity(
             this,
             2,
-            buildStopIntent(this),
+            Intent(this, MainActivity::class.java).apply {
+                action = MainActivity.ACTION_CONFIRM_STOP
+                putExtra(MainActivity.EXTRA_CONFIRM_STOP, true)
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or pendingIntentImmutableFlag()
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.notification_title))
+            .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_stat_mic)
             .setContentIntent(contentIntent)
@@ -1371,7 +1420,7 @@ class MicCaptureService : Service() {
             .addAction(
                 R.drawable.ic_stat_mic,
                 getString(R.string.notification_action_stop),
-                stopIntent
+                confirmStopIntent
             )
             .build()
     }
@@ -1379,7 +1428,7 @@ class MicCaptureService : Service() {
     private fun updateNotification(text: String) {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         try {
-            manager.notify(NOTIFICATION_ID, buildNotification(text))
+            manager.notify(NOTIFICATION_ID, buildNotification(stateWord(currentState()), text))
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "更新通知失败：${t.message}")
         }

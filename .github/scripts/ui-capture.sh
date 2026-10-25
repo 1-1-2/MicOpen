@@ -115,15 +115,17 @@ sleep 3
 
 echo "[ui] 1/4 主页"
 snap 01-home
-# 主操作按钮是二态：服务由 install-app.sh 预启动（调试音）→ 显示「停止服务」；
-# 未启动时显示「启动服务」——两者其一即通过，不能写死单态（首轮曾误报 WARN）。
-if grep -qF "停止服务" "$OUT/01-home.xml" 2>/dev/null || grep -qF "启动服务" "$OUT/01-home.xml" 2>/dev/null; then
-    echo "  [PASS] 主页-主操作按钮：启动/停止服务（二态任一）"
+# 主操作按钮是二态（D-15：文案「启动/停止」）：服务由 install-app.sh 预启动
+# （调试音）→ 显示「停止」；未启动时显示「启动」——两者其一即通过，不能写死
+# 单态（首轮曾误报 WARN）。
+if grep -qF "停止" "$OUT/01-home.xml" 2>/dev/null || grep -qF "启动" "$OUT/01-home.xml" 2>/dev/null; then
+    echo "  [PASS] 主页-主操作按钮：启动/停止（二态任一）"
 else
-    echo "  [WARN] 主页-主操作按钮（启动/停止服务）均未找到"
+    echo "  [WARN] 主页-主操作按钮（启动/停止）均未找到"
 fi
-assert_text 01-home "手机地址" "主页-手机地址"
-assert_text 01-home "推流音量" "主页-设置区"
+assert_text 01-home "推流音量" "主页-推流音量点轨（D-18）"
+# 地址行可见文本只有 IP:端口（无标签），其无障碍 content-desc 带「手机地址」前缀
+assert_text 01-home "手机地址" "主页-手机地址（D-16）"
 
 echo "[ui] 2/4 导航抽屉"
 open_drawer
@@ -143,11 +145,12 @@ assert_text 03-appearance "配色" "外观-配色"
 echo "[ui] 4/4 采集设置页"
 goto "采集设置"
 snap 04-capture
-assert_text 04-capture "音源模式" "采集-音源模式"
-assert_text 04-capture "麦克风" "采集-麦克风"
-assert_text 04-capture "跟随系统" "采集-跟随系统"
+# D-19/D-20：音源与输入设备已 chips 化（子标签「音源」「输入设备」+ 横排 chip）
+assert_text 04-capture "音源" "采集-音源 chips 组"
+assert_text 04-capture "麦克风" "采集-音源 chips（麦克风档）"
+assert_text 04-capture "跟随系统" "采集-输入设备 chips（跟随系统）"
 
-# 下滑看效果开关区（降噪/回声/增益），截第二张
+# 下滑看系统效果开关区（NS/AEC/AGC），截第二张
 adb_t shell input swipe 540 1500 540 700 300 >/dev/null 2>&1 || true
 sleep 1
 snap 05-capture-effects

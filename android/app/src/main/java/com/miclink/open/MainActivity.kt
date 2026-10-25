@@ -4,6 +4,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -33,12 +35,23 @@ import com.miclink.open.ui.theme.WomicTheme
  *
  * 与服务的通信：绑定 [MicCaptureService] + [MicCaptureService.CaptureStatusListener]
  * 回调（主线程），状态汇入 [MainViewModel]；统计由 500ms 轮询补齐。
+ *
+ * 「停止」二次确认（C-05）：主页按钮与前台服务通知的「停止」都只置
+ * [MainViewModel.stopConfirmPending]，由 AppNav 的统一 AlertDialog 确认后才
+ * 真正 [onStopClicked]——通知侧经 [ACTION_CONFIRM_STOP] Intent 打开本
+ * Activity 触发（见 [handleConfirmStopIntent]），两端共用同一条确认路径。
  */
 class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
         private const val UI_REFRESH_INTERVAL_MS = 500L
+
+        /** 通知「停止」动作的 Intent action（打开本 Activity 进入确认流程）。 */
+        const val ACTION_CONFIRM_STOP = "com.miclink.open.action.CONFIRM_STOP"
+
+        /** 确认停止的 Intent extra（[handleConfirmStopIntent] 识别用）。 */
+        const val EXTRA_CONFIRM_STOP = "extra.confirm_stop"
     }
 
     private val vm: MainViewModel by viewModels()
@@ -107,6 +120,10 @@ class MainActivity : ComponentActivity() {
             // 采集选项变更即时推送给运行中的服务（500ms 内生效，见
             // MicCaptureService.updateCaptureSettings：推流中会重建 AudioRecord）
             vm.pushCaptureSettings(service)
+            // 音量档位 / 静音态即时推送（D-18：运行中可调，见 MicCaptureService.updateVolume）
+            vm.pushVolume(service)
+            // 传输方式实读（D-16 诚实性：真实网络类型，不写死「Wi-Fi」）
+            vm.onTransportChanged(transportLabel(this@MainActivity))
             service?.let { vm.onListeningAddress(it.listeningAddress()) }
             mainHandler.postDelayed(this, UI_REFRESH_INTERVAL_MS)
         }
@@ -121,6 +138,12 @@ class MainActivity : ComponentActivity() {
         val prefs = Prefs(this)
         vm.loadConfig(prefs)
         vm.loadTheme(prefs)
+
+        // 通知「停止」经本 Activity 打开（singleTop）：冷启动走 onCreate 的
+        // intent，热启动走 onNewIntent；均只置确认标志，不直接停服务（C-05）。
+        if (savedInstanceState == null) {
+            handleConfirmStopIntent(intent)
+        }
 
         setContent {
             val theme: ThemeState = vm.themeState
@@ -137,6 +160,20 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // singleTop 复用：更新 Activity 持有的 intent，并走确认停止分支
+        setIntent(intent)
+        handleConfirmStopIntent(intent)
+    }
+
+    /** 识别通知「停止」Intent：置确认标志（弹窗由 AppNav 统一呈现）。 */
+    private fun handleConfirmStopIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_CONFIRM_STOP, false) == true) {
+            vm.requestStopConfirmation()
         }
     }
 
@@ -196,7 +233,12 @@ class MainActivity : ComponentActivity() {
 
     private fun startCaptureService() {
         val config = vm.readConfig() ?: return
-        val intent = MicCaptureService.buildStartIntent(this, config)
+        // 落盘用「静音前档位」（muted 是瞬态不持久化）；START Intent 带
+        // 当前生效音量（静音中启动 = 0），避免"界面静音、服务却有声"的窗口。
+        val intent = MicCaptureService.buildStartIntent(
+            this,
+            config.copy(volume = vm.effectiveVolume())
+        )
         try {
             ContextCompat.startForegroundService(this, intent)
         } catch (t: Throwable) {
@@ -219,5 +261,33 @@ class MainActivity : ComponentActivity() {
         } catch (t: Throwable) {
             Log.w(TAG, "停止服务失败：${t.message}")
         }
+    }
+}
+
+/**
+ * 当前网络传输方式（主页「传输方式」字段，D-16）。
+ *
+ * 诚实性：实读 [ConnectivityManager] 的活跃网络能力，不写死「Wi-Fi」；
+ * 读不到（无权限/无活跃网络）时返回空串，由 UI 显示「—」。
+ */
+private fun transportLabel(context: Context): String {
+    val unknown = ""
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        ?: return unknown
+    return try {
+        val network = cm.activeNetwork ?: return unknown
+        val caps = cm.getNetworkCapabilities(network) ?: return unknown
+        when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ->
+                context.getString(R.string.home_transport_wifi)
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ->
+                context.getString(R.string.home_transport_cellular)
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ->
+                context.getString(R.string.home_transport_ethernet)
+            else -> unknown
+        }
+    } catch (t: Throwable) {
+        Log.w("MainActivity", "读取网络传输方式失败：${t.message}")
+        unknown
     }
 }

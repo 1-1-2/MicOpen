@@ -358,7 +358,7 @@ private fun LivePreviewCard(scheme: ColorScheme, caption: String) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Button(onClick = {}) {
-                    Text(stringResource(R.string.action_start))
+                    Text(stringResource(R.string.home_action_start))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Swatch(MaterialTheme.colorScheme.primary)
@@ -371,8 +371,8 @@ private fun LivePreviewCard(scheme: ColorScheme, caption: String) {
     }
 }
 
-/** 主题模式 -> 展示名资源。 */
-private fun themeModeLabel(mode: ThemeMode): Int = when (mode) {
+/** 主题模式 -> 展示名资源（主页设置摘要「主题」行共用，internal 防跨模块漂移）。 */
+internal fun themeModeLabel(mode: ThemeMode): Int = when (mode) {
     ThemeMode.SYSTEM -> R.string.theme_mode_system
     ThemeMode.LIGHT -> R.string.theme_mode_light
     ThemeMode.DARK -> R.string.theme_mode_dark

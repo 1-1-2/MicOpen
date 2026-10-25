@@ -5,6 +5,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.toArgb
@@ -14,6 +15,9 @@ import androidx.core.view.WindowCompat
 import com.miclink.open.theme.AppPalette
 import com.miclink.open.theme.ThemeMode
 import com.miclink.open.theme.buildColorScheme
+import com.miclink.open.ui.component.LocalMicLinkTokens
+import com.miclink.open.ui.component.darkMicLinkTokens
+import com.miclink.open.ui.component.lightMicLinkTokens
 
 /**
  * WomicTheme -- 应用主题（Material 3 + 动态取色 / 种子调色板 / AMOLED 纯黑）。
@@ -25,7 +29,10 @@ import com.miclink.open.theme.buildColorScheme
  *   2. 用 remember 缓存 ColorScheme —— 明暗/调色板/AMOLED 任一变化才重新生成
  *      （material-kolor 生成涉及 HCT 色彩空间换算，不是零成本，且切换要"即时
  *      生效无闪烁"，验收 #1，靠状态驱动重组而不是重建 Activity）；
- *   3. 同步系统栏（状态栏/导航栏）颜色与图标明暗，避免深色主题顶着一个亮色状态栏。
+ *   3. 同步系统栏（状态栏/导航栏）颜色与图标明暗，避免深色主题顶着一个亮色状态栏；
+ *   4. 经 [LocalMicLinkTokens] 注入设计令牌（手册 §4.1）：accent 取当前
+ *      ColorScheme.primary（手册规则 5：唯一可随动态取色替换的语义色），
+ *      其余令牌按明暗取固定值——UI 零件一律经 CompositionLocal 取色。
  *
  * @param mode 主题模式；
  * @param palette 配色（Dynamic 或预置 Seed）；
@@ -68,5 +75,24 @@ fun WomicTheme(
         }
     }
 
-    MaterialTheme(colorScheme = colorScheme, typography = Typography(), content = content)
+    // 设计令牌（手册 §4.1）：accent/onAccent 跟随当前 ColorScheme（规则 5 唯一
+    // 可动态取色替换的语义色），ok/warn/err/text-*/bg-*/border 固定；派生色
+    // （徽标 12% 底等）由 MicLinkTokens 运行时按混合公式计算，不落第二份常量。
+    val tokens = remember(dark, colorScheme) {
+        if (dark) {
+            darkMicLinkTokens(
+                accent = colorScheme.primary,
+                onAccent = colorScheme.onPrimary
+            )
+        } else {
+            lightMicLinkTokens(
+                accent = colorScheme.primary,
+                onAccent = colorScheme.onPrimary
+            )
+        }
+    }
+
+    CompositionLocalProvider(LocalMicLinkTokens provides tokens) {
+        MaterialTheme(colorScheme = colorScheme, typography = Typography(), content = content)
+    }
 }

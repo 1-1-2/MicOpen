@@ -9,16 +9,21 @@ import com.miclink.open.theme.ThemeMode
 import com.miclink.open.theme.ThemeState
 
 /**
- * 主界面状态：配置 + 服务状态 + 统计 + 电平。
+ * 主界面状态：配置 + 服务状态 + 会话统计。
  *
  * 全部由 [MainActivity] 从服务回调 / SharedPreferences 灌入；
  * Compose 侧只读 [uiState]，不直接碰服务（关注点分离，旋转屏后状态不丢）。
+ *
+ * 数据诚实性（定稿规范 D-16）：延迟 / 丢包 app 不测量，UI 恒显示「—」，
+ * 本状态不提供任何遥测字段；时长取自服务记录的回话开始时刻（真实值）。
  */
 data class MainUiState(
     // 可编辑配置（启动服务时锁定）
     val controlPortText: String = Prefs.DEFAULT_CONTROL_PORT.toString(),
     val volume: Int = Prefs.DEFAULT_VOLUME,
     val debugTone: Boolean = false,
+    /** 静音开关（瞬态 UI 状态，不落盘；协议层以音量 0 实现真静音）。 */
+    val muted: Boolean = false,
     // 采集选项（音源 / 麦克风 / 系统效果）：与端口不同，录音中也可改，即时生效
     val capture: CaptureSettings = CaptureSettings(),
     // 当前实际生效的输入设备（AudioRecord.getRoutedDevice；未录音为 null）
@@ -27,17 +32,23 @@ data class MainUiState(
     val state: String = MicCaptureService.STATE_IDLE,
     val detail: String = "",
     val listeningAddress: String = "",
+    /** 本回推流会话开始时刻（SystemClock.elapsedRealtime；0 = 无会话，时长显示「—」）。 */
+    val sessionStartElapsedMs: Long = 0L,
+    /** 网络传输方式（ConnectivityManager 实读；空 = 未知，UI 显示「—」）。 */
+    val transport: String = "",
     // 统计（轮询）
     val packets: Long = 0L,
     val bytes: Long = 0L,
     val failures: Int = 0,
-    // 电平
+    // 电平（保留服务回调链路；定稿主页不渲染电平表，见 onLevel 注释）
     val rmsDb: Float = LevelMeter.SILENCE_DB,
     val peakDb: Float = LevelMeter.SILENCE_DB,
     // 错误提示（一次性事件，UI 展示后应调 [consumeMessage]）
     val error: String? = null,
     // 非致命提示（一次性事件，服务仍在运行；与 error 共用同一弹窗，error 优先）
-    val message: String? = null
+    val message: String? = null,
+    // 「停止」二次确认待决（C-05：主页按钮与通知停止共用同一确认路径）
+    val stopConfirmPending: Boolean = false
 ) {
     val isRunning: Boolean get() = MicCaptureService.isRunning
     val isStreaming: Boolean get() = MicCaptureService.isStreaming
@@ -74,6 +85,12 @@ class MainViewModel : ViewModel() {
 
     /** 有待推送给运行中服务的采集选项（下次 [pushCaptureSettings] 时同步）。 */
     private var capturePushPending = false
+
+    /** 有待推送给运行中服务的协议音量（主页点轨 / 静音开关变更后置位）。 */
+    private var volumePushPending = false
+
+    /** 静音前的音量档位（取消静音时恢复；前值为 0 时恢复 [Prefs.DEFAULT_VOLUME]）。 */
+    private var volumeBeforeMute: Int = Prefs.DEFAULT_VOLUME
 
     /** Activity 创建时从 Prefs 灌入可编辑配置。 */
     fun loadConfig(prefs: Prefs) {
@@ -116,10 +133,50 @@ class MainViewModel : ViewModel() {
         uiState = uiState.copy(controlPortText = filtered)
     }
 
+    /**
+     * 音量档位变更（主页十档点轨，协议 0-9：0 静音 / 5 原样 / 每档 ±6 dB）。
+     *
+     * 与旧行为的差别：音量**运行中也可调**（服务 [MicCaptureService.updateVolume]
+     * 每包读取），不再"运行中禁用"——那会造成"控件可见可用但无实效果"的假控件，
+     * 违反诚实性纪律。变更即时落盘（重启后保持）并推送运行中的服务。
+     */
     fun onVolumeChanged(value: Int) {
-        // 协议音量字节只认 0-9 档位（0 静音 / 5 原样 / 每档 ±6 dB），不是 0-255 连续值
-        uiState = uiState.copy(volume = value.coerceIn(0, 9))
+        val level = value.coerceIn(0, 9)
+        if (level == uiState.volume) {
+            return
+        }
+        uiState = uiState.copy(volume = level)
+        if (level > 0) {
+            volumeBeforeMute = level
+        }
+        volumePushPending = true
+        configStore?.saveVolume(level)
     }
+
+    /**
+     * 静音开关（D-18 联动）：
+     *  - 开：记住当前档位，协议音量置 0（真静音，推流不中断）；
+     *  - 关：恢复静音前档位（前值为 0 时恢复默认档 5）。
+     *
+     * [muted] 是瞬态 UI 状态（不落盘）：重启后回到已保存的档位。
+     */
+    fun onMuteChanged(value: Boolean) {
+        if (value == uiState.muted) {
+            return
+        }
+        if (value) {
+            volumeBeforeMute = uiState.volume
+            uiState = uiState.copy(muted = true)
+        } else {
+            val restore = if (volumeBeforeMute in 1..9) volumeBeforeMute else Prefs.DEFAULT_VOLUME
+            uiState = uiState.copy(muted = false, volume = restore)
+            configStore?.saveVolume(restore)
+        }
+        volumePushPending = true
+    }
+
+    /** 当前生效的协议音量（静音时 0；START Intent 与推送共用）。 */
+    fun effectiveVolume(): Int = if (uiState.muted) 0 else uiState.volume
 
     fun onDebugToneChanged(value: Boolean) {
         uiState = uiState.copy(debugTone = value)
@@ -178,6 +235,19 @@ class MainViewModel : ViewModel() {
         capturePushPending = false
     }
 
+    /**
+     * 把当前生效的协议音量同步给运行中的服务（Activity 的 500ms 刷新循环调用）。
+     *
+     * 静音是持续性 UI 状态：静音期间每次刷新都推 0（幂等写，保证"重启服务后
+     * 界面仍显示静音"与"服务真的在静音"一致）；档位变更后推一次即可。
+     */
+    fun pushVolume(service: MicCaptureService?) {
+        val svc = service ?: return
+        if (!volumePushPending && !uiState.muted) return
+        svc.updateVolume(effectiveVolume())
+        volumePushPending = false
+    }
+
     // ------------------------------------------------------------------
     // 主题（变更即时生效 + 即时落盘）
     // ------------------------------------------------------------------
@@ -203,9 +273,23 @@ class MainViewModel : ViewModel() {
         themeStore?.saveTheme(state)
     }
 
-    /** 服务状态回调（主线程）。 */
+    /**
+     * 服务状态回调（主线程）。
+     *
+     * 会话时长诚实性：非推流态一律清零（服务记录的 [sessionStartElapsedMs]
+     * 才是唯一事实来源，这里只兜"服务已断开但绑定还没断"的窗口）。
+     */
     fun onServiceState(state: String, detail: String) {
-        uiState = uiState.copy(state = state, detail = detail)
+        uiState = uiState.copy(
+            state = state,
+            detail = detail,
+            sessionStartElapsedMs =
+                if (state == MicCaptureService.STATE_STREAMING) {
+                    uiState.sessionStartElapsedMs
+                } else {
+                    0L
+                }
+        )
     }
 
     /** 服务监听地址变化（启动成功后刷新）。 */
@@ -213,20 +297,56 @@ class MainViewModel : ViewModel() {
         uiState = uiState.copy(listeningAddress = address)
     }
 
-    /** 电平回调（主线程，约 20 次/秒）。 */
+    /** 网络传输方式变化（Activity 刷新循环经 ConnectivityManager 实读后灌入）。 */
+    fun onTransportChanged(label: String) {
+        if (label == uiState.transport) {
+            return
+        }
+        uiState = uiState.copy(transport = label)
+    }
+
+    /**
+     * 电平回调（主线程，约 20 次/秒）。
+     *
+     * 保留说明：定稿主页不渲染电平表（D-16 字段行不含电平），但服务->UI 的
+     * 电平回调链路**保持不动**——删它会改变服务侧既有行为（遥测埋点依赖它），
+     * 且 uiState 上的 rmsDb/peakDb 仍可供后续功能使用，不是死代码。
+     */
     fun onLevel(rmsDb: Float, peakDb: Float) {
         uiState = uiState.copy(rmsDb = rmsDb, peakDb = peakDb)
     }
 
     /** 轮询统计（Activity 的 500ms 刷新循环调用）。 */
     fun pollStats(service: MicCaptureService?) {
-        val svc = service ?: return
+        val svc = service
+        if (svc == null) {
+            // 服务断开（停止/崩溃）：清会话时长，不显示上一会话的残留值
+            if (uiState.sessionStartElapsedMs != 0L) {
+                uiState = uiState.copy(sessionStartElapsedMs = 0L)
+            }
+            return
+        }
         uiState = uiState.copy(
             packets = svc.packetsSent(),
             bytes = svc.bytesSent(),
             failures = svc.sendFailures(),
-            routedDeviceLabel = svc.routedDeviceLabel()
+            routedDeviceLabel = svc.routedDeviceLabel(),
+            // 会话开始时刻是服务级全局状态（单连接服务，同 isStreaming 风格）
+            sessionStartElapsedMs = MicCaptureService.sessionStartElapsedMs
         )
+    }
+
+    /**
+     * 「停止」二次确认待决（C-05）：主页按钮与前台服务通知的「停止」
+     * 共用本标志 + AppNav 的统一 AlertDialog，不各有实现。
+     */
+    fun requestStopConfirmation() {
+        uiState = uiState.copy(stopConfirmPending = true)
+    }
+
+    /** 确认弹窗关闭（取消 / 已确认并执行停止）。 */
+    fun consumeStopConfirmation() {
+        uiState = uiState.copy(stopConfirmPending = false)
     }
 
     /** 错误（服务会自行停止；UI 弹一次性对话框，见 [consumeMessage]）。 */

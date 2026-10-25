@@ -1,6 +1,17 @@
 package com.miclink.open.ui.screen
 
+import android.os.SystemClock
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,290 +19,459 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.miclink.open.AudioSourceOption
 import com.miclink.open.MainUiState
 import com.miclink.open.MainViewModel
 import com.miclink.open.MicCaptureService
 import com.miclink.open.R
 import com.miclink.open.theme.ThemeMode
+import com.miclink.open.theme.ThemeState
 import com.miclink.open.ui.component.CardDivider
-import com.miclink.open.ui.component.DotSlider
+import com.miclink.open.ui.component.DotTrack
 import com.miclink.open.ui.component.HintText
+import com.miclink.open.ui.component.LabeledSwitchRow
+import com.miclink.open.ui.component.LocalMicLinkTokens
 import com.miclink.open.ui.component.SectionCard
-import com.miclink.open.ui.component.VoiceMeter
+import com.miclink.open.ui.component.SettingsNavRow
+import com.miclink.open.ui.component.StatusBadge
 import com.miclink.open.ui.theme.WomicTheme
 
 /**
- * HomeScreen -- 主页（由原 MainActivity 内联的 MainScreen 搬出）。
+ * HomeScreen -- 主页（定稿规范 D-15…D-18）。
  *
- * 布局沿用 MicYou 风格：常用设置平铺，不套多层设置菜单；顶部状态卡集中展示
- * 连接状态 / 手机地址 / 统计 / 电平。原贴在底部的"使用说明"卡已移入
- * [AboutScreen]（导航重构后主页只留操作相关元素）。
+ * 三张卡，全部数据来自服务真实回传（数据诚实性：测不到的显示「—」）：
+ *  1. **状态卡**（D-16）：大状态徽标 + 右端监听地址 + 四行字段
+ *     （传输方式 / 延迟 / 丢包 / 时长）+ 1px 分隔线 + 主按钮；
+ *  2. **音量卡**（D-18）：十档离散点轨（协议 0-9，吸附整数档）+ 静音开关；
+ *  3. **设置摘要卡**（D-17）：音源 / 系统降噪 / 主题三行跳转。
  *
- * 一次性错误/消息弹窗不在这里：已上移到 AppNav 的应用级弹窗（覆盖在当前
- * 目的地之上），所有页面共用（同一事实一处实现）。
- * 麦克风 / 音源 / 系统效果等采集选项在抽屉的"采集设置"页（[CaptureScreen]）。
+ * 主按钮（D-15）：空闲 = accent 填充「启动」；运行 = err 描边「停止」+
+ * err 呼吸外发光（仅运行态）。「停止」不直接停服务，而是经
+ * [MainViewModel.requestStopConfirmation] 由 AppNav 弹二次确认（C-05）；
+ * 前台服务通知的「停止」走同一条确认路径（MainActivity EXTRA_CONFIRM_STOP）。
  *
  * @param vm 主界面状态容器；
  * @param onStartClicked 启动服务（含权限申请流程，由 Activity 实现）；
- * @param onStopClicked 停止服务。
+ * @param onOpenCaptureSettings 跳转采集设置（音源 / 输入设备 / 高级）；
+ * @param onOpenAppearance 跳转外观页。
  */
 @Composable
 fun HomeScreen(
     vm: MainViewModel,
     onStartClicked: () -> Unit,
-    onStopClicked: () -> Unit
+    onOpenCaptureSettings: () -> Unit,
+    onOpenAppearance: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val state = vm.uiState
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ---- 状态卡 ----
-        StatusCard(state)
-
-        // ---- 主操作 ----
-        Button(
-            onClick = { if (state.isRunning) onStopClicked() else onStartClicked() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            enabled = state.isRunning || !state.isStreaming
-        ) {
-            Icon(
-                imageVector = if (state.isRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(
-                    if (state.isRunning) R.string.action_stop else R.string.action_start
-                ),
-                style = MaterialTheme.typography.titleMedium
-            )
-        }
-
-        // ---- 平铺设置（收进分区卡，不套嵌套层级）----
-        SectionCard(title = stringResource(R.string.group_settings)) {
-            // 控制端口
-            OutlinedTextField(
-                value = state.controlPortText,
-                onValueChange = { vm.onControlPortTextChanged(it) },
-                label = { Text(stringResource(R.string.label_control_port)) },
-                supportingText = { Text(stringResource(R.string.hint_control_port)) },
-                singleLine = true,
-                enabled = !state.isRunning,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                isError = state.controlPortText.toIntOrNull()?.let { it !in 1..65535 } ?: true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            CardDivider()
-
-            // 音量：协议 0-9 十档（不是 0-255 连续值），每档 ±6 dB
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.label_volume),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.width(84.dp)
-                )
-                DotSlider(
-                    value = state.volume.coerceIn(0, 9).toFloat(),
-                    onValueChange = { vm.onVolumeChanged(it.toInt()) },
-                    valueRange = 0f..9f,
-                    steps = 8,
-                    enabled = !state.isRunning,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = stringResource(R.string.volume_value, state.volume, volumeDb(state.volume)),
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.width(88.dp),
-                    textAlign = TextAlign.End
-                )
-            }
-            HintText(text = stringResource(R.string.hint_volume))
-
-            CardDivider()
-
-            // 调试音
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.label_debug_tone),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        text = stringResource(R.string.hint_debug_tone),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = state.debugTone,
-                    onCheckedChange = { vm.onDebugToneChanged(it) },
-                    enabled = !state.isRunning
-                )
-            }
-        }
-
-        // 采集选项入口提示（麦克风 / 音源 / 系统效果在抽屉的"采集设置"页）
-        Text(
-            text = stringResource(R.string.capture_location_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        StatusSection(
+            state = state,
+            onStartClicked = onStartClicked,
+            onStopRequested = { vm.requestStopConfirmation() }
+        )
+        VolumeSection(
+            state = state,
+            onVolumeChanged = { vm.onVolumeChanged(it) },
+            onMuteChanged = { vm.onMuteChanged(it) }
+        )
+        SettingsSummarySection(
+            state = state,
+            themeState = vm.themeState,
+            onOpenCaptureSettings = onOpenCaptureSettings,
+            onOpenAppearance = onOpenAppearance
         )
     }
 }
 
-/** 协议音量档位 → dB 语义：0 静音；1-4 右移（-6/-12/-18/-24 dB）；5 原样；6-9 左移（+6…+24 dB） */
-private fun volumeDb(v: Int): String = when {
-    v == 0 -> "-inf"
-    v == 5 -> "0 dB"
-    v < 5 -> "-${(5 - v) * 6} dB"
-    else -> "+${(v - 5) * 6} dB"
-}
+// ------------------------------------------------------------------
+// 状态卡（D-16）
+// ------------------------------------------------------------------
 
-/** 状态卡：连接状态 + 手机地址 + 统计 + 电平（原 MainActivity 内联组件，整体搬出）。 */
 @Composable
-private fun StatusCard(state: MainUiState) {
-    Card {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = state.state,
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Spacer(Modifier.weight(1f))
-                val (container, content) = statusColors(state.state)
-                AssistChip(
-                    onClick = {},
-                    enabled = false,
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = container,
-                        labelColor = content
-                    ),
-                    label = { Text(if (state.isStreaming) "LIVE" else "WO MIC") }
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // 手机地址（PC 端要填的）
-            Text(
-                text = stringResource(R.string.phone_address),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+private fun StatusSection(
+    state: MainUiState,
+    onStartClicked: () -> Unit,
+    onStopRequested: () -> Unit
+) {
+    SectionCard {
+        // ① 大状态徽标（文字 = 服务状态词，与前台通知标题同一事实来源）+ 右端地址
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val (badgeColor, badgeContainer) = statusBadgeColors(state.state)
+            StatusBadge(
+                text = MicCaptureService.stateWord(state.state),
+                color = badgeColor,
+                container = badgeContainer
             )
-            Text(
-                text = state.listeningAddress.ifBlank { "—" },
-                style = MaterialTheme.typography.headlineSmall,
-                fontFamily = FontFamily.Monospace
-            )
-            Text(
-                text = stringResource(R.string.phone_address_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // 统计行
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                StatItem(stringResource(R.string.stat_packets), state.packets.toString())
-                StatItem(
-                    stringResource(R.string.stat_bytes),
-                    stringResource(R.string.stat_kb, (state.bytes / 1024).toInt())
-                )
-                StatItem(stringResource(R.string.stat_failures), state.failures.toString())
+            Spacer(Modifier.weight(1f))
+            val address = state.listeningAddress.ifBlank {
+                stringResource(R.string.home_value_unknown)
             }
-
-            Spacer(Modifier.height(8.dp))
-
-            // 电平（RMS / Peak 双条 + dB 读数 + 状态徽标 + 平滑衰减）
-            VoiceMeter(rmsDb = state.rmsDb, peakDb = state.peakDb)
-
-            if (state.detail.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = state.detail,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
+            // 无障碍标签在组合层取（semantics lambda 不是 @Composable 上下文）
+            val addressLabel = stringResource(R.string.phone_address)
+            Text(
+                text = address,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace
+                ),
+                color = LocalMicLinkTokens.current.text2,
+                maxLines = 1,
+                // 无障碍标签（可见文本只有地址；朗读时补上用途）
+                modifier = Modifier.semantics {
+                    contentDescription = "$addressLabel $address"
+                }
+            )
         }
+
+        Spacer(Modifier.height(16.dp))
+
+        // ② 分行字段四行（禁「·」分隔）：传输方式 / 延迟 / 丢包 / 时长
+        // 诚实性：延迟与丢包 app 不测量，恒显示「—」，不造假遥测。
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatusFieldRow(
+                label = stringResource(R.string.home_field_transport),
+                value = state.transport.ifBlank { stringResource(R.string.home_value_unknown) }
+            )
+            StatusFieldRow(
+                label = stringResource(R.string.home_field_latency),
+                value = stringResource(R.string.home_value_unknown)
+            )
+            StatusFieldRow(
+                label = stringResource(R.string.home_field_loss),
+                value = stringResource(R.string.home_value_unknown)
+            )
+            StatusFieldRow(
+                label = stringResource(R.string.home_field_duration),
+                value = formatSessionDuration(
+                    startElapsedMs = state.sessionStartElapsedMs,
+                    nowElapsedMs = SystemClock.elapsedRealtime()
+                ).ifEmpty { stringResource(R.string.home_value_unknown) }
+            )
+        }
+
+        // ③ 1px 分隔线（上下各 16）
+        Spacer(Modifier.height(16.dp))
+        CardDivider()
+        Spacer(Modifier.height(16.dp))
+
+        // ④ 主按钮
+        MainActionButton(
+            running = state.isRunning,
+            onStart = onStartClicked,
+            onStopRequest = onStopRequested
+        )
     }
 }
 
+/** 分行字段行（D-16）：标签 13sp text-2 左、值 14sp text-1 右，行高 24。 */
 @Composable
-private fun StatItem(label: String, value: String) {
-    Column {
+private fun StatusFieldRow(label: String, value: String) {
+    val tokens = LocalMicLinkTokens.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+            color = tokens.text2
         )
-        Text(text = value, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+            color = tokens.text1,
+            maxLines = 1
+        )
     }
 }
 
-/** 状态 -> chip 配色（容器色, 内容色）。 */
+/** 服务状态 -> 徽标配色（内容色, 容器色 = 语义色 12% 混合 bg-card）。 */
 @Composable
-private fun statusColors(state: String): Pair<Color, Color> {
-    val scheme = MaterialTheme.colorScheme
+private fun statusBadgeColors(state: String): Pair<Color, Color> {
+    val tokens = LocalMicLinkTokens.current
     return when (state) {
-        MicCaptureService.STATE_STREAMING -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        MicCaptureService.STATE_CONNECTED -> scheme.primaryContainer to scheme.onPrimaryContainer
-        MicCaptureService.STATE_LISTENING -> scheme.secondaryContainer to scheme.onSecondaryContainer
-        MicCaptureService.STATE_ERROR -> scheme.errorContainer to scheme.onErrorContainer
-        else -> scheme.surfaceVariant to scheme.onSurfaceVariant
+        MicCaptureService.STATE_STREAMING -> tokens.ok to tokens.okContainer
+        MicCaptureService.STATE_CONNECTED -> tokens.accent to tokens.accentContainer
+        MicCaptureService.STATE_LISTENING -> tokens.warn to tokens.warnContainer
+        MicCaptureService.STATE_STARTING -> tokens.accent to tokens.accentContainer
+        MicCaptureService.STATE_ERROR -> tokens.err to tokens.errContainer
+        // 空闲 / 已停止：中性色（无语义色可用，不用假彩色）
+        else -> tokens.text2 to tokens.bgSunken
     }
+}
+
+/**
+ * 会话时长文本（mm:ss，超过一小时 h:mm:ss）。
+ *
+ * @param startElapsedMs 服务记录的本回合话开始时刻（elapsedRealtime；0 = 无会话）。
+ * @param nowElapsedMs 当前时刻（调用方传入，保证纯函数可测）。
+ * @return 无会话返回空串（调用方显示「—」）。
+ */
+private fun formatSessionDuration(startElapsedMs: Long, nowElapsedMs: Long): String {
+    if (startElapsedMs <= 0L) {
+        return ""
+    }
+    val seconds = ((nowElapsedMs - startElapsedMs) / 1000L).coerceAtLeast(0L)
+    val hours = seconds / 3600
+    val minutes = (seconds % 3600) / 60
+    val secs = seconds % 60
+    return if (hours > 0) {
+        String.format("%d:%02d:%02d", hours, minutes, secs)
+    } else {
+        String.format("%02d:%02d", minutes, secs)
+    }
+}
+
+// ------------------------------------------------------------------
+// 主按钮（D-15 / D-22 呼吸外发光）
+// ------------------------------------------------------------------
+
+/** 呼吸外发光半周期（ms）：600ms 正向 + 600ms 反向 = 1200ms 整周期。 */
+private const val GLOW_HALF_CYCLE_MS = 600
+
+/** 呼吸外发光峰值 alpha（0 → 0.30 → 0）。 */
+private const val GLOW_MAX_ALPHA = 0.30f
+
+/**
+ * 主操作按钮：高 48、R2、整宽。
+ *
+ * - 空闲：accent 填充 + onAccent 文字「启动」；
+ * - 运行：transparent 底 + err 1px 描边 + err 文字「停止」+ err 呼吸外发光。
+ *
+ * 呼吸参数与 Windows 接收端一致（D-22）：周期 1200ms（tween 600ms +
+ * RepeatMode.Reverse）、alpha 0→0.30→0、err 语义色、**仅采集运行中**。
+ * 修改任一端须同步另一端（跨端一致性验收项）。
+ */
+@Composable
+private fun MainActionButton(
+    running: Boolean,
+    onStart: () -> Unit,
+    onStopRequest: () -> Unit
+) {
+    val tokens = LocalMicLinkTokens.current
+    val shape = RoundedCornerShape(8.dp)
+    val glowAlpha = rememberBreathingGlow(enabled = running)
+
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        // 呼吸外发光层：比按钮大一圈 + 羽化；alpha 归零时不渲染（省无效模糊）
+        if (running && glowAlpha > 0.001f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .blur(16.dp)
+                    .background(
+                        color = tokens.err.copy(alpha = glowAlpha),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(shape)
+                .background(if (running) Color.Transparent else tokens.accent)
+                .border(
+                    width = if (running) 1.dp else 0.dp,
+                    color = if (running) tokens.err else Color.Transparent,
+                    shape = shape
+                )
+                .clickable { if (running) onStopRequest() else onStart() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = stringResource(
+                    if (running) R.string.home_action_stop else R.string.home_action_start
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = if (running) tokens.err else tokens.onAccent
+            )
+        }
+    }
+}
+
+/**
+ * 呼吸外发光 alpha（0 → [GLOW_MAX_ALPHA] → 0，周期 2 * [GLOW_HALF_CYCLE_MS]）。
+ *
+ * 仅 [enabled]（采集运行中）时启动无限动画；停止时组件直接不创建
+ * infinite transition（省电，也不留常驻重组）。
+ */
+@Composable
+private fun rememberBreathingGlow(enabled: Boolean): Float {
+    if (!enabled) {
+        return 0f
+    }
+    val transition = rememberInfiniteTransition(label = "stop-glow")
+    val alpha by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = GLOW_MAX_ALPHA,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = GLOW_HALF_CYCLE_MS, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "stop-glow-alpha"
+    )
+    return alpha
+}
+
+// ------------------------------------------------------------------
+// 音量卡（D-18）
+// ------------------------------------------------------------------
+
+@Composable
+private fun VolumeSection(
+    state: MainUiState,
+    onVolumeChanged: (Int) -> Unit,
+    onMuteChanged: (Boolean) -> Unit
+) {
+    val tokens = LocalMicLinkTokens.current
+    // 静音联动：静音开 -> 读数固定「档位 0 · 静音」、点轨置灰（协议 0 = 真静音）
+    val displayVolume = if (state.muted) 0 else state.volume
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.home_volume_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = tokens.text1
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(
+                    R.string.home_volume_reading,
+                    displayVolume,
+                    volumeDb(displayVolume, stringResource(R.string.home_volume_db_mute))
+                ),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace
+                ),
+                fontWeight = FontWeight.Medium,
+                color = tokens.text1,
+                maxLines = 1
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        HintText(text = stringResource(R.string.home_volume_hint))
+        Spacer(Modifier.height(8.dp))
+        DotTrack(
+            value = displayVolume,
+            onValueChange = onVolumeChanged,
+            enabled = !state.muted
+        )
+        Spacer(Modifier.height(4.dp))
+        LabeledSwitchRow(
+            title = stringResource(R.string.home_mute),
+            description = stringResource(R.string.home_mute_desc),
+            checked = state.muted,
+            onCheckedChange = onMuteChanged
+        )
+    }
+}
+
+/**
+ * 协议音量档位 -> dB 语义（手册 §7.2）：0 静音；1-4 每档 -6 dB；5 原样；
+ * 6-9 每档 +6 dB。
+ *
+ * @param muteLabel 0 档的展示词（字符串资源传入，避免 UI 文案硬编码）。
+ */
+private fun volumeDb(volume: Int, muteLabel: String): String = when {
+    volume <= 0 -> muteLabel
+    volume == 5 -> "0 dB"
+    volume < 5 -> "-${(5 - volume) * 6} dB"
+    else -> "+${(volume - 5) * 6} dB"
+}
+
+// ------------------------------------------------------------------
+// 设置摘要卡（D-17）
+// ------------------------------------------------------------------
+
+@Composable
+private fun SettingsSummarySection(
+    state: MainUiState,
+    themeState: ThemeState,
+    onOpenCaptureSettings: () -> Unit,
+    onOpenAppearance: () -> Unit
+) {
+    SectionCard {
+        SettingsNavRow(
+            label = stringResource(R.string.home_row_source),
+            value = audioSourceLabel(state.capture.audioSource),
+            onClick = onOpenCaptureSettings
+        )
+        CardDivider()
+        SettingsNavRow(
+            label = stringResource(R.string.home_row_noise),
+            value = stringResource(
+                if (state.capture.noiseSuppressor) {
+                    R.string.home_value_on
+                } else {
+                    R.string.home_value_off
+                }
+            ),
+            onClick = onOpenCaptureSettings
+        )
+        CardDivider()
+        SettingsNavRow(
+            label = stringResource(R.string.home_row_theme),
+            value = stringResource(themeModeLabel(themeState.mode)),
+            onClick = onOpenAppearance
+        )
+    }
+}
+
+/** 音源 id -> 当前选中档位名（未知 id 回落「默认」，与 sanitize 行为一致）。 */
+@Composable
+private fun audioSourceLabel(id: Int): String {
+    val option = AudioSourceOption.byId(id)
+    val res = option?.labelRes ?: R.string.capture_source_default
+    return stringResource(res)
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
     WomicTheme(mode = ThemeMode.LIGHT) {
-        HomeScreen(vm = MainViewModel(), onStartClicked = {}, onStopClicked = {})
+        HomeScreen(
+            vm = MainViewModel(),
+            onStartClicked = {},
+            onOpenCaptureSettings = {},
+            onOpenAppearance = {}
+        )
     }
 }
