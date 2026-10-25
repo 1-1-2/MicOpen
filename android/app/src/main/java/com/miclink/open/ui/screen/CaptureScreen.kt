@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Input
@@ -36,6 +38,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -67,6 +71,19 @@ import com.miclink.open.ui.component.SectionCard
 import com.miclink.open.ui.theme.WomicTheme
 
 /**
+ * 采集设置页的锚点（D-05）：主页摘要行跳转时用 `capture?focus=<值>` 指定落点。
+ *
+ * 空串 = 无锚点（抽屉直接进采集页），页面行为与加入锚点前完全一致。
+ */
+object CaptureFocus {
+    /** 输入卡（音源 / 输入设备）。 */
+    const val SOURCE: String = "source"
+
+    /** 系统效果卡（NS / AEC / AGC）。 */
+    const val EFFECTS: String = "effects"
+}
+
+/**
  * CaptureScreen -- 采集设置页（抽屉导航目的地之一）。
  *
  * 定稿规范 D-19/D-20/D-21：选项全部 chips 化（图标 + 文字横排、flex-wrap），
@@ -80,9 +97,11 @@ import com.miclink.open.ui.theme.WomicTheme
  * 与主页端口/音量的区别：输入与系统效果**录音中也可改**，变更即时生效
  * （服务重建 AudioRecord，可能有半秒左右杂音），并即时落盘（重启后保持）。
  * 控制端口与调试音仍是「启动前锁定」的运行参数（运行中禁用）。
+ *
+ * @param focus 落点锚点（[CaptureFocus]；空串 = 页首，直接进页面时行为不变）。
  */
 @Composable
-fun CaptureScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
+fun CaptureScreen(vm: MainViewModel, focus: String = "", modifier: Modifier = Modifier) {
     val state = vm.uiState
     val context = LocalContext.current
     val manager = remember(context) { AudioDeviceManager(context) }
@@ -94,6 +113,28 @@ fun CaptureScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val noiseSuppressorAvailable = remember(manager) { manager.isNoiseSuppressorAvailable() }
     val echoCancelerAvailable = remember(manager) { manager.isEchoCancelerAvailable() }
     val gainControlAvailable = remember(manager) { manager.isGainControlAvailable() }
+
+    // D-05：锚点滚动。系统效果卡用 BringIntoViewRequester（让滚动容器自己算偏移，
+    // 不做 y 坐标测量，避免 restoreState 恢复滚动位置后测到错误基准）。
+    val scrollState = rememberScrollState()
+    val effectsBringIntoView = remember { BringIntoViewRequester() }
+    // 卡片完成首次布局后才发 bringIntoView 请求（否则请求落在未 attach 的节点上会被丢弃）
+    var effectsLaidOut by remember { mutableStateOf(false) }
+
+    // 音源锚点 = 输入卡（第一张卡）：回页首。focus 为空（抽屉直接进入）时这两块
+    // 都不做任何事，页面行为与加入锚点前完全一致。
+    LaunchedEffect(focus) {
+        if (focus == CaptureFocus.SOURCE) {
+            scrollState.animateScrollTo(0)
+        }
+    }
+
+    // 系统效果锚点：等首帧布局回填后再请求滚动，只发一次
+    LaunchedEffect(focus, effectsLaidOut) {
+        if (focus == CaptureFocus.EFFECTS && effectsLaidOut) {
+            effectsBringIntoView.bringIntoView()
+        }
+    }
 
     DisposableEffect(manager) {
         val callback = object : AudioDeviceCallback() {
@@ -112,7 +153,7 @@ fun CaptureScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -191,7 +232,14 @@ fun CaptureScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
 
         // ---- 系统效果卡 ----
-        SectionCard(title = stringResource(R.string.capture_section_effects)) {
+        // D-05：作为主页「系统降噪」摘要行的锚点目标（bringIntoView 让滚动容器自己
+        // 算偏移；effectsLaidOut 保证首帧布局完成后才请求）。
+        SectionCard(
+            title = stringResource(R.string.capture_section_effects),
+            modifier = Modifier
+                .bringIntoViewRequester(effectsBringIntoView)
+                .onGloballyPositioned { effectsLaidOut = true }
+        ) {
             EffectSwitchRow(
                 title = stringResource(R.string.capture_effect_ns),
                 description = stringResource(R.string.capture_effect_ns_desc),

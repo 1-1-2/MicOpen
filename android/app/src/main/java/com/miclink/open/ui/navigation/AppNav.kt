@@ -35,10 +35,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.miclink.open.MainViewModel
 import com.miclink.open.R
 import com.miclink.open.ui.screen.AboutScreen
@@ -54,10 +56,28 @@ private enum class Dest(
     val icon: ImageVector
 ) {
     HOME("home", R.string.nav_home, Icons.Filled.Home),
+
+    /**
+     * 采集设置。实际注册的路由模板是 [CAPTURE_ROUTE_PATTERN]（可带 `focus` 锚点，
+     * D-05）；[route] 只作**基名**用于抽屉选中判定与无锚点跳转。
+     */
     CAPTURE("capture", R.string.nav_capture, Icons.Filled.Mic),
     APPEARANCE("appearance", R.string.nav_appearance, Icons.Filled.Palette),
     ABOUT("about", R.string.nav_about, Icons.Filled.Info)
 }
+
+/**
+ * 采集设置的路由模板（D-05）：`focus` 为可选查询参数，默认空串 —— 因此
+ * `navigate("capture")`（抽屉里的「采集设置」）行为与加入锚点前完全一致。
+ */
+private const val CAPTURE_ROUTE_PATTERN: String = "capture?focus={focus}"
+
+/** 采集设置的锚点查询参数名。 */
+private const val ARG_CAPTURE_FOCUS: String = "focus"
+
+/** 拼采集设置的实际路由：`focus` 为空时不带查询串（与抽屉跳转同一目标）。 */
+private fun captureRoute(focus: String): String =
+    if (focus.isEmpty()) Dest.CAPTURE.route else "${Dest.CAPTURE.route}?$ARG_CAPTURE_FOCUS=$focus"
 
 /**
  * AppNav -- 横向抽屉导航 + 四目的地（主页 / 采集设置 / 外观 / 关于与帮助）。
@@ -87,19 +107,24 @@ fun AppNav(
     val scope = rememberCoroutineScope()
 
     val backStackEntry by navController.currentBackStackEntryAsState()
+    // 注意：带查询参数的目的地，destination.route 返回的是**模板串**
+    // （"capture?focus={focus}"），所以选中判定用基名前缀匹配。
     val currentRoute = backStackEntry?.destination?.route ?: Dest.HOME.route
-    val currentDest = Dest.entries.firstOrNull { it.route == currentRoute } ?: Dest.HOME
+    val currentDest = Dest.entries.firstOrNull { currentRoute.startsWith(it.route) } ?: Dest.HOME
 
     // 返回键先关抽屉（验收 #4）
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
     }
 
-    // 主页设置摘要行的跳转：与抽屉切换同一条扁平导航路径
-    // （popUpTo(HOME){saveState} + restoreState，不堆栈）
-    val navigateTo: (Dest) -> Unit = { dest ->
-        if (dest.route != currentRoute) {
-            navController.navigate(dest.route) {
+    // 扁平跳转：抽屉与主页摘要行共用（popUpTo(HOME){saveState} + restoreState，
+    // 不堆栈；带锚点的跳转把锚点写进路由，由页面自己滚动，D-05）。
+    // 「已在同一目的地」时不重复入栈（与加锚点前的行为一致）。
+    val navigateTo: (String) -> Unit = { route ->
+        val base = route.substringBefore('?')
+        val alreadyThere = currentDest.route == base && (route == currentRoute || route == base)
+        if (!alreadyThere) {
+            navController.navigate(route) {
                 popUpTo(Dest.HOME.route) { saveState = true }
                 launchSingleTop = true
                 restoreState = true
@@ -127,13 +152,7 @@ fun AppNav(
                         selected = dest == currentDest,
                         onClick = {
                             scope.launch { drawerState.close() }
-                            if (dest.route != currentRoute) {
-                                navController.navigate(dest.route) {
-                                    popUpTo(Dest.HOME.route) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
+                            navigateTo(dest.route)
                         },
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
@@ -170,12 +189,25 @@ fun AppNav(
                         HomeScreen(
                             vm = vm,
                             onStartClicked = onStartClicked,
-                            onOpenCaptureSettings = { navigateTo(Dest.CAPTURE) },
-                            onOpenAppearance = { navigateTo(Dest.APPEARANCE) }
+                            // D-05：摘要行带锚点跳转（音源 → 输入卡，系统降噪 → 系统效果卡）
+                            onOpenCaptureSettings = { focus -> navigateTo(captureRoute(focus)) },
+                            onOpenAppearance = { navigateTo(Dest.APPEARANCE.route) }
                         )
                     }
-                    composable(Dest.CAPTURE.route) {
-                        CaptureScreen(vm = vm)
+                    // 采集设置注册的是带可选锚点的模板：无锚点跳转（抽屉）取默认值 ""
+                    composable(
+                        route = CAPTURE_ROUTE_PATTERN,
+                        arguments = listOf(
+                            navArgument(ARG_CAPTURE_FOCUS) {
+                                type = NavType.StringType
+                                defaultValue = ""
+                            }
+                        )
+                    ) { entry ->
+                        CaptureScreen(
+                            vm = vm,
+                            focus = entry.arguments?.getString(ARG_CAPTURE_FOCUS).orEmpty()
+                        )
                     }
                     composable(Dest.APPEARANCE.route) {
                         AppearanceScreen(vm = vm)

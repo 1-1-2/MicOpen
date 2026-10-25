@@ -72,14 +72,15 @@ import com.miclink.open.ui.theme.WomicTheme
  *
  * @param vm 主界面状态容器；
  * @param onStartClicked 启动服务（含权限申请流程，由 Activity 实现）；
- * @param onOpenCaptureSettings 跳转采集设置（音源 / 输入设备 / 高级）；
+ * @param onOpenCaptureSettings 跳转采集设置，参数为落点锚点（[CaptureFocus]：
+ *   「音源」→ 输入卡、「系统降噪」→ 系统效果卡，D-05）；
  * @param onOpenAppearance 跳转外观页。
  */
 @Composable
 fun HomeScreen(
     vm: MainViewModel,
     onStartClicked: () -> Unit,
-    onOpenCaptureSettings: () -> Unit,
+    onOpenCaptureSettings: (String) -> Unit,
     onOpenAppearance: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -425,14 +426,15 @@ private fun volumeDb(volume: Int, muteLabel: String): String = when {
 private fun SettingsSummarySection(
     state: MainUiState,
     themeState: ThemeState,
-    onOpenCaptureSettings: () -> Unit,
+    onOpenCaptureSettings: (String) -> Unit,
     onOpenAppearance: () -> Unit
 ) {
     SectionCard {
         SettingsNavRow(
             label = stringResource(R.string.home_row_source),
             value = audioSourceLabel(state.capture.audioSource),
-            onClick = onOpenCaptureSettings
+            // D-05：落到输入卡（音源 / 输入设备）
+            onClick = { onOpenCaptureSettings(CaptureFocus.SOURCE) }
         )
         CardDivider()
         SettingsNavRow(
@@ -444,7 +446,8 @@ private fun SettingsSummarySection(
                     R.string.home_value_off
                 }
             ),
-            onClick = onOpenCaptureSettings
+            // D-05：落到系统效果卡（此前与「音源」同落点，停在页首）
+            onClick = { onOpenCaptureSettings(CaptureFocus.EFFECTS) }
         )
         CardDivider()
         SettingsNavRow(
