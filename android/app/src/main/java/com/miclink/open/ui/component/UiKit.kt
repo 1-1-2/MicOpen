@@ -1,11 +1,10 @@
 package com.miclink.open.ui.component
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -185,6 +184,19 @@ fun StatusBadge(
 const val DOT_TRACK_STEPS: Int = 9
 
 /**
+ * 点轨 x 坐标 -> 档位（等分格 floor 取整，边缘也好命中）。
+ *
+ * 轨道宽 [width] 上均分 [DOT_TRACK_STEPS] + 1 个格位（0..9 共 10 档），
+ * 结果恒为 0..9 的整数（协议只认整数档，禁连续浮点）。
+ */
+private fun indexFromX(x: Float, width: Int): Int {
+    if (width <= 0) return 0
+    return (x / width.toFloat() * (DOT_TRACK_STEPS + 1))
+        .toInt()
+        .coerceIn(0, DOT_TRACK_STEPS)
+}
+
+/**
  * 十档离散点轨（D-18）：主页推流音量控件。
  *
  * 规格（定稿图即验收）：
@@ -198,7 +210,6 @@ const val DOT_TRACK_STEPS: Int = 9
  * @param onValueChange 档位变更（整数）。
  * @param enabled false 时置灰且不响应点按/拖拽。
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DotTrack(
     value: Int,
@@ -209,28 +220,37 @@ fun DotTrack(
     val tokens = LocalMicLinkTokens.current
     val current = value.coerceIn(0, DOT_TRACK_STEPS)
 
-    // 手势：点按与拖拽共用同一套 x → 档位映射（等分格 floor，边缘也好命中）；
-    // 每次事件都吸附到整数档，拖拽过程中不会出现中间值。
+    // 手势（QA 缺陷 D-02 修复）：点按选档 + 横向拖拽吸附，且**必须消费**横向拖拽。
+    //
+    // 为什么必须 consume：主页外层是 ModalNavigationDrawer，抽屉手势挂在整个内容区
+    // 上（没有"边缘窄带"限制）。旧实现只在 pointerInput 里读事件、从不消费，于是
+    // 同一次横拖既改档位、又把抽屉拉出（QA dump 检出「抽屉=开」）。
+    // detectHorizontalDragGestures 在越过 touchSlop 时会 consume 该事件，而子节点
+    // 在 Main pass 中先于父节点处理 → 抽屉的 slop 检测看到 isConsumed 即取消本次
+    // 手势。因此**不需要** gesturesEnabled = false（那会砍掉边缘滑出开抽屉的习惯）：
+    // 只有落在点轨 48dp 区域内的横向拖拽被点轨吃掉，其余手势全部保持原样。
     val gestureModifier = modifier
         .fillMaxWidth()
         .height(48.dp)
         .pointerInput(enabled) {
             if (!enabled) return@pointerInput
-            awaitEachGesture {
-                val down = awaitFirstDown()
-                fun indexFrom(x: Float): Int =
-                    (x / size.width.toFloat() * (DOT_TRACK_STEPS + 1))
-                        .toInt()
-                        .coerceIn(0, DOT_TRACK_STEPS)
-
-                onValueChange(indexFrom(down.position.x))
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    if (!change.pressed) break
-                    onValueChange(indexFrom(change.position.x))
-                }
+            detectTapGestures { offset ->
+                onValueChange(indexFromX(offset.x, size.width))
             }
+        }
+        .pointerInput(enabled) {
+            if (!enabled) return@pointerInput
+            detectHorizontalDragGestures(
+                onDragStart = { offset ->
+                    // 越过 touchSlop 即选：起手那一下也要有反馈（吸附整数档）
+                    onValueChange(indexFromX(offset.x, size.width))
+                },
+                onHorizontalDrag = { change, _ ->
+                    // 消费 = 声明"这次横拖归我"，抽屉边缘手势收不到
+                    change.consume()
+                    onValueChange(indexFromX(change.position.x, size.width))
+                }
+            )
         }
 
     Row(
