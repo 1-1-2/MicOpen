@@ -944,8 +944,16 @@ class MicCaptureService : Service() {
         var shortReads = 0L
         var lastLevelPostMs = 0L
         var lastNotifyMs = 0L
-        var tonePhase = 0.0
-        val toneInc = 2.0 * PI * TONE_FREQUENCY_HZ / actualSampleRate.coerceAtLeast(1)
+
+        // 调试音：合成器（相位跨帧连续）+ 节奏器（绝对时间轴，R-22）。
+        // 真实麦克风模式由 AudioRecord.read() 提供硬件时钟，不需要节奏器——
+        // 这也是"切麦克风就干净、开调试音就爆音"的分水岭。
+        val toneGen = ToneGenerator(
+            sampleRate = actualSampleRate.coerceAtLeast(1),
+            frequencyHz = TONE_FREQUENCY_HZ,
+            amplitude = TONE_AMPLITUDE
+        )
+        val pacer = FramePacer(frameMs = Defaults.FRAME_MS.toLong())
 
         while (!Thread.currentThread().isInterrupted) {
             // 硬件变化（插拔耳机/USB 声卡/蓝牙）或采集选项变更（UI 推送）：
@@ -980,16 +988,12 @@ class MicCaptureService : Service() {
             val rec = recorder
             val read: Int
             if (debugTone || rec == null) {
-                // 调试音：合成 440Hz 正弦，按帧长睡眠模拟实时节奏
-                var i = 0
-                while (i < framesPerPacket) {
-                    pcm[i] = (sin(tonePhase) * TONE_AMPLITUDE * 32767.0).toInt().toShort()
-                    tonePhase += toneInc
-                    if (tonePhase > 2.0 * PI) tonePhase -= 2.0 * PI
-                    i++
-                }
-                read = framesPerPacket
-                SystemClock.sleep(Defaults.FRAME_MS.toLong())
+                // 调试音：合成 440Hz 正弦（相位跨帧连续），按**绝对时间轴**发帧。
+                // 旧实现是"固定 sleep(FRAME_MS)"，没算编码+组包+发送耗时 → 每帧实际
+                // 周期 = 20ms + 处理耗时 → 慢于实时 5~15% → PC 环形缓冲被抽干 →
+                // 周期性欠载爆音（R-22）。现在由 FramePacer 负责补足到 20ms/帧。
+                read = toneGen.fill(pcm, framesPerPacket)
+                pacer.awaitNextFrame()
             } else {
                 // 阻塞读取：没有数据时线程挂起，不占用 CPU
                 read = rec.read(pcm, 0, framesPerPacket)
@@ -1499,5 +1503,139 @@ class MicCaptureService : Service() {
         mainHandler.post {
             listener?.onState(state, detail)
         }
+    }
+}
+
+// ------------------------------------------------------------------
+// 调试音：节奏器 + 合成器（R-22）
+//
+// 两个小类放在本文件（而非各开一个文件）是为了把 R-22 的改动面收在
+// MicCaptureService.kt 内；它们是**纯逻辑**（时钟与 sleep 注入为函数），
+// 因此可以用假时钟在 JVM 单测里精确验证（见 app/src/test/.../
+// FramePacerTest.kt、ToneGeneratorTest.kt）。
+// ------------------------------------------------------------------
+
+/**
+ * 帧节奏器：把"每帧周期"钉在**绝对时间轴**上（R-22 调试音爆音修复）。
+ *
+ * 旧实现的缺陷（用户真机实测：PC 端周期性爆音，调缓冲 26/60/120 都一样）：
+ * 调试音模式每帧只 `sleep(FRAME_MS)`，**不含编码 + 组包 + 发送的耗时**，
+ * 于是实际帧周期 = 20ms + 处理耗时（约 1~3ms）→ 平均慢于实时 5~15% → PC 端
+ * 环形缓冲被逐渐抽干 → 周期性欠载爆音。真实麦克风模式由 `AudioRecord.read()`
+ * 提供硬件时钟，天然是实时的——这正是"切麦克风就干净"的原因。
+ *
+ * 修复策略：
+ *  1. **绝对时间轴**：`nextDeadline += frameMs`，`wait = deadline - now`；
+ *     `wait > 0` 才睡，否则**立即补发且不追睡**（不累积欠账、不雪崩连发）；
+ *  2. **重同步**：落后超过 [RESYNC_FRAMES] 帧（切后台 / GC 卡顿 / 系统挂起）
+ *     时把时间轴直接拉回 `now`，避免一次性补发十几帧把 PC 缓冲灌爆；
+ *  3. 时钟与 sleep 注入为函数 → 单测可用假时钟精确断言。
+ *
+ * 只调节奏，不碰协议字段（`seq` / `ts` 的生成逻辑完全不变）。
+ */
+internal class FramePacer(
+    private val frameMs: Long,
+    private val now: () -> Long = { SystemClock.elapsedRealtime() },
+    private val sleep: (Long) -> Unit = { ms -> if (ms > 0) SystemClock.sleep(ms) }
+) {
+    init {
+        require(frameMs > 0L) { "frameMs 必须为正数（实际 $frameMs）" }
+    }
+
+    /** 落后超过该毫秒数即重同步时间轴。 */
+    private val resyncThresholdMs: Long = frameMs * RESYNC_FRAMES
+
+    private var started: Boolean = false
+    private var nextDeadlineMs: Long = 0L
+
+    /** 已发出的帧数（诊断用）。 */
+    var frames: Long = 0L
+        private set
+
+    /** 发生重同步的次数（诊断用）。 */
+    var resyncs: Long = 0L
+        private set
+
+    /**
+     * 等到本帧截止时刻，然后把时间轴推进一帧。
+     *
+     * @return 本帧实际睡眠的毫秒数（`0` = 已落后、立即补发，不追睡）。
+     */
+    fun awaitNextFrame(): Long {
+        val current = now()
+        if (!started) {
+            // 首帧立刻产出（不预睡），时间轴从"现在 + 一帧"起算
+            started = true
+            nextDeadlineMs = current + frameMs
+            frames++
+            return 0L
+        }
+
+        val wait = nextDeadlineMs - current
+        if (wait > 0L) {
+            sleep(wait)
+        }
+
+        val after = now()
+        nextDeadlineMs += frameMs
+        if (after - nextDeadlineMs > resyncThresholdMs) {
+            // 长时间落后：时间轴重同步到"当前"，不追补历史欠账
+            nextDeadlineMs = after + frameMs
+            resyncs++
+        }
+        frames++
+        return wait.coerceAtLeast(0L)
+    }
+
+    private companion object {
+        /** 落后帧数阈值：超过 3 帧即重同步（3 × 20ms = 60ms）。 */
+        const val RESYNC_FRAMES: Long = 3L
+    }
+}
+
+/**
+ * 调试音合成器（440Hz 正弦，R-22）。
+ *
+ * **相位跨帧连续**：相位累加器在实例上、不按帧重置，因此帧边界处不会出现
+ * 跳变——相邻样本差不超过一个采样步长（单测 proof：见 ToneGeneratorTest
+ * 「帧边界无跳变 + 第 k 个样本等于解析式」）。
+ *
+ * 与旧实现的差别只在"可以被单测直接调用"：波形公式与幅度完全一致
+ * （`sin(phase) * amplitude * 32767`，`phase += 2π·f/sr`，超 2π 回卷）。
+ */
+internal class ToneGenerator(
+    private val sampleRate: Int,
+    private val frequencyHz: Double = 440.0,
+    private val amplitude: Double = 0.3
+) {
+    init {
+        require(sampleRate > 0) { "sampleRate 必须为正数（实际 $sampleRate）" }
+    }
+
+    /** 每个样本的相位增量（rad）。 */
+    private val increment: Double = 2.0 * PI * frequencyHz / sampleRate
+
+    private var phase: Double = 0.0
+
+    /** 已生成的样本总数（= 当前相位对应的全局样本序号，供单测断言）。 */
+    var generatedSamples: Long = 0L
+        private set
+
+    /**
+     * 生成 [count] 个样本写入 [out]（从 [offset] 开始）。
+     *
+     * @return 实际写入的样本数（受 [out] 容量限制）。
+     */
+    fun fill(out: ShortArray, count: Int, offset: Int = 0): Int {
+        val n = count.coerceAtMost(out.size - offset)
+        var i = 0
+        while (i < n) {
+            out[offset + i] = (sin(phase) * amplitude * 32767.0).toInt().toShort()
+            phase += increment
+            if (phase > 2.0 * PI) phase -= 2.0 * PI
+            generatedSamples++
+            i++
+        }
+        return n
     }
 }
