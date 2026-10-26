@@ -1,37 +1,32 @@
 #!/usr/bin/env python3
-"""经 GitHub Git Data API 推送本地提交（git-over-HTTPS 认证被沙箱/ PAT 限制时的通道）。
+"""经 GitHub Git Data API 推送本地提交。
 
-做法：对每个待推送提交，先用 /git/blobs 建变更文件的 blob（内容相同 → sha 与本地
-git blob sha 一致），再把父树条目表应用 diff 后整表 POST /git/trees，随后
-/git/commits 建提交（保留作者/提交者/时间），最后 PATCH refs/heads/<branch> 快进。
-推完后校验远端最终 tree sha 与本地 HEAD 一致。
-
-通道：经主理人私有反代 [removed private proxy host]/[removed private proxy path] 访问 GitHub API
-（沙箱直连 api.github.com 会被重置/阻断）。
-
-子命令（第一个参数固定为 PAT）：
-  api_push.py <PAT> [branch] [--force]     推送（默认快进；--force 从根重放并强推，
-                                           用于历史重写/孤儿分支；远端无该分支时自动创建）
-  api_push.py <PAT> --create-ref <ref> [branch]
-                                           把 branch（默认 main）的远端 tip 镜像为一个
-                                           新 ref（备份保命：refs/heads/... 或 refs/tags/...）
-  api_push.py <PAT> --delete <branch>      删除远端分支（危险操作，需显式指定）
-
-网络层瞬时错误（连接重置/断开/超时）自动重试（指数退避）；HTTP 错误立即失败。
+凭据从 GH_TOKEN 环境变量读取；GH_API_BASE 可指向无凭据 HTTPS API 根地址。
+用法：api_push.py [branch] [--force]
+      api_push.py --create-ref <ref> [branch]
+      api_push.py --delete <branch>
+--force 会重写远端历史，--delete 会删除远端分支。
+网络层瞬时错误会指数退避重试；HTTP 错误只报告状态码，不打印响应正文。
 """
 import base64
 import http.client
 import json
+import os
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.error
 import urllib.request
 
-TOK = sys.argv[1] if len(sys.argv) > 1 else None
+TOK = os.environ.get("GH_TOKEN")
 OWNER, REPO = "1-1-2", "WKB_test"
-# 沙箱直连 api.github.com 不稳（连接被重置），改走主理人私有 API 反代
-BASE = "[removed private proxy address]"
+BASE = os.environ.get("GH_API_BASE", "https://api.github.com").rstrip("/")
+_base_parts = urllib.parse.urlsplit(BASE)
+if (_base_parts.scheme != "https" or not _base_parts.hostname or
+        _base_parts.username or _base_parts.password or
+        _base_parts.query or _base_parts.fragment):
+    raise SystemExit("GH_API_BASE 必须是无凭据的 HTTPS API 根地址")
 REPO_API = f"{BASE}/repos/{OWNER}/{REPO}"
 
 
@@ -41,7 +36,7 @@ def usage():
 
 
 # ---------------------------------------------------------------- 参数解析
-ARGS = sys.argv[2:]
+ARGS = sys.argv[1:]
 BRANCH = "main"
 FORCE = False
 CREATE_REF = None
@@ -81,9 +76,7 @@ def api(method, path, data=None, _retries=4):
     req = urllib.request.Request(REPO_API + path, method=method)
     req.add_header("Authorization", f"Bearer {TOK}")
     req.add_header("Accept", "application/vnd.github+json")
-    # 私有反代前置 Cloudflare，按浏览器签名拦截 Python-urllib 默认 UA（Error 1010）
-    req.add_header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    req.add_header("User-Agent", "miclink-open-api-push")
     payload = None
     if data is not None:
         req.add_header("Content-Type", "application/json")
@@ -94,7 +87,7 @@ def api(method, path, data=None, _retries=4):
                 body = r.read()
                 return json.loads(body) if body else {}
         except urllib.error.HTTPError as e:
-            print(f"!! {method} {path} -> {e.code}: {e.read().decode()[:400]}")
+            print(f"!! {method} {path} -> HTTP {e.code}")
             raise
         except (urllib.error.URLError, http.client.RemoteDisconnected,
                 ConnectionError, TimeoutError) as e:
