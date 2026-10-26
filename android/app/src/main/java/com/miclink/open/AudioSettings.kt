@@ -29,41 +29,49 @@ object AudioSourceIds {
 }
 
 /**
- * 音源选项目录（UI chips 单选 + 合法性校验表共用同一份，避免两处漂移）。
+ * 音源选项目录（UI 单选 + 合法性校验表共用同一份，避免两处漂移）。
  *
- * chips 化后（D-19）选项只有「图标 + 标签」，没有说明位：逐档差异统一在
- * 「关于与帮助」页说明，避免六段长文本把 chips 区撑爆（定稿图即验收）。
+ * R-37：从横排 chips 改成**竖排列表**，每行右侧配一句特性说明——只写该档
+ * 真实做什么（见 `capture_source_*_desc`），不写"更好/更差"这类无依据的话。
  *
  * @param id 音源 id（见 [AudioSourceIds]）。
  * @param labelRes 选项名。
+ * @param descRes 特性说明（一句话，竖排列表右侧灰字）。
  */
 enum class AudioSourceOption(
     val id: Int,
-    @param:StringRes val labelRes: Int
+    @param:StringRes val labelRes: Int,
+    @param:StringRes val descRes: Int
 ) {
     DEFAULT(
         AudioSourceIds.DEFAULT,
-        R.string.capture_source_default
+        R.string.capture_source_default,
+        R.string.capture_source_default_desc
     ),
     MIC(
         AudioSourceIds.MIC,
-        R.string.capture_source_mic
+        R.string.capture_source_mic,
+        R.string.capture_source_mic_desc
     ),
     VOICE_RECOGNITION(
         AudioSourceIds.VOICE_RECOGNITION,
-        R.string.capture_source_voice_recognition
+        R.string.capture_source_voice_recognition,
+        R.string.capture_source_voice_recognition_desc
     ),
     VOICE_COMMUNICATION(
         AudioSourceIds.VOICE_COMMUNICATION,
-        R.string.capture_source_voice_communication
+        R.string.capture_source_voice_communication,
+        R.string.capture_source_voice_communication_desc
     ),
     CAMCORDER(
         AudioSourceIds.CAMCORDER,
-        R.string.capture_source_camcorder
+        R.string.capture_source_camcorder,
+        R.string.capture_source_camcorder_desc
     ),
     UNPROCESSED(
         AudioSourceIds.UNPROCESSED,
-        R.string.capture_source_unprocessed
+        R.string.capture_source_unprocessed,
+        R.string.capture_source_unprocessed_desc
     );
 
     companion object {

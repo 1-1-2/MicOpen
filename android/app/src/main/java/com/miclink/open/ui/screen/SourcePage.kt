@@ -3,12 +3,20 @@ package com.miclink.open.ui.screen
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
@@ -30,6 +38,7 @@ import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,14 +48,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.miclink.open.AudioDeviceManager
 import com.miclink.open.AudioSourceIds
 import com.miclink.open.AudioSourceOption
@@ -140,15 +153,20 @@ fun SourcePage(
         ) {
             GroupLabel(text = stringResource(R.string.capture_group_source))
             Spacer(Modifier.height(8.dp))
-            ChipGroup {
+            // R-37：六档改**竖排列表**（一行一档）。左＝图标 + 名称，右＝一句
+            // 特性说明（灰字 12sp，右对齐）——用户不用点开"关于"就知道差别。
+            // 选中态沿用（accent 底 + accent 描边 + onAccent 文字）；
+            // 禁用项（设备不支持 UNPROCESSED）保持可见不可点，原因见下方 HintText。
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AudioSourceOption.entries.forEach { option ->
                     val enabled = option.id != AudioSourceIds.UNPROCESSED || unprocessedSupported
-                    IconChip(
+                    SourceOptionRow(
                         label = stringResource(option.labelRes),
+                        description = stringResource(option.descRes),
                         icon = audioSourceIcon(option.id),
                         selected = state.capture.audioSource == option.id,
-                        onClick = { vm.onAudioSourceChanged(option.id) },
-                        enabled = enabled
+                        enabled = enabled,
+                        onClick = { vm.onAudioSourceChanged(option.id) }
                     )
                 }
             }
@@ -199,6 +217,84 @@ fun SourcePage(
             Spacer(Modifier.height(4.dp))
             HintText(text = stringResource(R.string.capture_mic_hint))
         }
+    }
+}
+
+/**
+ * 音源单行（R-37）：左＝图标 + 名称（14sp Medium），右＝一句特性说明
+ * （12sp text-2，右对齐，最多一行）。
+ *
+ * 状态三态：
+ *  - 选中：accent 底 + accent 描边 + onAccent 文字（说明用 onAccent 85%）；
+ *  - 未选：bgSunken 底 + border 描边 + text-1 名称 / text-2 说明；
+ *  - 禁用：`clickable(enabled = false)` —— 可见但不可点，颜色降 text-3，
+ *    原因由调用方在卡内用 HintText 说明（X-12：不藏起来）。
+ */
+@Composable
+private fun SourceOptionRow(
+    label: String,
+    description: String,
+    icon: ImageVector,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val tokens = LocalMicLinkTokens.current
+    val shape = RoundedCornerShape(8.dp)
+    val bg = when {
+        selected && enabled -> tokens.accent
+        enabled -> tokens.bgSunken
+        else -> tokens.bgSunken.copy(alpha = 0.6f)
+    }
+    val borderColor = when {
+        selected && enabled -> tokens.accent
+        else -> tokens.border
+    }
+    val labelColor = when {
+        !enabled -> tokens.text3
+        selected -> tokens.onAccent
+        else -> tokens.text1
+    }
+    val descColor = when {
+        !enabled -> tokens.text3
+        selected -> tokens.onAccent.copy(alpha = 0.85f)
+        else -> tokens.text2
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(bg)
+            .border(1.dp, borderColor, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = labelColor,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            color = labelColor,
+            maxLines = 1
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = descColor,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 

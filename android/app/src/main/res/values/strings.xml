@@ -65,6 +65,13 @@
     <string name="capture_source_voice_communication">语音通话</string>
     <string name="capture_source_camcorder">摄像录音</string>
     <string name="capture_source_unprocessed">原始数据</string>
+    <!-- R-37：竖排列表右侧的一句特性说明（必须准确，别写"更好/更差"这类无依据的话） -->
+    <string name="capture_source_default_desc">系统默认处理，最省心</string>
+    <string name="capture_source_mic_desc">原始麦克风，未做语音优化</string>
+    <string name="capture_source_voice_recognition_desc">为识别优化，可能压动态</string>
+    <string name="capture_source_voice_communication_desc">为通话优化，含回声抑制</string>
+    <string name="capture_source_camcorder_desc">随视频录制调优</string>
+    <string name="capture_source_unprocessed_desc">不做任何系统处理（降噪失效）</string>
     <string name="capture_source_unprocessed_unsupported">当前设备不支持 UNPROCESSED 音源（系统属性未声明），已禁用。</string>
 
     <string name="capture_mic_auto">跟随系统</string>
