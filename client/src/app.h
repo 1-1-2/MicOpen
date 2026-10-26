@@ -195,7 +195,7 @@ void eng_stop(void);
 void eng_reap(void);
 void eng_snapshot(EngineStats *out);   /* 线程安全快照 */
 int  eng_device_available(void);       /* 不再独立开句柄：返回 devio_is_open() */
-void eng_set_monitor(int on);          /* 本地监听（预留，当前无 waveOut 实现） */
+
 /* 静音（D-06 静音行）：真实生效 —— 灌入驱动前把 PCM 零填充，
  * 电平表照常显示输入电平（静音只截输出，不变红）。 */
 void eng_set_mute(int on);
@@ -207,6 +207,9 @@ int  eng_media_port(void);
  * 内部按 dB 存：倍率 = pow(10, dB/20)，-60 dB 仍是 0.001 倍（不是静音）。
  * 静音只由 eng_set_mute() 表达，不再用"增益 0"表示。返回实际值（已钳制）。 */
 int  eng_set_gain_db(int db10);
+/* 监听（R-39）：把灌给驱动的同一份处理后 PCM 再送系统默认输出（waveOut）。
+ * 返回 1 = 已开启，0 = 打开失败（无输出设备等，UI 应回弹开关并记 WARN）。 */
+int  eng_set_monitor(int on);
 void eng_set_feed_mode(int mode);      /* DEV_FEED_IOCTL（默认）/ DEV_FEED_WRITE */
 
 /* 日志回调：引擎线程调用，UI 通过 PostMessage 转投 */

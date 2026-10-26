@@ -107,7 +107,7 @@ APP_SRC=(
     src/drvbridge.c
 )
 APP_LIBS=(
-    -lgdi32 -luser32 -lws2_32 -luxtheme -ldwmapi -lshell32 -lole32
+    -lgdi32 -luser32 -lws2_32 -luxtheme -ldwmapi -lshell32 -lole32 -lwinmm
     -lsetupapi -lcrypt32 -lnewdev -ladvapi32
 )
 # 安装器：菜单/参数解析 + 安装逻辑 + 驱动包解压 + 设备句柄探测（L1 判据）。

@@ -21,6 +21,7 @@
 #include "opusdec.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mmsystem.h>          /* R-39 监听：waveOut（winmm） */
 #include <process.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -102,6 +103,18 @@ static void elog(const char *fmt, ...)
     va_end(ap);
     buf[sizeof(buf) - 1] = 0;
     elog_lvl(0, "%s", buf);
+}
+
+/* WARN 级（事件面板橙色）：可疑但没坏，例如"对端未回执""监听打不开" */
+static void elog_warn(const char *fmt, ...)
+{
+    va_list ap;
+    char buf[512];
+    va_start(ap, fmt);
+    _vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
+    va_end(ap);
+    buf[sizeof(buf) - 1] = 0;
+    elog_lvl(3, "%s", buf);
 }
 
 /* ERROR 级（事件面板红色；「复制全部」同样收入） */
@@ -302,6 +315,110 @@ static int do_handshake(int rate_idx)
     return 1;
 }
 
+/* ------------------------------------------------ 监听（R-39）
+ * 把灌给驱动的**同一份处理后 PCM**（已应用协议 vol + 本地增益 + 静音）
+ * 再送一遍系统默认输出设备。用途：没有虚拟声卡、或想直接确认"到 PC 的声音"。
+ *
+ * 设备格式：优先 48k/mono/16bit；打不开再退 48k/stereo/16bit（mono→stereo 直接
+ * 复制，不做 SRC —— 复杂重采样在这个场景里没有收益）；仍失败就返回 0，
+ * UI 回弹开关并记一条 WARN。绝不崩。
+ * 缓冲：3×20 ms 预分配，取「不在播放队列里」的槽写入；全忙就丢掉这一帧
+ * （监听丢帧不影响驱动链路，也不是测量数据）。
+ * 关闭：waveOutReset + unprepare + close，立刻停。 */
+#define MON_BUFS   3
+#define MON_SAMPLES (DEV_SAMPLES_20MS)          /* 20 ms @48k */
+static HWAVEOUT       g_wo;
+static WAVEHDR        g_wo_hdr[MON_BUFS];
+static short         *g_wo_mem;
+static int            g_wo_ch = 1;              /* 1 = mono / 2 = stereo */
+static int            g_wo_open;
+static int            g_mon_want;               /* 用户希望监听（跨会话保持） */
+static CRITICAL_SECTION g_mon_cs;
+static int            g_mon_cs_ready;
+
+static void mon_lock(void)
+{
+    if (!g_mon_cs_ready) { InitializeCriticalSection(&g_mon_cs); g_mon_cs_ready = 1; }
+    EnterCriticalSection(&g_mon_cs);
+}
+static void mon_unlock(void) { LeaveCriticalSection(&g_mon_cs); }
+
+static void mon_close_locked(void)
+{
+    int i;
+    if (!g_wo_open) return;
+    waveOutReset(g_wo);
+    for (i = 0; i < MON_BUFS; i++) {
+        if (g_wo_hdr[i].dwFlags & WHDR_PREPARED)
+            waveOutUnprepareHeader(g_wo, &g_wo_hdr[i], sizeof(WAVEHDR));
+    }
+    waveOutClose(g_wo);
+    g_wo = NULL;
+    if (g_wo_mem) { free(g_wo_mem); g_wo_mem = NULL; }
+    g_wo_open = 0;
+}
+
+static int mon_open_locked(void)
+{
+    WAVEFORMATEX wf;
+    MMRESULT r = MMSYSERR_ERROR;
+    int ch, i;
+
+    if (g_wo_open) return 1;
+    for (ch = 1; ch <= 2; ch++) {
+        memset(&wf, 0, sizeof(wf));
+        wf.wFormatTag = WAVE_FORMAT_PCM;
+        wf.nChannels = (WORD)ch;
+        wf.nSamplesPerSec = DEV_RATE;
+        wf.wBitsPerSample = 16;
+        wf.nBlockAlign = (WORD)(ch * 2);
+        wf.nAvgBytesPerSec = DEV_RATE * wf.nBlockAlign;
+        r = waveOutOpen(&g_wo, WAVE_MAPPER, &wf, 0, 0, CALLBACK_NULL);
+        if (r == MMSYSERR_NOERROR) { g_wo_ch = ch; break; }
+        g_wo = NULL;
+    }
+    if (r != MMSYSERR_NOERROR) return 0;
+
+    g_wo_mem = (short *)calloc((size_t)MON_BUFS * MON_SAMPLES * g_wo_ch,
+                               sizeof(short));
+    if (!g_wo_mem) { waveOutClose(g_wo); g_wo = NULL; return 0; }
+    for (i = 0; i < MON_BUFS; i++) {
+        memset(&g_wo_hdr[i], 0, sizeof(WAVEHDR));
+        g_wo_hdr[i].lpData = (LPSTR)(g_wo_mem + (size_t)i * MON_SAMPLES * g_wo_ch);
+        g_wo_hdr[i].dwBufferLength = (DWORD)(MON_SAMPLES * g_wo_ch * 2);
+        if (waveOutPrepareHeader(g_wo, &g_wo_hdr[i], sizeof(WAVEHDR)) != MMSYSERR_NOERROR) {
+            mon_close_locked();
+            return 0;
+        }
+    }
+    g_wo_open = 1;
+    return 1;
+}
+
+/* 送一帧（调用方已处理 vol/gain/mute）。监听晚了/设备慢就丢帧，不阻塞收包。 */
+static void mon_feed(const int16_t *pcm, int samples)
+{
+    int i, slot = -1;
+    if (!pcm || samples <= 0) return;
+    mon_lock();
+    if (!g_wo_open) { mon_unlock(); return; }
+    for (i = 0; i < MON_BUFS; i++)
+        if (!(g_wo_hdr[i].dwFlags & WHDR_INQUEUE)) { slot = i; break; }
+    if (slot >= 0) {
+        short *dst = (short *)g_wo_hdr[slot].lpData;
+        int n = samples > MON_SAMPLES ? MON_SAMPLES : samples;
+        if (g_wo_ch == 1) {
+            memcpy(dst, pcm, (size_t)n * 2);
+        } else {
+            int k;
+            for (k = 0; k < n; k++) { dst[k * 2] = pcm[k]; dst[k * 2 + 1] = pcm[k]; }
+        }
+        g_wo_hdr[slot].dwBufferLength = (DWORD)(n * g_wo_ch * 2);
+        waveOutWrite(g_wo, &g_wo_hdr[slot], sizeof(WAVEHDR));
+    }
+    mon_unlock();
+}
+
 /* ------------------------------------------------ UDP 帧解析（格式 C） */
 static void on_udp_frame(const unsigned char *buf, int n)
 {
@@ -402,6 +519,10 @@ static void on_udp_frame(const unsigned char *buf, int n)
     /* D-06 静音：灌入驱动前把 PCM 零填充。电平表照常显示输入电平
      * （上面的 rms/level 统计在静音之前就算完了），静音只截输出。 */
     if (g_mute) memset(g_feedbuf, 0, (size_t)samples * sizeof(int16_t));
+
+    /* R-39：监听与灌驱动用**同一份**样本（静音时这里已经被零填充，
+     * 所以监听也跟着静音，符合"静音时监听也静音"） */
+    if (g_mon_want) mon_feed(g_feedbuf, samples);
 
     {
         double acc = 0;
@@ -599,6 +720,9 @@ static unsigned __stdcall worker(void *arg)
     }
 
 out:
+    mon_lock();
+    mon_close_locked();          /* 设备随会话释放；g_mon_want 这个偏好保留 */
+    mon_unlock();
     if (g_tcp != INVALID_SOCKET) {
         msg_send(104, NULL, 0);                   /* 主动停止推流 */
         closesocket(g_tcp); g_tcp = INVALID_SOCKET;
@@ -698,6 +822,16 @@ int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, 
     }
     snprintf(g_st.opus_src, sizeof(g_st.opus_src), "%s", opusdec_source());
 
+    /* R-39：上个会话结束时设备已释放，这里按用户偏好重开 */
+    if (g_mon_want) {
+        mon_lock();
+        if (!mon_open_locked()) {
+            g_mon_want = 0;
+            elog_warn("监听无法开启（无可用输出设备），已关闭「监听」开关");
+        }
+        mon_unlock();
+    }
+
     /* 设备：复用全局唯一句柄。打开失败不阻塞连接（协议与统计照跑）。 */
     if (devio_open()) {
         int cap = cap_from_ms(g_buf_ms);
@@ -771,7 +905,23 @@ void eng_snapshot(EngineStats *out)
     LeaveCriticalSection(&g_cs);
 }
 
-void eng_set_monitor(int on) { (void)on; }
+/* R-39 监听开关：on=1 打开（失败返回 0，UI 回弹并记 WARN）；on=0 立刻停。 */
+int eng_set_monitor(int on)
+{
+    int ok;
+    mon_lock();
+    if (on) {
+        g_mon_want = 1;
+        ok = mon_open_locked();
+        if (!ok) g_mon_want = 0;
+    } else {
+        g_mon_want = 0;
+        mon_close_locked();
+        ok = 1;
+    }
+    mon_unlock();
+    return ok;
+}
 
 /* D-06 静音：只截输出（灌音前零填充），不碰电平统计，
  * 所以电平表照常显示输入电平、静音不会「变红」。 */
