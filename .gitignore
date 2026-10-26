@@ -63,3 +63,19 @@ Thumbs.db
 
 # ---- 本地调试观察脚本（含 PAT，绝不入库）----
 .tmp-*/
+# ---- 凭据与本机密钥 ----
+.env
+.env.*
+!.env.example
+secrets/
+private-keys/
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+*_secret.local
+*_token.local
