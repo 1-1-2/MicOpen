@@ -300,7 +300,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             g_ui.exp_audio = g_ui.exp_stats = g_ui.exp_log = 1;
         }
         g_ui.edit_host = CreateWindowExW(0, L"EDIT", L"192.168.1.100",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_CENTER,   /* R-10：三处统一水平居中 */
             0, 0, 10, 10, hwnd, (HMENU)100, NULL, NULL);
         g_ui.edit_port = CreateWindowExW(0, L"EDIT", L"8125",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_NUMBER | ES_CENTER,
@@ -312,7 +312,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         SetWindowTheme(g_ui.edit_port, L" ", L" ");
         SetWindowTheme(g_ui.edit_media, L" ", L" ");
         {
-            HFONT f = ui_font(13, FW_NORMAL, 1);   /* 输入文字 13px Consolas */
+            HFONT f = ui_font(14, FW_NORMAL, 1);   /* R-24：正文 13→14，读数 Consolas */
             SendMessageW(g_ui.edit_host, WM_SETFONT, (WPARAM)f, TRUE);
             SendMessageW(g_ui.edit_port, WM_SETFONT, (WPARAM)f, TRUE);
             SendMessageW(g_ui.edit_media, WM_SETFONT, (WPARAM)f, TRUE);

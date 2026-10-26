@@ -9,12 +9,17 @@
  *   ③ 静音行（底行）
  *   区间用 24px 留白 + 1px border 分隔线。
  *
- * 环形电平（D-05）：270° 扫掠、起角 135°（7:30）顺时针；映射 −60…0 dBFS；
- *   弧头当前值圆点 = 6px 实心（分区着色）+ 1.5px bg-card 描边 + 5.5px 25% 光晕；
- *   峰值保持线 2px text-2（保持 1.2 s）；−12/−6 dB 目标刻度 1.5px text-3。
- * 横条（C-12）：60 段覆盖 −60…0 dBFS，段心 dB = −59.5+i；点亮条件 段心 < 当前 dB；
- *   段心 < −48 → accent 35%（dim）；段心 ≥ −3 → warn。
- * 历史（D-08）：最近 10 秒约 48 柱、高 56、R1、bg-sunken、accent 柱、间距 2。
+ * 环形电平（D-05 + 电平配色「功能派」）：270° 扫掠、起角 135°（7:30）顺时针；
+ *   映射 −60…0 dBFS；弧宽 8px，弧头当前值圆点 = 8px 实心 + bg-card 描边 + 光晕；
+ *   峰值保持线 2px text-2（保持 1.2 s）；目标刻度 2px text-3。
+ * 电平配色（三处统一：环形弧 / 横条段 / 历史柱，按各自 dB 取色）：
+ *   < −48 无信号 text-3 · −48…−18 安全 ok · −18…−6 目标区 warn · −6…0 过载 err
+ *   CLIP（≥ −0.5 dBFS）：err 标记，保持 3 秒后淡出。
+ * 横条（C-12）：60 段覆盖 −60…0 dBFS，段心 dB = −59.5+i；点亮条件 段心 < 当前 dB。
+ * 历史（D-08）：最近 10 秒约 48 柱、高 56、R2、bg-sunken，柱宽 +10%，按每根柱
+ *   自己的 dB 上色（一眼看出刚才有没有爆）。
+ * 图例（R-09 流式）：环下方三行——● 当前值 / ▍峰值 1.2s / ┆ 目标，各带读数，
+ *   与卡片一起滚动（矩形全部过 cs()，不脱锚）。
  * 增益（D-07）：dB 刻度（−60…+6 dB，0 dB 位于 90.9%），读数「增益 N% · ±X.X dB」。
  */
 #include "ui_voicemeter.h"
@@ -37,10 +42,21 @@ static float  s_peak_db = -96.0f; /* 峰值 dBFS（1.2 s 保持） */
 static DWORD  s_peak_until = 0;
 static DWORD  s_last = 0;
 static int    s_state = 0;
+static DWORD  s_clip_until = 0;    /* CLIP 标记保持到这个时刻（3 秒） */
 
 int ui_meter_state(void) { return s_state; }
 
 float ui_meter_cur_db(void) { return s_db; }
+
+/* 电平配色（功能派，三处统一）：
+ *   < −48 无信号 text-3 · −48…−18 安全 ok · −18…−6 目标区 warn · ≥ −6 过载 err */
+static COLORREF band_color(double db)
+{
+    if (db < -48.0) return g_th.text_mute;
+    if (db < -18.0) return g_th.ok;
+    if (db < -6.0)  return g_th.warn;
+    return g_th.err;
+}
 
 /* dBFS → 环形角度（度，0=正右、顺时针为正）：−60 dB → 135°，0 dB → 405° */
 static double db_to_ang(double db)
@@ -91,6 +107,9 @@ void ui_meter_update(const EngineStats *st, int running)
         if (s_peak_db < -96.0f) s_peak_db = -96.0f;
     }
 
+    /* CLIP：≥ −0.5 dBFS 记一次，保持 3 秒后由绘制端淡出（alpha 随剩余时间） */
+    if (running && s_db >= -0.5f) s_clip_until = now + 3000;
+
     if (!running) s_state = 0;
     else if (s_level >= OVER_LEVEL) s_state = 2;
     else if (st->silent_frames >= SILENT_FRAMES) s_state = 0;
@@ -112,31 +131,32 @@ static void draw_ring(HDC dc)
 {
     RECT r = g_lo.ring;
     int cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
-    int rad = sd(70), w = sd(8), half = w / 2;
+    int rad = sd(70), w = sd(8), half = w / 2;      /* R-24：弧宽 8 */
     int muted = g_ui.mute;
     COLORREF arc_c;
     wchar_t buf[32];
     RECT tr;
 
-    /* 分区着色：≥ −3 dB 进 warn 区（与横条一致）；静音时整环降 text-3 */
+    /* 分区着色（功能派）：弧色 = 当前 dB 所在区段；静音时整环降 text-3 */
     if (muted) arc_c = g_th.text_mute;
-    else arc_c = (s_db >= -3.0f) ? g_th.warn : g_th.accent;
+    else arc_c = band_color(s_db);
 
     /* 轨道：270°，135° → 405°（7:30 顺时针到 4:30），bg-sunken，圆头 */
     ui_arc(dc, cx, cy, rad, 135.0, 405.0, g_th.sunken, w, 255);
     arc_cap(dc, cx, cy, rad, 135.0, half, g_th.sunken);
     arc_cap(dc, cx, cy, rad, 405.0, half, g_th.sunken);
 
-    /* 目标刻度：−12 / −6 dB，径向 62→78，1.5px text-3（C-12） */
+    /* 目标刻度：−18 / −12 / −6 dB，径向 62→78，2px text-3（R-24：1.5→2）
+     * 目标区 = warn 段（−18…−6），三条刻度把「目标」锚在环上（R-09）。 */
     {
-        static const double tgt[2] = { -12.0, -6.0 };
+        static const double tgt[3] = { -18.0, -12.0, -6.0 };
         int k;
-        for (k = 0; k < 2; k++) {
+        for (k = 0; k < 3; k++) {
             int x0, y0, x1, y1;
             double a = db_to_ang(tgt[k]);
             polar(cx, cy, sd(62), a, &x0, &y0);
             polar(cx, cy, sd(78), a, &x1, &y1);
-            ui_line(dc, x0, y0, x1, y1, g_th.text_mute, 1.5, 255);
+            ui_line(dc, x0, y0, x1, y1, g_th.text_mute, 2.0, 255);
         }
     }
 
@@ -158,17 +178,30 @@ static void draw_ring(HDC dc)
         arc_cap(dc, cx, cy, sd(78), a, 1, g_th.text_dim);
     }
 
-    /* 弧头当前值圆点：5.5px 25% 光晕 + 3px 实心 + 1.5px bg-card 描边（D-05） */
+    /* 弧头当前值圆点（R-24：6→8）：13px 光晕 + 8px 实心 + bg-card 描边 */
     if (s_db > -60.0f) {
         int x, y;
         double a = db_to_ang((double)s_db);
         RECT hr, dr;
         polar(cx, cy, rad, a, &x, &y);
-        SetRect(&hr, x - sd(11) / 2, y - sd(11) / 2, x + sd(11) / 2, y + sd(11) / 2);
-        ui_fill_round(dc, hr, sd(11) / 2, arc_c, 64);            /* 25% alpha */
-        SetRect(&dr, x - sd(3), y - sd(3), x + sd(3), y + sd(3));
-        ui_fill_round(dc, dr, sd(3), arc_c, 255);
-        ui_stroke_round(dc, dr, sd(3), g_th.card, 255, 1);
+        SetRect(&hr, x - sd(13) / 2, y - sd(13) / 2, x + sd(13) / 2, y + sd(13) / 2);
+        ui_fill_round(dc, hr, sd(13) / 2, arc_c, 64);            /* 25% alpha */
+        SetRect(&dr, x - sd(4), y - sd(4), x + sd(4), y + sd(4));
+        ui_fill_round(dc, dr, sd(4), arc_c, 255);
+        ui_stroke_round(dc, dr, sd(4), g_th.card, 255, 1);
+    }
+
+    /* CLIP 标记（err）：保持 3 秒，最后 0.6 s 线性淡出 */
+    {
+        DWORD now = GetTickCount();
+        if (s_clip_until && now < s_clip_until + 600) {
+            /* ui_text 没有 alpha 参数：淡出用 err → card 混色近似 */
+            int fade = (now >= s_clip_until) ? (int)(now - s_clip_until) * 100 / 600 : 0;
+            COLORREF cc = ui_mix(g_th.err, g_th.card, fade);
+            SetRect(&tr, cx - sd(56), cy + sd(18), cx + sd(56), cy + sd(34));
+            ui_text(dc, tr, L"CLIP", ui_font(12, FW_SEMIBOLD, 2), cc,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
     }
 
     /* 中心读数：30px Consolas + dBFS 11px text-3 */
@@ -180,34 +213,54 @@ static void draw_ring(HDC dc)
     ui_text(dc, tr, buf, ui_font(30, FW_SEMIBOLD, 1), g_th.text,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SetRect(&tr, cx - sd(56), cy + sd(7), cx + sd(56), cy + sd(17));
-    ui_text(dc, tr, L"dBFS", ui_font(11, FW_NORMAL, 0), g_th.text_mute,
+    ui_text(dc, tr, L"dBFS", ui_font(11, FW_NORMAL, 2), g_th.text_mute,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
-/* 图例：● 当前值 ┃ 峰值 1.2 s ┃ 目标（11/15 text-3，项间距 8） */
+/* 图例（R-09 流式排布）：环下方三行，每行 = 样式小样 + 名称 + 实时读数。
+ * 视觉分工与环上的元素一一对应：
+ *   ● 当前值 = 弧头圆点（颜色跟当前区段）      读数 = 当前 dBFS
+ *   ▍峰值    = 保持线（1.2 s）                读数 = 峰值 dBFS
+ *   ┆ 目标   = 环上刻度（−18/−12/−6）          读数 = 目标区段
+ * 三行矩形在布局里过 cs()，跟卡片一起滚动，不脱锚。 */
 static void draw_ring_legend(HDC dc)
 {
     RECT r = g_lo.ring_legend;
     HFONT f = ui_font(11, FW_NORMAL, 0);
-    int x = r.left, cy = (r.top + r.bottom) / 2;
+    HFONT vf = ui_font(11, FW_NORMAL, 1);          /* 读数用等宽，数字不跳位 */
+    int row_h = (r.bottom - r.top) / 3;
     int i;
+    wchar_t cur[32], pk[32], tg[32];
     static const wchar_t *txt[3] = { L"当前值", L"峰值 1.2 s", L"目标" };
+
+    if (s_db > -60.0f) swprintf(cur, 32, L"%.1f dBFS", (double)s_db);
+    else wcscpy(cur, L"—");
+    if (s_peak_db > -60.0f) swprintf(pk, 32, L"%.1f dBFS", (double)s_peak_db);
+    else wcscpy(pk, L"—");
+    wcscpy(tg, L"−18…−6 dBFS");
+
     for (i = 0; i < 3; i++) {
-        RECT ir;
-        if (i == 0) {                          /* 6px 实心圆点 = accent */
-            SetRect(&ir, x, cy - sd(3), x + sd(6), cy + sd(3));
-            ui_fill_round(dc, ir, sd(3), g_th.accent, 255);
-            x += sd(6) + sd(4);
-        } else {                               /* 2px / 1.5px 竖条 */
-            int bw2 = (i == 1) ? 2 : 1;
-            COLORREF c = (i == 1) ? g_th.text_dim : g_th.text_mute;
-            ui_line(dc, x + bw2 / 2, cy - sd(4), x + bw2 / 2, cy + sd(4), c,
-                    (double)bw2, 255);
-            x += bw2 + sd(4);
+        int cy = r.top + row_h * i + row_h / 2;
+        wchar_t *val = (i == 0) ? cur : (i == 1) ? pk : tg;
+        COLORREF vc = (i == 0) ? band_color(s_db)
+                    : (i == 1) ? ((s_peak_db >= -0.5f) ? g_th.err : g_th.text)
+                               : g_th.text;
+        RECT vr = { r.left + sd(88), cy - row_h / 2, r.right, cy + row_h / 2 };
+        if (i == 0) {                              /* ● 8px 圆点 = 弧头圆点 */
+            RECT ir = { r.left, cy - sd(4), r.left + sd(8), cy + sd(4) };
+            ui_fill_round(dc, ir, sd(4), band_color(s_db), 255);
+        } else if (i == 1) {                       /* ▍2px 竖条 = 峰值保持线 */
+            ui_line(dc, r.left + 1, cy - sd(5), r.left + 1, cy + sd(5),
+                    g_th.text_dim, 2.0, 255);
+        } else {                                   /* ┆ 2px 短刻度 = 目标刻度 */
+            ui_line(dc, r.left + 1, cy - sd(5), r.left + 1, cy - sd(2),
+                    g_th.text_mute, 2.0, 255);
+            ui_line(dc, r.left + 1, cy + sd(2), r.left + 1, cy + sd(5),
+                    g_th.text_mute, 2.0, 255);
         }
-        ui_text(dc, (RECT){ x, r.top, x + sd(120), r.bottom }, txt[i], f,
-                g_th.text_mute, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        x += ui_measure_text(txt[i], f) + sd(8);
+        ui_text(dc, (RECT){ r.left + sd(14), cy - row_h / 2, r.left + sd(86), cy + row_h / 2 },
+                txt[i], f, g_th.text_mute, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        ui_text(dc, vr, val, vf, vc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     }
 }
 
@@ -235,9 +288,8 @@ static void draw_bar(HDC dc)
         COLORREF col = g_th.meter_off;
         if (c < (double)s_db) {                /* 点亮条件：段心 < 当前 dB */
             if (muted) col = g_th.text_mute;
-            else if (c < -48.0) col = dim_c;
-            else if (c >= -3.0) col = g_th.warn;
-            else col = g_th.accent;
+            else if (c < -48.0) col = dim_c;   /* 无信号段仍用 accent 35% 压暗 */
+            else col = band_color(c);          /* 分区着色与环/历史一致 */
         }
         SetRect(&br, x0 + i * (bw + gap), y, x0 + i * (bw + gap) + bw, y + h);
         ui_fill_round(dc, br, bw / 2, col, 255);
@@ -282,14 +334,21 @@ static void draw_history(HDC dc)
     RECT c = g_lo.hist;
     RECT lr;
     int i, n = HIST_BARS, gap = sd(2), pad = sd(6);
-    int bw = ((c.right - c.left) - pad * 2 - gap * (n - 1)) / n;
+    int avail = (c.right - c.left) - pad * 2;
+    int bw = (avail - gap * (n - 1)) / n;
     int start = (g_ui.hist_count >= n) ? g_ui.hist_count - n : 0;
+
+    /* R-24：柱宽 +10%（细→饱满）；加宽后放不下就先收紧间距，再压柱宽，
+     * 保证总宽永远不超出历史区（900×560 下也不能溢出）。 */
+    bw += bw / 10;
+    while (gap > 0 && n * bw + gap * (n - 1) > avail) gap--;
+    while (bw > 1 && n * bw + gap * (n - 1) > avail) bw--;
+    if (bw < 1) bw = 1;
 
     SetRect(&lr, c.left, c.top - sd(18), c.left + sd(160), c.top - sd(2));
     ui_text(dc, lr, L"最近 10 秒", ui_font(12, FW_NORMAL, 0), g_th.text_dim,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     ui_fill_round(dc, c, sd(4), g_th.sunken, 255);
-    if (bw < 1) bw = 1;
     for (i = 0; i < n; i++) {
         int src = start + i;                   /* 从左到右 = 时间正序 */
         float v = (src < g_ui.hist_count) ? g_ui.hist[src] : 0.0f;
@@ -299,7 +358,10 @@ static void draw_history(HDC dc)
         if (bh > c.bottom - c.top) bh = c.bottom - c.top;
         SetRect(&br, c.left + pad + i * (bw + gap), c.bottom - bh,
                 c.left + pad + i * (bw + gap) + bw, c.bottom);
-        ui_fill_round(dc, br, sd(4), g_th.accent, 255);
+        /* 每根柱按自己的 dB 上色（hist 存 0..1 比例，dB = v*60 − 60）：
+         * 一眼看出刚才哪几秒顶进目标区/过载。 */
+        ui_fill_round(dc, br, sd(2), v > 0.001f ? band_color(v * 60.0 - 60.0)
+                                                : g_th.meter_off, 255);
     }
 }
 
@@ -309,13 +371,24 @@ static void draw_gain(HDC dc, RECT card)
     int x0 = g_lo.bar_x0, x1 = g_lo.bar_x1;
     int gy = card.top + sd(257);
     wchar_t rd[48];
-    RECT lr = { x0, gy, x0 + sd(280), gy + sd(18) };
     RECT rr = { x1 - sd(220), gy, x1, gy + sd(18) };
+    /* R-24：读数右对齐；窄窗（900×560）放不下全称时逐级缩短，绝不与读数重叠 */
+    static const wchar_t *const lbl_full = L"电脑端本地增益（0–200%）";
+    static const wchar_t *const lbl_mid  = L"本地增益（0–200%）";
+    static const wchar_t *const lbl_short = L"本地增益";
+    const wchar_t *lbl = lbl_full;
+    int lw, rw, avail = x1 - x0;
+    RECT lr;
 
     ui_gain_reading(rd, 48, g_ui.gain);
-    ui_text(dc, lr, L"电脑端本地增益（0–200%）", ui_font(13, FW_NORMAL, 0),
+    rw = ui_measure_text(rd, ui_font(14, FW_NORMAL, 1));
+    lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0));
+    if (lw + rw + sd(12) > avail) { lbl = lbl_mid;  lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0)); }
+    if (lw + rw + sd(12) > avail) { lbl = lbl_short; lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0)); }
+    lr.left = x0; lr.top = gy; lr.right = x0 + lw + sd(2); lr.bottom = gy + sd(18);
+    ui_text(dc, lr, lbl, ui_font(14, FW_NORMAL, 0),
             g_th.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    ui_text(dc, rr, rd, ui_font(13, FW_NORMAL, 1), g_th.text,
+    ui_text(dc, rr, rd, ui_font(14, FW_NORMAL, 1), g_th.text,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
     /* 滑杆：轨道 6 胶囊 bg-sunken、填充 accent、拇指 16 白底 Rfull */
@@ -347,7 +420,7 @@ static void draw_mute_row(HDC dc)
 {
     RECT sw = g_lo.sw_mute;
     RECT lr = { g_lo.bar_x0, sw.top, g_lo.bar_x0 + sd(200), sw.bottom };
-    ui_text(dc, lr, L"静音", ui_font(13, FW_NORMAL, 0), g_th.text,
+    ui_text(dc, lr, L"静音", ui_font(14, FW_NORMAL, 0), g_th.text,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     ui_switch(dc, sw, g_ui.mute);
 }
@@ -357,9 +430,9 @@ void ui_meter_draw(HDC dc, RECT r)
 {
     ui_card(dc, r);
 
-    /* 标题行：输入电平 14/20 Semibold + 右侧峰值读数（13/18，值 Consolas） */
-    ui_text(dc, (RECT){ r.left + sd(16), r.top + sd(12), r.left + sd(200), r.top + sd(32) },
-            L"输入电平", ui_font(14, FW_SEMIBOLD, 0), g_th.text,
+    /* 标题行：输入电平 15/20 Semibold(600) + 右侧峰值读数（14/18，值 Consolas） */
+    ui_text(dc, (RECT){ r.left + ui_pad(), r.top + sd(12), r.left + sd(200), r.top + sd(32) },
+            L"输入电平", ui_font(15, FW_SEMIBOLD, 0), g_th.text,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     {
         wchar_t pv[48];
@@ -370,13 +443,13 @@ void ui_meter_draw(HDC dc, RECT r)
         else
             wcscpy(pv, L"— dBFS");
         vw = ui_measure_text(pv, vf);
-        pw = ui_measure_text(L"峰值 ", ui_font(13, FW_NORMAL, 0));
-        ui_text(dc, (RECT){ r.right - sd(16) - vw - pw, r.top + sd(12),
-                            r.right - sd(16) - vw, r.top + sd(32) },
-                L"峰值 ", ui_font(13, FW_NORMAL, 0), g_th.text_dim,
+        pw = ui_measure_text(L"峰值 ", ui_font(14, FW_NORMAL, 0));
+        ui_text(dc, (RECT){ r.right - ui_pad() - vw - pw, r.top + sd(12),
+                            r.right - ui_pad() - vw, r.top + sd(32) },
+                L"峰值 ", ui_font(14, FW_NORMAL, 0), g_th.text_dim,
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        ui_text(dc, (RECT){ r.right - sd(16) - vw, r.top + sd(12),
-                            r.right - sd(16), r.top + sd(32) },
+        ui_text(dc, (RECT){ r.right - ui_pad() - vw, r.top + sd(12),
+                            r.right - ui_pad(), r.top + sd(32) },
                 pv, vf, g_th.text, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     }
 

@@ -38,7 +38,7 @@ MODE=${1:-all}
 
 APP_OUT=build/womic.exe
 DRVINST_OUT=build/womic-drvinst.exe
-SIZE_BUDGET_APP=${SIZE_BUDGET_APP:-327680}      # 320 KiB
+SIZE_BUDGET_APP=${SIZE_BUDGET_APP:-344064}      # 336 KiB（R-25/R-24：字体字形探测+电平配色+CLIP+卡片裁剪，512B 对齐下 320KiB 档放不下）
 SIZE_BUDGET_DRVINST=${SIZE_BUDGET_DRVINST:-262144}  # 256 KiB
 
 case "$MODE" in

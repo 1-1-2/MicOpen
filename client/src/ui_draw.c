@@ -84,6 +84,113 @@ typedef struct { int px, weight, mono, dpi; HFONT f; } FontEnt;
 static FontEnt g_fonts[32];
 static int     g_nfont;
 
+/* ------------------------------------------------ 字体族探测（R-25）
+ * 只用系统自带字体，且**必须逐级探测**：缺哪级退哪级，绝不让 GDI 自己猜替身
+ * （猜出来的替身可能没有中文字形，整屏方框）。
+ *   界面/中文：Microsoft YaHei UI → Microsoft YaHei → DengXian → SimHei
+ *              →（Wine/精简系统兜底）Noto Sans CJK SC/TC/JP、文泉驿、Droid
+ *              →（最后）全量枚举，取第一个真有汉字字形的族
+ *   读数/时间戳：Consolas → Lucida Console → Courier New（等宽）
+ *   纯拉丁/数字：Segoe UI
+ * 探测用 GetGlyphIndicesW(GGI_MARK_NONEXISTING_GLYPHS) 做**字形级**确认：
+ * 族名被枚举出来不代表真有汉字字形（Wine 上就踩过，只查族名照样出方框）。
+ * 字重只用命名档（雅黑 UI 只有 300/400/600/700，GDI 无可变轴）：
+ *   标题/卡片标题 600，正文/按钮 400，次要说明 400（明度降档，不用 Light）。
+ */
+/* 该字体是否真有某个字形（ch 传 0x4E2D「中」查中文，0x30「0」查数字） */
+static int font_has_glyph(const wchar_t *face, wchar_t ch)
+{
+    HDC dc = GetDC(NULL);
+    HFONT f, old;
+    WORD idx = 0xFFFF;
+    int ok = 0;
+    if (dc) {
+        f = CreateFontW(-16, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+                        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                        CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
+        old = (HFONT)SelectObject(dc, f);
+        if (GetGlyphIndicesW(dc, &ch, 1, &idx, GGI_MARK_NONEXISTING_GLYPHS) == 1)
+            ok = (idx != 0xFFFF);
+        SelectObject(dc, old);
+        DeleteObject(f);
+        ReleaseDC(NULL, dc);
+    }
+    return ok;
+}
+
+
+static int CALLBACK font_enum_cjk_cb(const LOGFONTW *lf, const TEXTMETRICW *tm,
+                                     DWORD type, LPARAM lp)
+{
+    (void)tm; (void)type;
+    if (lf && font_has_glyph(lf->lfFaceName, 0x4E2D)) {
+        wcscpy((wchar_t *)lp, lf->lfFaceName);
+        return 0;                                /* 找到即停 */
+    }
+    return 1;                                    /* 继续 */
+}
+
+static void font_scan_cjk(wchar_t *out)
+{
+    LOGFONTW lf;
+    HDC dc;
+    out[0] = 0;
+    memset(&lf, 0, sizeof(lf));
+    lf.lfCharSet = DEFAULT_CHARSET;              /* 不限族名：枚举全部 */
+    dc = GetDC(NULL);
+    if (dc) {
+        EnumFontFamiliesExW(dc, &lf, font_enum_cjk_cb, (LPARAM)out, 0);
+        ReleaseDC(NULL, dc);
+    }
+}
+
+
+/* 顺序取链上第一个「真有目标字形」的字体；全缺返回 0（cache 置空） */
+static void face_pick(const wchar_t *const *chain, int n, wchar_t glyph,
+                      wchar_t *cache)
+{
+    int i;
+    cache[0] = 0;
+    for (i = 0; i < n; i++)
+        if (font_has_glyph(chain[i], glyph)) { wcscpy(cache, chain[i]); break; }
+}
+
+/* 三类字体的回退链与探测字形；face_get() 统一「探测+缓存」，省三份样板 */
+static const wchar_t *const chain_ui[] = {
+    L"Microsoft YaHei UI", L"Microsoft YaHei", L"DengXian", L"SimHei",
+    /* Wine/精简系统的开源 CJK 兜底（真机 Windows 用不到，多几级不伤） */
+    L"Noto Sans CJK SC", L"Noto Sans CJK JP", L"WenQuanYi Zen Hei",
+    L"Droid Sans Fallback"
+};
+static const wchar_t *const chain_mono[] = { L"Consolas", L"Lucida Console", L"Courier New" };
+static const wchar_t *const chain_latin[] = { L"Segoe UI", L"Tahoma" };
+static const struct {
+    const wchar_t *const *chain; int n; wchar_t glyph;   /* 探测用的代表字形 */
+} face_tab[3] = {
+    { chain_ui,    8, 0x4E2D },   /* 「中」：必须有汉字字形 */
+    { chain_mono,  3, 0x30 },     /* 「0」：数字等宽 */
+    { chain_latin, 2, 0x41 },     /* 「A」 */
+};
+static wchar_t g_face_cache[3][LF_FACESIZE];
+static int     g_face_done[3];
+
+static const wchar_t *face_get(int kind)
+{
+    if (!g_face_done[kind]) {
+        face_pick(face_tab[kind].chain, face_tab[kind].n, face_tab[kind].glyph,
+                  g_face_cache[kind]);
+        if (!g_face_cache[kind][0] && kind == 0) {
+            font_scan_cjk(g_face_cache[0]);      /* 最后兜底：全量枚举 */
+            if (!g_face_cache[0][0])
+                wcscpy(g_face_cache[0], chain_ui[0]);   /* 给个名字让 GDI 兜底 */
+        }
+        if (!g_face_cache[kind][0]) wcscpy(g_face_cache[kind], face_tab[kind].chain[0]);
+        g_face_done[kind] = 1;
+    }
+    return g_face_cache[kind];
+}
+
+/* mono：0 = 界面（中文链）/ 1 = 等宽读数 / 2 = 纯拉丁（Segoe UI） */
 HFONT ui_font(int px, int weight, int mono)
 {
     LOGFONTW lf;
@@ -99,7 +206,8 @@ HFONT ui_font(int px, int weight, int mono)
     lf.lfWeight = weight;
     lf.lfCharSet = DEFAULT_CHARSET;
     lf.lfQuality = CLEARTYPE_QUALITY;
-    wcscpy(lf.lfFaceName, mono ? L"Consolas" : L"Segoe UI");
+    wcscpy(lf.lfFaceName,
+           face_get(mono == 1 ? 1 : mono == 2 ? 2 : 0));
     slot = g_nfont < 32 ? g_nfont++ : 0;
     if (g_fonts[slot].f) DeleteObject(g_fonts[slot].f);
     g_fonts[slot].px = px;
@@ -116,6 +224,23 @@ void ui_fonts_reset(void)
     for (i = 0; i < g_nfont; i++) if (g_fonts[i].f) DeleteObject(g_fonts[i].f);
     memset(g_fonts, 0, sizeof(g_fonts));
     g_nfont = 0;
+}
+
+/* 卡片内距（R-24：16 → 14）。卡片标题/正文/子控件的左右内缩都用它。 */
+int ui_pad(void) { return sd(14); }
+
+/* 子控件裁剪（R-08）。IntersectClipRect 是「与当前裁剪区求交」，所以嵌套安全：
+ * 卡片裁剪永远出不了 ui_draw_all 设下的可视区（标题栏以下、状态栏以上）。 */
+int ui_clip_push(HDC dc, RECT r)
+{
+    int saved = SaveDC(dc);
+    IntersectClipRect(dc, r.left, r.top, r.right, r.bottom);
+    return saved;
+}
+
+void ui_clip_pop(HDC dc, int saved)
+{
+    RestoreDC(dc, saved);
 }
 
 int ui_measure_text(const wchar_t *s, HFONT f)
@@ -361,8 +486,9 @@ void ui_card(HDC dc, RECT r)
 
 void ui_card_title(HDC dc, RECT r, const wchar_t *title)
 {
-    RECT tr = { r.left + sd(16), r.top + sd(12), r.right - sd(16), r.top + sd(32) };
-    ui_text(dc, tr, title, ui_font(14, FW_SEMIBOLD, 0), g_th.text,
+    /* R-24：卡片标题 15/20，600（中文无可变字重轴，用命名档 Semibold） */
+    RECT tr = { r.left + ui_pad(), r.top + sd(12), r.right - ui_pad(), r.top + sd(32) };
+    ui_text(dc, tr, title, ui_font(15, FW_SEMIBOLD, 0), g_th.text,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 }
 
@@ -381,7 +507,7 @@ void ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int enab
         /* 可见禁用（诚实性纪律：不静默失效） */
         ui_fill_round(dc, rr, sd(8), g_th.card_hi, 255);
         ui_stroke_round(dc, rr, sd(8), g_th.stroke, 255, 1);
-        ui_text(dc, rr, label, ui_font(13, FW_SEMIBOLD, 0), g_th.text_mute,
+        ui_text(dc, rr, label, ui_font(14, FW_NORMAL, 0), g_th.text_mute,
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         return;
     }
@@ -392,7 +518,7 @@ void ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int enab
                       fade ? mix_c(g_th.accent, RGB(255, 255, 255), 12 * fade / 1000)
                            : g_th.accent, 255);
         fg = g_th.on_accent;
-        f = ui_font(13, FW_SEMIBOLD, 0);
+        f = ui_font(14, FW_NORMAL, 0);            /* R-25：按钮 400，不加粗 */
         break;
     case BTN_SECONDARY:
         ui_fill_round(dc, rr, sd(8), g_th.card, 255);
@@ -400,7 +526,7 @@ void ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int enab
                         fade ? mix_c(g_th.stroke, g_th.accent, 40 * fade / 1000)
                              : g_th.stroke, 255, 1);
         fg = g_th.text;
-        f = ui_font(13, FW_NORMAL, 0);
+        f = ui_font(14, FW_NORMAL, 0);
         break;
     case BTN_DANGER:
         /* C-05 破坏性：透明底 + err 1px 描边 + err 文字 */
@@ -408,13 +534,13 @@ void ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int enab
                         fade ? mix_c(g_th.err, g_th.text, 30 * fade / 1000)
                              : g_th.err, 255, 1);
         fg = g_th.err;
-        f = ui_font(13, FW_SEMIBOLD, 0);
+        f = ui_font(14, FW_NORMAL, 0);
         break;
     case BTN_ACCENT_OUT:
         /* 连接中：accent 描边 + accent 文字 */
         ui_stroke_round(dc, rr, sd(8), g_th.accent, 255, 1);
         fg = g_th.accent;
-        f = ui_font(13, FW_SEMIBOLD, 0);
+        f = ui_font(14, FW_NORMAL, 0);
         break;
     case BTN_TEXT:
     default:
@@ -538,11 +664,11 @@ void ui_panel_hdr(HDC dc, RECT r, const wchar_t *title, const wchar_t *sum,
      * 右摘要 12/16 text-2（Consolas）+ chevron（展开旋转 90°，T3） */
     int fade = (id == g_ui.hover_fade_id) ? g_ui.hover_fade : 0;
     int cw = sd(10), chx, chy;
-    RECT tr = { r.left + sd(16), r.top, r.left + sd(160), r.bottom };
+    RECT tr = { r.left + ui_pad(), r.top, r.left + sd(160), r.bottom };
     if (fade) ui_fill_round(dc, r, sd(12), g_th.card_hi, (int)(255 * fade / 1000));
-    ui_text(dc, tr, title, ui_font(14, FW_SEMIBOLD, 0), g_th.text,
+    ui_text(dc, tr, title, ui_font(15, FW_SEMIBOLD, 0), g_th.text,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    chx = r.right - sd(16) - cw;
+    chx = r.right - ui_pad() - cw;
     chy = (r.top + r.bottom - cw) / 2;
     if (expanded) {
         ui_line(dc, chx + sd(1), chy + sd(3), chx + sd(5), chy + sd(7), g_th.text_dim, 1.5, 255);
@@ -654,7 +780,7 @@ void ui_draw_titlebar(HDC dc)
     }
     /* 品牌：MicLink 18/24 Semibold text-1 + v1.0.0 pill（Rfull/高20/bg-sunken/text-2） */
     {
-        HFONT f = ui_font(18, FW_SEMIBOLD, 0);
+        HFONT f = ui_font(18, FW_SEMIBOLD, 2);   /* 纯拉丁品牌字 → Segoe UI */
         HFONT pf = ui_font(11, FW_NORMAL, 1);
         int tx = sd(20);
         int tw = ui_measure_text(L"MicLink", f);
@@ -785,7 +911,7 @@ void ui_draw_conn_card(HDC dc)
 
     /* 传输方式标签 + 四段 segmented（D-03：仅 Wi-Fi 已实现，其余可见禁用） */
     {
-        RECT lr = { r.left + sd(16), r.top + t_tlab, r.right - sd(16), r.top + t_tlab + sd(15) };
+        RECT lr = { r.left + ui_pad(), r.top + t_tlab, r.right - ui_pad(), r.top + t_tlab + sd(15) };
         static const wchar_t *lb[4] = { L"Wi-Fi", L"Wi-Fi 直连", L"蓝牙", L"USB" };
         int en[4] = { 1, 0, 0, 0 };
         RECT frame = { g_lo.seg_trans[0].left, g_lo.seg_trans[0].top,
@@ -852,7 +978,7 @@ void ui_draw_drv_card(HDC dc)
         ui_button(dc, g_lo.btn_openset, L"打开声音设置", ID_OPENSET, BTN_SECONDARY, 1);
     } else {
         /* 未就绪：原因 + 安装驱动（此时为主按钮；连接按钮置灰，P-2 一屏一个 primary） */
-        RECT sr = { r.left + sd(16), r.top + sd(46), r.right - sd(16), r.top + sd(94) };
+        RECT sr = { r.left + ui_pad(), r.top + sd(46), r.right - ui_pad(), r.top + sd(94) };
         const wchar_t *why = (d->state == DRV_NEED_REBOOT)
             ? L"驱动已安装但设备未就绪，通常重启电脑后恢复；详见事件面板。"
             : L"未检测到虚拟麦克风驱动。先装驱动，才能把手机麦克风送进 Windows。";
@@ -878,7 +1004,7 @@ void ui_draw_audio_card(HDC dc)
 
     {
         RECT c = g_lo.card_audio;
-        RECT lr = { c.left + sd(16), c.top + sd(60), c.right - sd(16), c.top + sd(75) };
+        RECT lr = { c.left + ui_pad(), c.top + sd(60), c.right - ui_pad(), c.top + sd(75) };
         ui_text(dc, lr, L"采样率（灌给驱动的一律是 48 kHz）", ui_font(11, FW_NORMAL, 0),
                 g_th.text_dim, DT_LEFT | DT_SINGLELINE);
     }
@@ -887,7 +1013,7 @@ void ui_draw_audio_card(HDC dc)
                  rate_lbl, 3, g_ui.seg_rate, ID_RATE0, en);
     {
         RECT c = g_lo.card_audio;
-        RECT lr = { c.left + sd(16), c.top + sd(117), c.right - sd(16), c.top + sd(132) };
+        RECT lr = { c.left + ui_pad(), c.top + sd(117), c.right - ui_pad(), c.top + sd(132) };
         ui_text(dc, lr, L"环形缓冲（26 ms 低延迟 / 120 ms 更抗抖动）", ui_font(11, FW_NORMAL, 0),
                 g_th.text_dim, DT_LEFT | DT_SINGLELINE);
     }
@@ -907,8 +1033,8 @@ void ui_draw_audio_card(HDC dc)
         swprintf(v[3], 24, L"%d ms", g_ui.buf_idx == 0 ? 26 : g_ui.buf_idx == 1 ? 60 : 120);
         for (i = 0; i < 4; i++) {
             int col = i % 2, row = i / 2;
-            RECT cell = { c.left + sd(16) + col * (cw + sd(8)), c.top + sd(174) + row * sd(32),
-                          c.left + sd(16) + col * (cw + sd(8)) + cw, c.top + sd(198) + row * sd(32) };
+            RECT cell = { c.left + ui_pad() + col * (cw + sd(8)), c.top + sd(174) + row * sd(32),
+                          c.left + ui_pad() + col * (cw + sd(8)) + cw, c.top + sd(198) + row * sd(32) };
             int x = cell.left + sd(10);
             ui_fill_round(dc, cell, sd(8), g_th.sunken, 255);
             ui_stroke_round(dc, cell, sd(8), g_th.stroke, 255, 1);
@@ -956,8 +1082,8 @@ void ui_draw_stats_card(HDC dc)
                           ? (double)s->lost * 100.0 / (double)s->expected : 0.0;
         RECT c = g_lo.card_stats;
         int W = c.right - c.left - sd(32);
-        int bx0 = c.left + sd(16) + sd(152);
-        int bx1 = c.right - sd(16) - sd(150);
+        int bx0 = c.left + ui_pad() + sd(152);
+        int bx1 = c.right - ui_pad() - sd(150);
         int bw = bx1 - bx0;
 
         if (live) {
@@ -997,13 +1123,13 @@ void ui_draw_stats_card(HDC dc)
 
         for (i = 0; i < 3; i++) {
             int y = c.top + sd(60) + i * sd(26);
-            RECT lr = { c.left + sd(16), y, c.left + sd(16) + sd(44), y + sd(20) };
+            RECT lr = { c.left + ui_pad(), y, c.left + ui_pad() + sd(44), y + sd(20) };
             RECT vr = { c.left + sd(64), y, c.left + sd(64) + sd(88), y + sd(20) };
             RECT br = { bx0, y + sd(7), bx1, y + sd(13) };
-            RECT cr = { bx1 + sd(6), y, c.right - sd(16), y + sd(20) };
-            ui_text(dc, lr, lb[i], ui_font(13, FW_NORMAL, 0), g_th.text_dim,
+            RECT cr = { bx1 + sd(6), y, c.right - ui_pad(), y + sd(20) };
+            ui_text(dc, lr, lb[i], ui_font(14, FW_NORMAL, 0), g_th.text_dim,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            ui_text(dc, vr, v[i], ui_font(13, FW_NORMAL, 1), g_th.text,
+            ui_text(dc, vr, v[i], ui_font(14, FW_NORMAL, 1), g_th.text,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             /* 横向进度条：轨道 6 胶囊 bg-sunken，填充随健康度 */
             ui_fill_round(dc, br, sd(3), g_th.sunken, 255);
@@ -1061,12 +1187,12 @@ void ui_draw_stats_card(HDC dc)
         swprintf(v[3], 40, L"Wi-Fi");
         for (i = 0; i < 4; i++) {
             int col = i % 2, row = i / 2;
-            int x = c.left + sd(16) + col * (cw + sd(8));
+            int x = c.left + ui_pad() + col * (cw + sd(8));
             int y = c.top + sd(144) + row * sd(41);
             ui_text(dc, (RECT){ x, y, x + cw, y + sd(15) }, k[i],
                     ui_font(11, FW_NORMAL, 0), g_th.text_dim, DT_LEFT | DT_SINGLELINE);
             ui_text(dc, (RECT){ x, y + sd(15), x + cw, y + sd(33) }, v[i],
-                    ui_font(13, FW_NORMAL, 1), g_th.text,
+                    ui_font(14, FW_NORMAL, 1), g_th.text,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         }
     }
@@ -1118,7 +1244,7 @@ void ui_draw_log_card(HDC dc)
         lc = lv_col[L->kind < 0 || L->kind > 2 ? 0 : L->kind];
         /* 左侧 3px 级别竖条 */
         {
-            RECT bar = { c.left + sd(16), y + sd(3), c.left + sd(19), y + line_h - sd(3) };
+            RECT bar = { c.left + ui_pad(), y + sd(3), c.left + ui_pad() + sd(3), y + line_h - sd(3) };
             ui_fill_round(dc, bar, sd(1), lc, 255);
         }
         /* 等宽时间戳（固定宽度） */
@@ -1129,13 +1255,13 @@ void ui_draw_log_card(HDC dc)
         ui_text(dc, lr, lv_name[L->kind < 0 || L->kind > 2 ? 0 : L->kind], lf, lc,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         /* 消息正文 text-1 */
-        SetRect(&mr, c.left + sd(182), y, c.right - sd(16), y + line_h);
+        SetRect(&mr, c.left + sd(182), y, c.right - ui_pad(), y + line_h);
         ui_text(dc, mr, msg, mf, g_th.text,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         y += line_h;
     }
     if (!ui_log_count()) {
-        RECT tr = { c.left + sd(16), c.top + sd(92), c.right - sd(16), c.top + sd(114) };
+        RECT tr = { c.left + ui_pad(), c.top + sd(92), c.right - ui_pad(), c.top + sd(114) };
         ui_text(dc, tr, L"暂无事件", ui_font(12, FW_NORMAL, 0), g_th.text_mute,
                 DT_LEFT | DT_SINGLELINE);
     }
@@ -1180,7 +1306,7 @@ void ui_draw_statusbar(HDC dc)
             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     x += sd(8) + sd(8);
     ui_text(dc, (RECT){ x, r.top, x + sd(80), r.bottom },
-            L"Wi-Fi", f, g_th.text_dim,
+            L"Wi-Fi", ui_font(12, FW_NORMAL, 2), g_th.text_dim,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     x += ui_measure_text(L"Wi-Fi", f) + sd(8);
     /* 抖动（旧名「延迟」是错名：这是帧到达间隔 EMA，不含编解码与驱动缓冲） */
@@ -1260,12 +1386,25 @@ void ui_draw_all(HDC dc)
      * 超出的部分必须被裁掉，而不是画到状态栏下面去 */
     saved = SaveDC(dc);
     IntersectClipRect(dc, 0, ui_title_h(), g_ui.w, g_ui.h - ui_status_h());
-    ui_draw_conn_card(dc);
-    ui_draw_drv_card(dc);
-    ui_meter_draw(dc, g_lo.card_meter);
-    ui_draw_audio_card(dc);
-    ui_draw_stats_card(dc);
-    ui_draw_log_card(dc);
+    /* R-08：每个卡片再各自裁一次。可视区裁剪只保证不出窗口，卡片内的子控件
+     * （段控/滑杆/历史柱/开关）在滚动时同样可能越出自己的卡片边界——
+     * 上一版电平卡的增益滑杆和静音行就浮到了标题栏上。卡片裁剪与可视区
+     * 裁剪求交，嵌套安全。 */
+    {
+        RECT cr;
+        cr = g_lo.card_conn;  { int s = ui_clip_push(dc, cr);
+            ui_draw_conn_card(dc);  ui_clip_pop(dc, s); }
+        cr = g_lo.card_drv;   { int s = ui_clip_push(dc, cr);
+            ui_draw_drv_card(dc);   ui_clip_pop(dc, s); }
+        cr = g_lo.card_meter; { int s = ui_clip_push(dc, cr);
+            ui_meter_draw(dc, cr);  ui_clip_pop(dc, s); }
+        cr = g_lo.card_audio; { int s = ui_clip_push(dc, cr);
+            ui_draw_audio_card(dc); ui_clip_pop(dc, s); }
+        cr = g_lo.card_stats; { int s = ui_clip_push(dc, cr);
+            ui_draw_stats_card(dc); ui_clip_pop(dc, s); }
+        cr = g_lo.card_log;   { int s = ui_clip_push(dc, cr);
+            ui_draw_log_card(dc);   ui_clip_pop(dc, s); }
+    }
     RestoreDC(dc, saved);
 
     ui_draw_statusbar(dc);

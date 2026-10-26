@@ -2,9 +2,12 @@
  *
  * 全部用 GDI / GDI+ 手绘（GDI+ 是运行时 LoadLibrary，缺失自动退化为纯 GDI），
  * 不引入任何 UI 框架、不嵌图片、不嵌字体 —— 这是「单文件几十 KB + 零依赖」的前提。
- * 排版数值全部来自《定稿规范》§0（Win px @96dpi）：
- *   应用标题 18/24 Semibold · 卡片标题 14/20 Semibold · 正文 13/18 ·
- *   次要 12/16 · 标签 11/15 · 数值 Consolas 13/18。
+ * 排版数值（R-24「略饱满」档，Win px @96dpi）：
+ *   应用标题 18/24 Semibold(600) · 卡片标题 15/20 Semibold(600) · 正文 14/18 ·
+ *   次要 12/16 · 标签 11/15 · 读数/时间戳 Consolas 13/18。
+ * 字体（R-25，全部系统自带，EnumFontFamiliesEx 探测后按链回退）：
+ *   界面/中文 Microsoft YaHei UI（→YaHei→DengXian→SimHei）；
+ *   读数/时间戳 Consolas；纯拉丁/数字 Segoe UI。字重只用 400/600 命名档。
  */
 #ifndef MICLINK_UI_DRAW_H
 #define MICLINK_UI_DRAW_H
@@ -16,8 +19,15 @@ int sd(int v);
 
 /* 字体缓存：同一 (px,weight,mono,dpi) 只创建一次，DPI 变化时 ui_fonts_reset()。
  * 尺寸单位是逻辑像素（96dpi 下 1px = 1px），内部再按 DPI 放大。 */
+/* mono：0 = 界面（中文回退链）/ 1 = Consolas 等宽 / 2 = Segoe UI 纯拉丁 */
 HFONT ui_font(int px, int weight, int mono);
 void  ui_fonts_reset(void);
+/* 卡片内距（R-24：16 → 14）。绘制侧与布局侧必须同源，不要各写 sd(14)。 */
+int   ui_pad(void);
+/* 子控件裁剪（R-08）：push 保存当前 DC 状态并把裁剪夹到 r 内，
+ * pop 恢复。所有卡片/滚动区内的子控件都必须先 push 再画。 */
+int   ui_clip_push(HDC dc, RECT r);
+void  ui_clip_pop(HDC dc, int saved);
 int   ui_measure_text(const wchar_t *s, HFONT f);
 
 /* 颜色混合：a 与 b 按 pct%（b 的占比）混合。电平卡 dim 段等派生色复用。 */

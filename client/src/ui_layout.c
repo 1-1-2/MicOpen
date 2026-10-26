@@ -51,7 +51,7 @@ const wchar_t *ui_lbl_help(void)      { return g_small_hdr ? L"说明" : L"命�
 
 static void layout_once(void)
 {
-    int pad = sd(20), gap = sd(16), inner = sd(16);
+    int pad = sd(20), gap = sd(16), inner = ui_pad();   /* R-24：卡片内距 16→14 */
     int leftW, x1, lx0, lx1, rx0, rx1;
     int y0, yl, yr;
     int i;
@@ -99,14 +99,15 @@ static void layout_once(void)
         int t_step  = T ? sd(42)  : sd(49);   /* 三步进度 */
         int t_tlab  = T ? sd(76)  : sd(90);   /* 传输方式标签 */
         int t_seg   = T ? sd(92)  : sd(108);  /* 四段 segmented */
-        int h_seg   = T ? sd(30)  : sd(32);
+        int h_seg   = T ? sd(30)  : sd(36);   /* R-24：按钮高 32→36（tight 保持 30 不破版） */
         int t_hlab  = T ? sd(132) : sd(153);  /* 手机 IP 标签 */
         int t_host  = T ? sd(148) : sd(170);  /* 手机 IP 输入框 */
-        int h_in    = T ? sd(30)  : sd(32);
+        int h_in    = T ? sd(30)  : sd(32);   /* 输入框高度不变（R-10 只改对齐） */
+        int h_btn   = T ? sd(30)  : sd(36);   /* 主按钮：R-24 32→36 */
         int t_plab  = T ? sd(188) : sd(216);  /* 端口标签 */
         int t_port  = T ? sd(204) : sd(234);  /* 端口输入框 */
         int t_btn   = T ? sd(244) : sd(290);  /* 主按钮 */
-        int bpad    = T ? sd(12)  : sd(16);
+        int bpad    = T ? sd(12)  : sd(16);   (void)bpad;
 
         g_lo.card_conn = raw(lx0, yl, lx1, yl + (T ? sd(286) : sd(338)));
         {
@@ -140,7 +141,7 @@ static void layout_once(void)
                 g_lo.ed_media = raw(cx0 + hw + sd(8), yl + t_port, cx1, yl + t_port + h_in);
             }
             /* 主按钮：整卡宽，运行态 = danger + 呼吸（D-04） */
-            g_lo.btn_conn = raw(cx0, yl + t_btn, cx1, yl + t_btn + h_in);
+            g_lo.btn_conn = raw(cx0, yl + t_btn, cx1, yl + t_btn + h_btn);
             (void)t_title; (void)t_hlab; (void)t_plab; (void)t_tlab;
             (void)bpad;
         }
@@ -152,8 +153,8 @@ static void layout_once(void)
         int T = g_lo.tight;
         int t_pill = T ? sd(38)  : sd(44);
         int t_btn  = T ? sd(112) : sd(129);
-        int h_btn  = T ? sd(30)  : sd(32);
-        g_lo.card_drv = raw(lx0, yl, lx1, yl + (T ? sd(154) : sd(177)));
+        int h_btn  = T ? sd(30)  : sd(36);    /* R-24：按钮高 32→36 */
+        g_lo.card_drv = raw(lx0, yl, lx1, yl + (T ? sd(154) : sd(181)));
         {
             int cx0 = lx0 + inner, cx1 = lx1 - inner;
             g_lo.pill_dev = raw(cx0, yl + t_pill, cx1, yl + t_pill + sd(24));
@@ -203,11 +204,13 @@ static void layout_once(void)
         int ringx = c.left + inner + sd(2);
         int rx = c.left + inner + sd(184) + sd(16);
         g_lo.card_meter = cs(c.left, c.top, c.right, c.bottom);
-        /* 环柱内容（环 180 + 6 + 图例 15 = 201）在 level-body 内垂直居中：
-         * 定稿图实测环顶 = 卡顶 + 103 */
-        g_lo.ring = raw(ringx, c.top + sd(103), ringx + sd(180), c.top + sd(283));
-        g_lo.ring_legend = raw(c.left + inner, g_lo.ring.bottom + sd(6),
-                               c.left + inner + sd(188), g_lo.ring.bottom + sd(21));
+        /* R-09：环形区的所有子件全部过 cs()，跟卡片一起滚动。
+         * 旧实现 ring/图例/滑杆/静音用 raw()——卡片滚走了它们却钉在原地，
+         * 既脱锚又会画到别的卡片上（R-08 的浮层就是这么来的之一）。 */
+        g_lo.ring = cs(ringx, c.top + sd(103), ringx + sd(180), c.top + sd(283));
+        /* 图例改流式三行（当前值/峰值/目标，各带读数）：环下 8px 起，行高 18 */
+        g_lo.ring_legend = cs(c.left + inner, c.top + sd(291),
+                              c.left + inner + sd(188), c.top + sd(345));
         {
             int rw = c.right - inner - rx;
             g_lo.hist   = cs(rx, c.top + sd(150), c.right - inner, c.top + sd(206));
@@ -216,7 +219,7 @@ static void layout_once(void)
                               c.right - inner, c.top + sd(361));
             g_lo.bar_x0 = rx;
             g_lo.bar_x1 = c.right - inner;
-            g_lo.bar_y  = c.top + sd(83);
+            g_lo.bar_y  = c.top + sd(83) - g_ui.scroll;   /* 与 cs() 同一坐标系 */
         }
         yr = c.bottom + gap;
     }
@@ -231,15 +234,17 @@ static void layout_once(void)
         int ry = yr + sd(31);
         for (i = 0; i < 3; i++)
             g_lo.seg_rate[i] = cs(rx0 + inner + i * (cw + sd(8)), ry,
-                                  rx0 + inner + i * (cw + sd(8)) + cw, ry + sd(30));
+                                  rx0 + inner + i * (cw + sd(8)) + cw, ry + sd(34));
         ry = yr + sd(88);
         for (i = 0; i < 3; i++)
             g_lo.seg_buf[i] = cs(rx0 + inner + i * (cw + sd(8)), ry,
-                                 rx0 + inner + i * (cw + sd(8)) + cw, ry + sd(30));
+                                 rx0 + inner + i * (cw + sd(8)) + cw, ry + sd(34));
         g_lo.card_audio = cs(rx0, g_lo.hdr_audio.top + g_ui.scroll, rx1, yr + sd(194));
         yr += sd(194);
     }
-    yr += gap;
+    /* R-24：收起态默认占 48px，面板间距 16 会让右列下半段空白散成三截；
+     * 收起时压到 8，空白集中到底部一处 */
+    yr += g_ui.exp_audio ? gap : sd(8);
 
     g_lo.hdr_stats = cs(rx0, yr, rx1, yr + sd(48));
     g_lo.card_stats = g_lo.hdr_stats;
@@ -248,7 +253,7 @@ static void layout_once(void)
         g_lo.card_stats = cs(rx0, g_lo.hdr_stats.top + g_ui.scroll, rx1, yr + sd(182));
         yr += sd(182);
     }
-    yr += gap;
+    yr += g_ui.exp_stats ? gap : sd(8);
 
     g_lo.hdr_log = cs(rx0, yr, rx1, yr + sd(48));
     g_lo.card_log = g_lo.hdr_log;
