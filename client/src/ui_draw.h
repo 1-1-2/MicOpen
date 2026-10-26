@@ -59,7 +59,10 @@ void  ui_icon(HDC dc, RECT r, int kind, COLORREF c, int width);
 void  ui_card(HDC dc, RECT r);                  /* bg-card + R3 + 1px border */
 void  ui_card_title(HDC dc, RECT r, const wchar_t *title);
 
-enum { BTN_PRIMARY = 0, BTN_SECONDARY, BTN_DANGER, BTN_TEXT, BTN_ACCENT_OUT };
+/* BTN_DANGER_OUT（R-40）：与 BTN_ACCENT_OUT 同构的"危险描边"——err 1px 描边 +
+ * err 文字、透明底。用于"进行态可取消"的按钮（取消连接 / 停止重连）。 */
+enum { BTN_PRIMARY = 0, BTN_SECONDARY, BTN_DANGER, BTN_TEXT, BTN_ACCENT_OUT,
+       BTN_DANGER_OUT };
 /* D-10：hover 描边 border→accent 40%（T1 120ms 过渡，fade 由 g_ui.hover_fade 驱动）；
  *       press 矩形内缩 1px 重绘。enabled=0 为可见禁用（text-3）。 */
 void  ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int enabled);

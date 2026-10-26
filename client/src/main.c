@@ -162,6 +162,18 @@ static int connect_session(int manual)
 /* 用户点「连接 / 断开连接」：这里负责"用户意图"，自动重连的武装/解除都在这里。 */
 static void toggle_connection(void)
 {
+    /* R-40：自动重连是"进行态"，此时按钮是「停止重连」——点它就是停下来，
+     * 绝不能重新发起连接（否则只会把下一次重试提前 0.5 s，用户永远停不下来）。
+     * 注意必须带 rc_count>0：手动连过一次后断开、还没开始重试时 rc_count==0，
+     * 那种时候按钮仍是「连接」，点击要照常发起会话，不能被这里吞掉。 */
+    if (!g_ui.running && g_ui.autorec && g_ui.rc_armed && g_ui.rc_count > 0) {
+        g_ui.rc_armed = 0;
+        g_ui.rc_count = 0;
+        g_ui.rc_next = 0;
+        ui_log_add("已停止自动重连", 1);
+        g_dirty = 1;
+        return;
+    }
     if (g_ui.running) {
         /* 用户主动断开 → 解除自动重连（R-27 明确要求：主动断开不重连） */
         g_ui.rc_armed = 0;
@@ -254,11 +266,18 @@ void ui_on_click(int id, int x, int y)
         }
         break;
     case ID_AUTOREC:
-        /* R-27：默认关；开启后断线 0.5 s 固定间隔重试，无上限、不退避 */
+        /* R-27：默认关；开启后断线 0.5 s 固定间隔重试，无上限、不退避。
+         * R-40：关开关时若正在重连，必须把三个状态一起清掉 —— 否则
+         * rc_armed/rc_count 还留着，主按钮会停在「停止重连」而实际已无重试。 */
         g_ui.autorec = !g_ui.autorec;
-        g_ui.rc_count = 0;
-        g_ui.rc_next = 0;
-        if (!g_ui.autorec) g_ui.rc_armed = 0;
+        if (!g_ui.autorec) {
+            g_ui.rc_armed = 0;
+            g_ui.rc_count = 0;
+            g_ui.rc_next = 0;
+        } else {
+            g_ui.rc_count = 0;
+            g_ui.rc_next = 0;
+        }
         ui_log_add(g_ui.autorec ? "已开启自动重连（断线后 0.5 s 重试，无上限）"
                                 : "已关闭自动重连", 0);
         break;

@@ -557,6 +557,15 @@ void ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int enab
         fg = g_th.accent;
         f = ui_font(14, FW_NORMAL, 0);
         break;
+    case BTN_DANGER_OUT:
+        /* R-40 进行态可取消（取消连接 / 停止重连）：err 描边 + err 文字，透明底。
+         * 与 BTN_ACCENT_OUT 同构，只换颜色令牌；hover 时向 text 提亮。 */
+        ui_stroke_round(dc, rr, sd(8),
+                        fade ? mix_c(g_th.err, g_th.text, 30 * fade / 1000)
+                             : g_th.err, 255, 1);
+        fg = g_th.err;
+        f = ui_font(14, FW_NORMAL, 0);
+        break;
     case BTN_TEXT:
     default:
         /* 小文字按钮（11/15）：text-3 → hover text-1 */
@@ -965,16 +974,29 @@ void ui_draw_conn_card(HDC dc)
     draw_input(dc, g_lo.ed_port, L"控制端口");
     draw_input(dc, g_lo.ed_media, L"媒体端口（留空 = 随机）");
 
-    /* 主按钮：状态机着色 + D-04 运行态呼吸 */
+    /* 主按钮：状态机着色 + D-04 运行态呼吸
+     *
+     * R-40：自动重连也是"进行态"，必须给出口。优先级：
+     *   重连中（!running && autorec && rc_armed && rc_count>0）→「停止重连」
+     *   running && 非推流                                    →「取消连接」
+     *   running && 推流                                      →「断开连接」
+     *   其余                                                 →「连接」
+     * 前两个是"可取消"的进行态，用危险描边（BTN_DANGER_OUT）；否则空闲态在
+     * 重连期间长得跟空闲一模一样，用户没有任何办法停下来。 */
     {
+        int reconnecting = (!g_ui.running && g_ui.autorec && g_ui.rc_armed &&
+                            g_ui.rc_count > 0);
         const wchar_t *lbl = L"连接";
         int style = BTN_PRIMARY;
         int enabled = (g_ui.drv.state == DRV_READY);
-        if (g_ui.running) {
+        if (reconnecting) {
+            lbl = L"停止重连"; style = BTN_DANGER_OUT;
+            enabled = 1;                       /* "停"不需要驱动，永远可点 */
+        } else if (g_ui.running) {
             if (g_ui.st.state == ST_STREAMING) {
                 lbl = L"断开连接"; style = BTN_DANGER;
             } else {
-                lbl = L"连接中…"; style = BTN_ACCENT_OUT;
+                lbl = L"取消连接"; style = BTN_DANGER_OUT;
             }
             enabled = 1;
         }
