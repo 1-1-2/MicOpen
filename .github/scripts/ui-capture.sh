@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# ui-capture.sh —— Android 采集端「界面取证」：四个界面各截一张 + uiautomator 控件断言。
+# ui-capture.sh —— Android 采集端「界面取证」：五个界面各截一张 + uiautomator 控件断言。
 #
-# 目的：CI 此前只验协议闭环（能收流），从不验界面——抽屉导航、采集设置、外观页
-# 到底长什么样、控件在不在，没有任何证据。本脚本在模拟器上把四屏走一遍并留证。
+# 目的：CI 此前只验协议闭环（能收流），从不验界面——三段导航、音源页、高级页、
+# 外观页到底长什么样、控件在不在，没有任何证据。本脚本在模拟器上走一遍并留证。
 #
 # 约定：
 #   - 所有 adb 命令都套 timeout（防挂死，这是本仓库 CI 脚本的铁律）；
-#   - 导航按 uiautomator dump 里控件的 bounds 中心点点击，不写死坐标（换分辨率不坏）；
+#   - 导航按 uiautomator dump 里控件的 **text / content-desc** 定位、点其 bounds
+#     中心，**不写死坐标**（换分辨率不坏）；同名文本优先取 clickable="true" 的节点；
 #   - 断言失败只 WARN 不 exit 1（首轮以取证为主，截图与 dump 全量上传供人工复核；
 #     只有「连 app 都拿不到界面」才 exit 1）。
+#
+# R-12 同步：抽屉导航已移除，导航改为顶栏三段「连接 / 音源 / 高级」+ 右上角
+# 外观（👕，content-desc="外观"）。因此本脚本不再有「打开抽屉」这一步；外观 /
+# 关于是独立目的地，用返回键回退到三段外壳。
 #
 # 用法：bash ui-capture.sh [输出目录]   （默认 <local path omitted>）
 set -uo pipefail
@@ -39,7 +44,7 @@ snap() {  # snap <name>
 }
 
 # 从本地 dump 里找 text 或 content-desc 包含 <needle> 的控件，输出 "x y"
-# 同名文本可能既出现在顶栏标题（不可点）又出现在抽屉项（可点）——优先取
+# 同名文本可能既出现在顶栏三段（可点）又出现在页内小标题（不可点）——优先取
 # clickable="true" 的节点，避免点到标题上白点一次。
 find_center() {  # find_center <xml> <needle>
     python3 - "$1" "$2" <<'PY'
@@ -91,6 +96,12 @@ tap_text() {  # tap_text <needle>
     sleep 1
 }
 
+# 返回键（外观 / 关于是独立目的地，靠导航栈回退到三段外壳）
+press_back() {
+    adb_t shell input keyevent 4 >/dev/null 2>&1 || true
+    sleep 1
+}
+
 # 断言 dump 里包含某文本
 assert_text() {  # assert_text <name> <needle> <label>
     if grep -qF "$2" "$OUT/$1.xml" 2>/dev/null; then
@@ -100,64 +111,55 @@ assert_text() {  # assert_text <name> <needle> <label>
     fi
 }
 
-# ------------------------------------------------------------------ 导航动作
-open_drawer() { tap_text "打开导航抽屉" || tap_text "打开抽屉"; }
-goto() { # goto <抽屉项文案>
-    open_drawer
-    tap_text "$1"
-    sleep 1
-}
-
 # ------------------------------------------------------------------ 主流程
 echo "[ui] 前置：确保 MainActivity 在前台"
 adb_t shell am start -n "$PKG/.MainActivity" >/dev/null 2>&1 || true
 sleep 3
 
-echo "[ui] 1/4 主页"
-snap 01-home
+echo "[ui] 1/5 连接页（三段导航 + 状态卡 + 主按钮 + 音量 + 摘要）"
+snap 01-connect
+# R-12：顶栏三段（放在原来「主页」标题的位置）
+assert_text 01-connect "连接" "三段导航-连接"
+assert_text 01-connect "音源" "三段导航-音源"
+assert_text 01-connect "高级" "三段导航-高级"
 # 主操作按钮是二态（D-15：文案「启动/停止」）：服务由 install-app.sh 预启动
 # （调试音）→ 显示「停止」；未启动时显示「启动」——两者其一即通过，不能写死
 # 单态（首轮曾误报 WARN）。
-if grep -qF "停止" "$OUT/01-home.xml" 2>/dev/null || grep -qF "启动" "$OUT/01-home.xml" 2>/dev/null; then
-    echo "  [PASS] 主页-主操作按钮：启动/停止（二态任一）"
+if grep -qF "停止" "$OUT/01-connect.xml" 2>/dev/null || grep -qF "启动" "$OUT/01-connect.xml" 2>/dev/null; then
+    echo "  [PASS] 连接页-主操作按钮：启动/停止（二态任一）"
 else
-    echo "  [WARN] 主页-主操作按钮（启动/停止）均未找到"
+    echo "  [WARN] 连接页-主操作按钮（启动/停止）均未找到"
 fi
-assert_text 01-home "推流音量" "主页-推流音量点轨（D-18）"
+assert_text 01-connect "推流音量" "连接页-推流音量点轨（D-18）"
 # 地址行可见文本只有 IP:端口（无标签），其无障碍 content-desc 带「手机地址」前缀
-assert_text 01-home "手机地址" "主页-手机地址（D-16）"
+assert_text 01-connect "手机地址" "连接页-手机地址（D-16）"
 
-echo "[ui] 2/4 导航抽屉"
-open_drawer
-snap 02-drawer
-assert_text 02-drawer "主页" "抽屉-主页"
-assert_text 02-drawer "采集设置" "抽屉-采集设置"
-assert_text 02-drawer "外观" "抽屉-外观"
-assert_text 02-drawer "关于与帮助" "抽屉-关于"
+echo "[ui] 2/5 音源页（音源 chips + 输入设备 chips）"
+tap_text "音源"
+snap 02-source
+# D-19/D-20：音源与输入设备已 chips 化
+assert_text 02-source "麦克风" "音源页-音源 chips（麦克风档）"
+assert_text 02-source "跟随系统" "音源页-输入设备 chips（跟随系统）"
 
-echo "[ui] 3/4 外观页"
+echo "[ui] 3/5 高级页（系统效果 + 控制端口 + 采样率 + 调试音 + 关于）"
+tap_text "高级"
+snap 03-advanced
+assert_text 03-advanced "降噪" "高级页-降噪开关"
+assert_text 03-advanced "控制端口" "高级页-控制端口"
+# R-07：抽屉移除后「关于与帮助」落到高级页底部（文字按钮）
+assert_text 03-advanced "关于与帮助" "高级页-关于与帮助（R-07）"
+
+echo "[ui] 4/5 外观页（顶栏右上角 👕 进入）"
 tap_text "外观"
 sleep 1
-snap 03-appearance
-assert_text 03-appearance "主题模式" "外观-主题模式"
-assert_text 03-appearance "配色" "外观-配色"
+snap 04-appearance
+assert_text 04-appearance "主题模式" "外观-主题模式"
+assert_text 04-appearance "配色" "外观-配色"
 
-echo "[ui] 4/4 采集设置页"
-goto "采集设置"
-snap 04-capture
-# D-19/D-20：音源与输入设备已 chips 化（子标签「音源」「输入设备」+ 横排 chip）
-assert_text 04-capture "音源" "采集-音源 chips 组"
-assert_text 04-capture "麦克风" "采集-音源 chips（麦克风档）"
-assert_text 04-capture "跟随系统" "采集-输入设备 chips（跟随系统）"
-
-# 下滑看系统效果开关区（NS/AEC/AGC），截第二张
-adb_t shell input swipe 540 1500 540 700 300 >/dev/null 2>&1 || true
-sleep 1
-snap 05-capture-effects
-assert_text 05-capture-effects "降噪" "采集-降噪开关"
-
-echo "[ui] 复原：回主页（不影响后续 interop）"
-goto "主页"
+echo "[ui] 5/5 复原：回到连接页（不影响后续 interop）"
+press_back
+tap_text "连接"
+snap 05-connect-back
 
 echo "[ui] 完成，产物如下："
 ls -la "$OUT"

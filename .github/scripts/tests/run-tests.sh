@@ -566,11 +566,11 @@ done
 #
 # 背景：CI 此前只验协议闭环不验界面。ui-capture.sh 在模拟器上按控件文本导航
 # 并截图断言。本测试用有状态 stub adb + 手写 uiautomator fixture 验证：
-#   1) 同名文本（顶栏标题 vs 抽屉项）必须点中 clickable="true" 的那个；
-#   2) 四屏导航顺序（主页→抽屉→外观→抽屉→采集设置）；
-#   3) 走完四屏后能复原回主页（不影响后续 interop）。
+#   1) 同名文本（顶栏三段 vs 页内小标题）必须点中 clickable="true" 的那个；
+#   2) 五屏导航顺序（连接→音源→高级→外观→回连接），R-12：无抽屉、无横滑；
+#   3) 外观页用返回键回退（独立目的地），最终复原回「连接」页（不影响后续 interop）。
 # ---------------------------------------------------------------------------
-echo "== T23 ui-capture.sh：stub adb 下四屏取证 + 可点击优先 + 复原 =="
+echo "== T23 ui-capture.sh：stub adb 下五屏取证 + 可点击优先 + 复原 =="
 T23="$TMP/t23"; mkdir -p "$T23/bin" "$T23/fx"
 cat > "$T23/bin/adb" <<STUB_EOF
 #!/usr/bin/env bash
@@ -584,13 +584,15 @@ case "\$1" in
         if [ "\$3" = "tap" ]; then
           echo "tap \$4 \$5" >> "$T23/taps"
           case "\$4,\$5" in
-            100,200) echo drawer > "\$S" ;;
-            300,600) echo appearance > "\$S" ;;
-            300,800) echo capture > "\$S" ;;
-            300,400) echo home > "\$S" ;;
+            # 顶栏三段中心（fixture bounds 的中点）+ 右上角外观（👕）
+            100,160) echo connect > "\$S" ;;
+            200,160) echo source > "\$S" ;;
+            300,160) echo advanced > "\$S" ;;
+            920,160) echo appearance > "\$S" ;;
           esac
-        elif [ "\$3" = "swipe" ]; then
-          echo capture-effects > "\$S"
+        elif [ "\$3" = "keyevent" ]; then
+          # 返回键：外观 / 关于是独立目的地，回退到三段外壳（停在离开前的页）
+          [ "\$(cat "\$S")" = "appearance" ] && echo advanced > "\$S"
         fi
         exit 0 ;;
     esac
@@ -605,29 +607,30 @@ esac
 exit 0
 STUB_EOF
 chmod +x "$T23/bin/adb"
-cat > "$T23/fx/home.xml" <<'X'
-<hierarchy rotation="0"><node text="" content-desc="打开导航抽屉" clickable="true" bounds="[60,160][140,240]"/><node text="启动服务" content-desc="" clickable="true" bounds="[300,1600][780,1700]"/><node text="手机地址" content-desc="" clickable="false" bounds="[100,900][300,950]"/><node text="推流音量" content-desc="" clickable="false" bounds="[100,1200][300,1250]"/></hierarchy>
+# 连接页：三段（可点）+ 同名页内小标题（不可点，验证"可点击优先"）+ 👕 + 主按钮/地址/音量
+cat > "$T23/fx/connect.xml" <<'X'
+<hierarchy rotation="0"><node text="连接" content-desc="" clickable="true" bounds="[60,140][140,180]"/><node text="音源" content-desc="" clickable="true" bounds="[160,140][240,180]"/><node text="高级" content-desc="" clickable="true" bounds="[260,140][340,180]"/><node text="" content-desc="外观" clickable="true" bounds="[880,140][960,180]"/><node text="音源" content-desc="" clickable="false" bounds="[100,1000][300,1050]"/><node text="启动服务" content-desc="" clickable="true" bounds="[300,1600][780,1700]"/><node text="手机地址" content-desc="" clickable="false" bounds="[100,900][300,950]"/><node text="推流音量" content-desc="" clickable="false" bounds="[100,1200][300,1250]"/></hierarchy>
 X
-cat > "$T23/fx/drawer.xml" <<'X'
-<hierarchy rotation="0"><node text="主页" content-desc="" clickable="false" bounds="[100,100][500,150]"/><node text="主页" content-desc="" clickable="true" bounds="[200,350][400,450]"/><node text="采集设置" content-desc="" clickable="true" bounds="[200,750][400,850]"/><node text="外观" content-desc="" clickable="true" bounds="[200,550][400,650]"/><node text="关于与帮助" content-desc="" clickable="true" bounds="[200,950][400,1050]"/></hierarchy>
+# 音源页：三段仍在顶栏（可点），chips 为麦克风 / 跟随系统
+cat > "$T23/fx/source.xml" <<'X'
+<hierarchy rotation="0"><node text="连接" content-desc="" clickable="true" bounds="[60,140][140,180]"/><node text="音源" content-desc="" clickable="true" bounds="[160,140][240,180]"/><node text="高级" content-desc="" clickable="true" bounds="[260,140][340,180]"/><node text="" content-desc="外观" clickable="true" bounds="[880,140][960,180]"/><node text="麦克风" content-desc="" clickable="true" bounds="[100,400][300,450]"/><node text="跟随系统（自动）" content-desc="" clickable="true" bounds="[100,800][600,850]"/></hierarchy>
 X
+# 高级页：降噪开关 / 控制端口 / 关于与帮助（R-07 落到页底）
+cat > "$T23/fx/advanced.xml" <<'X'
+<hierarchy rotation="0"><node text="连接" content-desc="" clickable="true" bounds="[60,140][140,180]"/><node text="音源" content-desc="" clickable="true" bounds="[160,140][240,180]"/><node text="高级" content-desc="" clickable="true" bounds="[260,140][340,180]"/><node text="" content-desc="外观" clickable="true" bounds="[880,140][960,180]"/><node text="降噪（NS）" content-desc="" clickable="true" bounds="[100,600][400,650]"/><node text="控制端口" content-desc="" clickable="false" bounds="[100,900][300,950]"/><node text="关于与帮助" content-desc="" clickable="true" bounds="[100,1800][600,1900]"/></hierarchy>
+X
+# 外观页：独立目的地（无三段顶栏），主题模式 / 配色
 cat > "$T23/fx/appearance.xml" <<'X'
-<hierarchy rotation="0"><node text="" content-desc="打开导航抽屉" clickable="true" bounds="[60,160][140,240]"/><node text="主题模式" content-desc="" clickable="false" bounds="[100,500][300,550]"/><node text="配色" content-desc="" clickable="false" bounds="[100,800][200,850]"/></hierarchy>
+<hierarchy rotation="0"><node text="主题模式" content-desc="" clickable="false" bounds="[100,500][300,550]"/><node text="配色" content-desc="" clickable="false" bounds="[100,800][200,850]"/></hierarchy>
 X
-cat > "$T23/fx/capture.xml" <<'X'
-<hierarchy rotation="0"><node text="" content-desc="打开导航抽屉" clickable="true" bounds="[60,160][140,240]"/><node text="音源模式" content-desc="" clickable="false" bounds="[100,400][300,450]"/><node text="麦克风" content-desc="" clickable="false" bounds="[100,700][200,750]"/><node text="跟随系统（自动）" content-desc="" clickable="true" bounds="[100,800][600,850]"/></hierarchy>
-X
-cat > "$T23/fx/capture-effects.xml" <<'X'
-<hierarchy rotation="0"><node text="" content-desc="打开导航抽屉" clickable="true" bounds="[60,160][140,240]"/><node text="降噪（NS）" content-desc="" clickable="true" bounds="[100,600][400,650]"/></hierarchy>
-X
-echo home > "$T23/state"
+echo connect > "$T23/state"
 PATH="$T23/bin:$PATH" bash "$SCRIPTS/ui-capture.sh" "$T23/out" > "$T23/run.log" 2>&1
 t23_pass=$(grep -c '\[PASS\]' "$T23/run.log")
-assert_eq "$t23_pass" "13" "T23 四屏断言 13 项全 PASS"
+assert_eq "$t23_pass" "13" "T23 五屏断言 13 项全 PASS"
 assert_eq "$(tr '\n' ' ' < "$T23/taps" 2>/dev/null | sed 's/ $//')" \
-          "tap 100 200 tap 300 600 tap 100 200 tap 300 800 tap 100 200 tap 300 400" \
-          "T23 导航序列正确（首页→外观→采集设置→复原主页，全程点中可点击项）"
-assert_eq "$(cat "$T23/state")" "home" "T23 走完四屏后复原回主页"
+          "tap 200 160 tap 300 160 tap 920 160 tap 100 160" \
+          "T23 导航序列正确（连接→音源→高级→外观→回连接，全程点中可点击项）"
+assert_eq "$(cat "$T23/state")" "connect" "T23 走完五屏后复原回连接页"
 assert_eq "$(ls "$T23/out" | grep -c '\.png$')" "5" "T23 产出 5 张截图"
 
 # ---------------------------------------------------------------------------

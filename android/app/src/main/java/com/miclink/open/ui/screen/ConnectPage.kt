@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -43,9 +43,9 @@ import com.miclink.open.AudioSourceOption
 import com.miclink.open.MainUiState
 import com.miclink.open.MainViewModel
 import com.miclink.open.MicCaptureService
+import com.miclink.open.Prefs
 import com.miclink.open.R
 import com.miclink.open.theme.ThemeMode
-import com.miclink.open.theme.ThemeState
 import com.miclink.open.ui.component.CardDivider
 import com.miclink.open.ui.component.DotTrack
 import com.miclink.open.ui.component.HintText
@@ -54,145 +54,159 @@ import com.miclink.open.ui.component.LocalMicLinkTokens
 import com.miclink.open.ui.component.SectionCard
 import com.miclink.open.ui.component.SettingsNavRow
 import com.miclink.open.ui.component.StatusBadge
+import com.miclink.open.ui.navigation.SummaryRow
 import com.miclink.open.ui.theme.WomicTheme
 
 /**
- * HomeScreen -- 主页（定稿规范 D-15…D-18）。
+ * ConnectPage -- 三段导航的「连接」页（R-12）。
  *
- * 三张卡，全部数据来自服务真实回传（数据诚实性：测不到的显示「—」）：
- *  1. **状态卡**（D-16）：大状态徽标 + 右端监听地址 + 四行字段
- *     （传输方式 / 延迟 / 丢包 / 时长）+ 1px 分隔线 + 主按钮；
- *  2. **音量卡**（D-18）：十档离散点轨（协议 0-9，吸附整数档）+ 静音开关；
- *  3. **设置摘要卡**（D-17）：音源 / 系统降噪 / 主题三行跳转。
+ * 结构（自上而下）：
+ *  ① 连接状态卡：大状态徽标 + 右端地址 + **两列并排**的字段（R-06）+ 1px 分隔线
+ *     + 主按钮；
+ *  ② 主按钮（D-15）：空闲「启动」accent 填充；运行「停止」err 描边 + err 呼吸
+ *     外发光；「停止」走二次确认（C-05）；
+ *  ③ 推流音量（D-18）：十档点轨 + 静音开关；
+ *  ④ 参数摘要：音源 / 系统降噪 / 控制端口三行，点跳对应页（不退出本页栈）。
  *
- * 主按钮（D-15）：空闲 = accent 填充「启动」；运行 = err 描边「停止」+
- * err 呼吸外发光（仅运行态）。「停止」不直接停服务，而是经
- * [MainViewModel.requestStopConfirmation] 由 AppNav 弹二次确认（C-05）；
- * 前台服务通知的「停止」走同一条确认路径（MainActivity EXTRA_CONFIRM_STOP）。
+ * 数据诚实性：字段只保留**有真实来源**的（传输方式 / 时长），延迟与丢包已删除
+ * （R-20：app 侧无测量通道）。
  *
- * @param vm 主界面状态容器；
- * @param onStartClicked 启动服务（含权限申请流程，由 Activity 实现）；
- * @param onOpenCaptureSettings 跳转采集设置，参数为落点锚点（[CaptureFocus]：
- *   「音源」→ 输入卡、「系统降噪」→ 系统效果卡，D-05）；
- * @param onOpenAppearance 跳转外观页。
+ * @param scrollState 由 AppNav 持有（切页不重置滚动，R-12）。
+ * @param onJump 摘要行跳转（目标页 + 锚点由 [com.miclink.open.ui.navigation.summaryTarget] 决定）。
  */
 @Composable
-fun HomeScreen(
+fun ConnectPage(
     vm: MainViewModel,
+    scrollState: ScrollState,
     onStartClicked: () -> Unit,
-    onOpenCaptureSettings: (String) -> Unit,
-    onOpenAppearance: () -> Unit,
+    onJump: (SummaryRow) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state = vm.uiState
+    val tokens = LocalMicLinkTokens.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        StatusSection(
-            state = state,
-            onStartClicked = onStartClicked,
-            onStopRequested = { vm.requestStopConfirmation() }
-        )
+        // ---- ① 连接状态卡 ----
+        SectionCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val (badgeColor, badgeContainer) = statusBadgeColors(state.state)
+                StatusBadge(
+                    text = MicCaptureService.stateWord(state.state),
+                    color = badgeColor,
+                    container = badgeContainer
+                )
+                Spacer(Modifier.weight(1f))
+                val address = state.listeningAddress.ifBlank {
+                    stringResource(R.string.home_value_unknown)
+                }
+                // 无障碍标签在组合层取（semantics lambda 不是 @Composable 上下文）
+                val addressLabel = stringResource(R.string.phone_address)
+                Text(
+                    text = address,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace
+                    ),
+                    color = tokens.text2,
+                    maxLines = 1,
+                    // 可见文本只有地址；朗读时补上用途（CI 断言同源）
+                    modifier = Modifier.semantics {
+                        contentDescription = "$addressLabel $address"
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ② 字段**两列并排**（R-06）：真实字段只有传输方式与时长，一行放得下
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                FieldCell(
+                    label = stringResource(R.string.home_field_transport),
+                    value = state.transport.ifBlank { stringResource(R.string.home_value_unknown) },
+                    modifier = Modifier.weight(1f)
+                )
+                FieldCell(
+                    label = stringResource(R.string.home_field_duration),
+                    value = formatSessionDuration(
+                        startElapsedMs = state.sessionStartElapsedMs,
+                        nowElapsedMs = SystemClock.elapsedRealtime()
+                    ).ifEmpty { stringResource(R.string.home_value_unknown) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            CardDivider()
+            Spacer(Modifier.height(16.dp))
+
+            // ③ 主按钮
+            MainActionButton(
+                running = state.isRunning,
+                onStart = onStartClicked,
+                onStopRequest = { vm.requestStopConfirmation() }
+            )
+        }
+
+        // ---- ② 推流音量 ----
         VolumeSection(
             state = state,
             onVolumeChanged = { vm.onVolumeChanged(it) },
             onMuteChanged = { vm.onMuteChanged(it) }
         )
-        SettingsSummarySection(
-            state = state,
-            themeState = vm.themeState,
-            onOpenCaptureSettings = onOpenCaptureSettings,
-            onOpenAppearance = onOpenAppearance
-        )
-    }
-}
 
-// ------------------------------------------------------------------
-// 状态卡（D-16）
-// ------------------------------------------------------------------
-
-@Composable
-private fun StatusSection(
-    state: MainUiState,
-    onStartClicked: () -> Unit,
-    onStopRequested: () -> Unit
-) {
-    SectionCard {
-        // ① 大状态徽标（文字 = 服务状态词，与前台通知标题同一事实来源）+ 右端地址
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val (badgeColor, badgeContainer) = statusBadgeColors(state.state)
-            StatusBadge(
-                text = MicCaptureService.stateWord(state.state),
-                color = badgeColor,
-                container = badgeContainer
+        // ---- ③ 参数摘要 ----
+        SectionCard {
+            SettingsNavRow(
+                label = stringResource(R.string.home_row_source),
+                value = audioSourceLabel(state.capture.audioSource),
+                onClick = { onJump(SummaryRow.SOURCE) }
             )
-            Spacer(Modifier.weight(1f))
-            val address = state.listeningAddress.ifBlank {
-                stringResource(R.string.home_value_unknown)
-            }
-            // 无障碍标签在组合层取（semantics lambda 不是 @Composable 上下文）
-            val addressLabel = stringResource(R.string.phone_address)
-            Text(
-                text = address,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace
+            CardDivider()
+            SettingsNavRow(
+                label = stringResource(R.string.home_row_noise),
+                value = stringResource(
+                    if (state.capture.noiseSuppressor) {
+                        R.string.home_value_on
+                    } else {
+                        R.string.home_value_off
+                    }
                 ),
-                color = LocalMicLinkTokens.current.text2,
-                maxLines = 1,
-                // 无障碍标签（可见文本只有地址；朗读时补上用途）
-                modifier = Modifier.semantics {
-                    contentDescription = "$addressLabel $address"
-                }
+                onClick = { onJump(SummaryRow.NOISE) }
+            )
+            CardDivider()
+            SettingsNavRow(
+                label = stringResource(R.string.label_control_port),
+                value = state.controlPortText.ifBlank {
+                    Prefs.DEFAULT_CONTROL_PORT.toString()
+                },
+                onClick = { onJump(SummaryRow.PORT) }
             )
         }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ② 分行字段（禁「·」分隔）：只保留**有真实来源**的字段。
-        // R-20：延迟 / 丢包两行已删除——app 侧没有测量通道，摆两行恒为「—」的
-        // 伪遥测字段只会误导用户（诚实性纪律：没有来源就不要有字段）。
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusFieldRow(
-                label = stringResource(R.string.home_field_transport),
-                value = state.transport.ifBlank { stringResource(R.string.home_value_unknown) }
-            )
-            StatusFieldRow(
-                label = stringResource(R.string.home_field_duration),
-                value = formatSessionDuration(
-                    startElapsedMs = state.sessionStartElapsedMs,
-                    nowElapsedMs = SystemClock.elapsedRealtime()
-                ).ifEmpty { stringResource(R.string.home_value_unknown) }
-            )
-        }
-
-        // ③ 1px 分隔线（上下各 16）
-        Spacer(Modifier.height(16.dp))
-        CardDivider()
-        Spacer(Modifier.height(16.dp))
-
-        // ④ 主按钮
-        MainActionButton(
-            running = state.isRunning,
-            onStart = onStartClicked,
-            onStopRequest = onStopRequested
-        )
     }
 }
 
-/** 分行字段行（D-16）：标签 13sp text-2 左、值 14sp text-1 右，行高 24。 */
+// ------------------------------------------------------------------
+// 状态卡零件
+// ------------------------------------------------------------------
+
+/**
+ * 状态字段格（R-06 两列并排用）：标签 13sp text-2 左、值 14sp text-1 右，
+ * 行高 24（与 D-16 单行字段同规格，只是两个并排）。
+ */
 @Composable
-private fun StatusFieldRow(label: String, value: String) {
+private fun FieldCell(label: String, value: String, modifier: Modifier = Modifier) {
     val tokens = LocalMicLinkTokens.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(24.dp),
+        modifier = modifier.height(24.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -220,30 +234,23 @@ private fun statusBadgeColors(state: String): Pair<Color, Color> {
         MicCaptureService.STATE_LISTENING -> tokens.warn to tokens.warnContainer
         MicCaptureService.STATE_STARTING -> tokens.accent to tokens.accentContainer
         MicCaptureService.STATE_ERROR -> tokens.err to tokens.errContainer
-        // 空闲 / 已停止：中性色（无语义色可用，不用假彩色）
         else -> tokens.text2 to tokens.bgSunken
     }
 }
 
-/**
- * 会话时长文本（mm:ss，超过一小时 h:mm:ss）。
- *
- * @param startElapsedMs 服务记录的本回合话开始时刻（elapsedRealtime；0 = 无会话）。
- * @param nowElapsedMs 当前时刻（调用方传入，保证纯函数可测）。
- * @return 无会话返回空串（调用方显示「—」）。
- */
+/** 会话时长 mm:ss / h:mm:ss；无会话返回空串（UI 显示「—」）。 */
 private fun formatSessionDuration(startElapsedMs: Long, nowElapsedMs: Long): String {
     if (startElapsedMs <= 0L) {
         return ""
     }
-    val seconds = ((nowElapsedMs - startElapsedMs) / 1000L).coerceAtLeast(0L)
-    val hours = seconds / 3600
-    val minutes = (seconds % 3600) / 60
-    val secs = seconds % 60
-    return if (hours > 0) {
-        String.format("%d:%02d:%02d", hours, minutes, secs)
+    val totalSeconds = ((nowElapsedMs - startElapsedMs) / 1000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
     } else {
-        String.format("%02d:%02d", minutes, secs)
+        "%02d:%02d".format(minutes, seconds)
     }
 }
 
@@ -265,7 +272,6 @@ private const val GLOW_MAX_ALPHA = 0.30f
  *
  * 呼吸参数与 Windows 接收端一致（D-22）：周期 1200ms（tween 600ms +
  * RepeatMode.Reverse）、alpha 0→0.30→0、err 语义色、**仅采集运行中**。
- * 修改任一端须同步另一端（跨端一致性验收项）。
  */
 @Composable
 private fun MainActionButton(
@@ -291,7 +297,6 @@ private fun MainActionButton(
         contentAlignment = Alignment.Center
     ) {
         // 呼吸外发光层：常驻组合，只改 alpha（0 时不可见，但**不退出布局**）。
-        // 空闲态/alpha 归零时连 blur 都不挂，省掉无意义的模糊开销。
         val glowVisible = running && glowAlpha > 0.001f
         Box(
             modifier = Modifier
@@ -329,12 +334,7 @@ private fun MainActionButton(
     }
 }
 
-/**
- * 呼吸外发光 alpha（0 → [GLOW_MAX_ALPHA] → 0，周期 2 * [GLOW_HALF_CYCLE_MS]）。
- *
- * 仅 [enabled]（采集运行中）时启动无限动画；停止时组件直接不创建
- * infinite transition（省电，也不留常驻重组）。
- */
+/** 呼吸外发光 alpha（0 → [GLOW_MAX_ALPHA] → 0，周期 2 * [GLOW_HALF_CYCLE_MS]）。 */
 @Composable
 private fun rememberBreathingGlow(enabled: Boolean): Float {
     if (!enabled) {
@@ -410,54 +410,12 @@ private fun VolumeSection(
 /**
  * 协议音量档位 -> dB 语义（手册 §7.2）：0 静音；1-4 每档 -6 dB；5 原样；
  * 6-9 每档 +6 dB。
- *
- * @param muteLabel 0 档的展示词（字符串资源传入，避免 UI 文案硬编码）。
  */
 private fun volumeDb(volume: Int, muteLabel: String): String = when {
     volume <= 0 -> muteLabel
     volume == 5 -> "0 dB"
     volume < 5 -> "-${(5 - volume) * 6} dB"
     else -> "+${(volume - 5) * 6} dB"
-}
-
-// ------------------------------------------------------------------
-// 设置摘要卡（D-17）
-// ------------------------------------------------------------------
-
-@Composable
-private fun SettingsSummarySection(
-    state: MainUiState,
-    themeState: ThemeState,
-    onOpenCaptureSettings: (String) -> Unit,
-    onOpenAppearance: () -> Unit
-) {
-    SectionCard {
-        SettingsNavRow(
-            label = stringResource(R.string.home_row_source),
-            value = audioSourceLabel(state.capture.audioSource),
-            // D-05：落到输入卡（音源 / 输入设备）
-            onClick = { onOpenCaptureSettings(CaptureFocus.SOURCE) }
-        )
-        CardDivider()
-        SettingsNavRow(
-            label = stringResource(R.string.home_row_noise),
-            value = stringResource(
-                if (state.capture.noiseSuppressor) {
-                    R.string.home_value_on
-                } else {
-                    R.string.home_value_off
-                }
-            ),
-            // D-05：落到系统效果卡（此前与「音源」同落点，停在页首）
-            onClick = { onOpenCaptureSettings(CaptureFocus.EFFECTS) }
-        )
-        CardDivider()
-        SettingsNavRow(
-            label = stringResource(R.string.home_row_theme),
-            value = stringResource(themeModeLabel(themeState.mode)),
-            onClick = onOpenAppearance
-        )
-    }
 }
 
 /** 音源 id -> 当前选中档位名（未知 id 回落「默认」，与 sanitize 行为一致）。 */
@@ -470,13 +428,13 @@ private fun audioSourceLabel(id: Int): String {
 
 @Preview(showBackground = true)
 @Composable
-private fun HomeScreenPreview() {
+private fun ConnectPagePreview() {
     WomicTheme(mode = ThemeMode.LIGHT) {
-        HomeScreen(
+        ConnectPage(
             vm = MainViewModel(),
+            scrollState = ScrollState(0),
             onStartClicked = {},
-            onOpenCaptureSettings = {},
-            onOpenAppearance = {}
+            onJump = {}
         )
     }
 }

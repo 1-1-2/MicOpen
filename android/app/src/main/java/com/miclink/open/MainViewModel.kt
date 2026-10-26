@@ -7,6 +7,9 @@ import androidx.lifecycle.ViewModel
 import com.miclink.open.theme.AppPalette
 import com.miclink.open.theme.ThemeMode
 import com.miclink.open.theme.ThemeState
+import com.miclink.open.ui.navigation.HomeFocus
+import com.miclink.open.ui.navigation.HomeTab
+import com.miclink.open.ui.navigation.backTargetFrom
 
 /**
  * 主界面状态：配置 + 服务状态 + 会话统计。
@@ -371,6 +374,48 @@ class MainViewModel : ViewModel() {
      */
     fun requestStopConfirmation() {
         uiState = uiState.copy(stopConfirmPending = true)
+    }
+
+    // ------------------------------------------------------------------
+    // 三段导航（R-12）：页状态放 ViewModel —— 切页不重连、不重置滚动
+    // ------------------------------------------------------------------
+
+    /**
+     * 当前三段页。放 ViewModel 而不是页面内部：去外观页 / 关于页再回来、
+     * 旋转屏都保持在同一页（服务绑定在 Activity 上，切页不影响连接）。
+     */
+    var homeTab: HomeTab by mutableStateOf(HomeTab.CONNECT)
+        private set
+
+    /** 页内锚点（连接页摘要行跳转后的滚动目标；页面消费后复位）。 */
+    var homeFocus: HomeFocus by mutableStateOf(HomeFocus.NONE)
+        private set
+
+    /** 点顶栏三段直接切页。 */
+    fun selectTab(tab: HomeTab) {
+        homeTab = tab
+    }
+
+    /** 跳到目标页并带上页内锚点（连接页「参数摘要」行）。 */
+    fun goToTab(tab: HomeTab, focus: HomeFocus) {
+        homeTab = tab
+        homeFocus = focus
+    }
+
+    /**
+     * 返回键（R-12）：非「连接」页回「连接」页；已在「连接」页返回 false
+     * （调用方不拦截，交系统退出 App）。
+     */
+    fun navigateBackFromTab(): Boolean {
+        val target = backTargetFrom(homeTab) ?: return false
+        homeTab = target
+        homeFocus = HomeFocus.NONE
+        return true
+    }
+
+    /** 锚点已被页面消费（滚动完即复位，避免下次进页重复滚）。 */
+    fun consumeHomeFocus() {
+        homeFocus = HomeFocus.NONE
     }
 
     /** 确认弹窗关闭（取消 / 已确认并执行停止）。 */
