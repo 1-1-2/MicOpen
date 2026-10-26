@@ -35,6 +35,7 @@ typedef struct {
     RECT slider;                    /* 本地增益滑杆（D-07） */
     RECT sw_mute;                   /* 静音开关（D-06） */
     RECT sw_mon;                    /* 监听开关（R-39） */
+    RECT sw_gainext;                /* 扩展增益范围开关（R-47） */
     RECT sw_autorec;                /* 自动重连开关（R-27） */
     int  bar_x0, bar_x1, bar_y;     /* 横条电平（60 段，D-06/C-12） */
 
@@ -63,5 +64,6 @@ const wchar_t *ui_step_label(int i);   /* 三步进度标签（D-02） */
  * 不能各写一份字面量，否则文案与矩形宽度会漂移。 */
 const wchar_t *ui_lbl_uninstall(void);  /* 「卸载驱动」/ 窄窗「卸载」 */
 const wchar_t *ui_lbl_help(void);       /* 「命令行说明书」/ 窄窗「说明」 */
+const wchar_t *ui_lbl_gainext(void);    /* R-47：「扩展增益」/ 窄窗「扩展」 */
 
 #endif /* MICLINK_UI_LAYOUT_H */

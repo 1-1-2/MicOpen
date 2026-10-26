@@ -719,25 +719,46 @@ void ui_breath_glow(HDC dc, RECT r)
 
 /* ------------------------------------------------------- 增益 dB 刻度 */
 /* R-31：内部一律 dB（0.1 dB 精度），不再存百分比。
- *   pos(0..1000) ↔ dB 线性：dB = -60 + 66 * pos/1000
+ *   pos(0..1000) ↔ dB 线性，低端恒 -60 dB，高端随「扩展增益」开关在
+ *   +6 dB（200%）/ +14 dB（501%）之间切换（R-47）。
  *   倍率 = pow(10, dB/20) —— -60 dB 是 0.001 倍，不是 0（不再是静音）
  * 旧实现存百分比，并在 pos→gain 里 `if (v <= 1) v = 0`：-38 dB 就掉成静音，
  * 而且 -60…-36 dB 整段被压进 0.1%…1.6%，半条轨道不可用。 */
 static const int g_snap_db10[6]   = { 0, -120, -240, -360, -480, -600 };
 static const int g_snap_radius[6] = { 15, 8, 8, 8, 8, 8 };   /* 1.5 dB / 0.75 dB */
+/* 扩展模式下附加的满档吸附点：+14.0 dB = 501%（±1.5 dB） */
+static const int g_snap_ext_db10   = 140;
+static const int g_snap_ext_radius = 15;
+
+/** 当前增益上限（0.1 dB）：受「扩展增益」开关控制（R-47）。 */
+int ui_gain_db10_max(void)
+{
+    return g_ui.gain_ext ? GAIN_DB10_MAX_EXT : GAIN_DB10_MAX;
+}
+
+/** 当前轨道跨度（-60 dB → 上限，单位 0.1 dB）。 */
+static int gain_span(void)
+{
+    return g_ui.gain_ext ? GAIN_SPAN_EXT : GAIN_SPAN_NORMAL;
+}
 
 int ui_pos_to_db10(int pos)
 {
     int db10, i;
     if (pos < 0) pos = 0;
     if (pos > 1000) pos = 1000;
-    db10 = -600 + (660 * pos) / 1000;
+    db10 = -600 + (gain_span() * pos) / 1000;
     /* R-32：只对"落点"吸附。每个新 pos 都重新算，所以继续拖就能离开吸附区，
      * 不会粘死在刻度上（不做累积吸附）。 */
     for (i = 0; i < 6; i++)
         if (db10 - g_snap_db10[i] <= g_snap_radius[i] &&
             g_snap_db10[i] - db10 <= g_snap_radius[i])
             return g_snap_db10[i];
+    /* R-47：扩展模式下把 +14 dB 也做成吸附点，方便一下拉到满档 */
+    if (g_ui.gain_ext &&
+        db10 - g_snap_ext_db10 <= g_snap_ext_radius &&
+        g_snap_ext_db10 - db10 <= g_snap_ext_radius)
+        return g_snap_ext_db10;
     return db10;
 }
 
@@ -745,8 +766,8 @@ int ui_gain_pos(int db10)
 {
     int p;
     if (db10 < GAIN_DB10_MIN) db10 = GAIN_DB10_MIN;
-    if (db10 > GAIN_DB10_MAX) db10 = GAIN_DB10_MAX;
-    p = ((db10 + 600) * 1000) / 660;
+    if (db10 > ui_gain_db10_max()) db10 = ui_gain_db10_max();
+    p = ((db10 + 600) * 1000) / gain_span();
     if (p < 0) p = 0;
     if (p > 1000) p = 1000;
     return p;
@@ -757,6 +778,7 @@ int ui_gain_snap_target(int db10)
     int i;
     for (i = 0; i < 6; i++)
         if (db10 == g_snap_db10[i]) return g_snap_db10[i];
+    if (db10 == g_snap_ext_db10) return g_snap_ext_db10;
     return 1000;                       /* 未吸附（1000 不是合法 dB10） */
 }
 
@@ -769,6 +791,9 @@ void ui_gain_reading(wchar_t *out, int cap, int db10)
     if (pct < 10.0) swprintf(out, cap, L"增益 %.1f%% · %+.1f dB", pct, db);
     else            swprintf(out, cap, L"增益 %d%% · %+.1f dB", (int)(pct + 0.5), db);
     if (db10 == 0) swprintf(out, cap, L"增益 100%% · 0.0 dB");
+    /* 刻意不再追加「（过载）」之类后缀：读数区宽度固定，加后缀会把数字挤出框。
+     * 「超过 100% 会削波」这件事在打开「扩展增益」开关时用一条日志说清楚
+     * （事件面板），而不是每次刷新读数都重复一遍。 */
 }
 
 /* ------------------------------------------------------------ 业务卡片 */

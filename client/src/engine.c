@@ -51,6 +51,9 @@ static LogFn         g_log;
 static int           g_rate_idx = 2;      /* 2=48k 1=16k 0=8k */
 static int           g_buf_ms   = 60;
 static volatile LONG g_gain_db10 = 0;      /* 本地增益，0.1 dB（eng_set_gain_db） */
+/* R-47 扩展增益范围：0 = 上限 +6 dB（常态）；1 = +14 dB（501%，过载档）。
+ * 与 UI 共用 ui_draw.h 的 GAIN_DB10_MAX / GAIN_DB10_MAX_EXT，不另留一份常量。 */
+static int g_gain_ext = 0;
 static DevFeedMode   g_mode     = DEV_FEED_IOCTL;
 static volatile LONG g_mute;               /* D-06：静音（灌音前零填充） */
 
@@ -842,10 +845,25 @@ int eng_media_port(void) { return g_media_port_req; }
  * 旧实现只在 eng_start() 里赋一次值，滑杆要等下次连接才起作用。 */
 int eng_set_gain_db(int db10)
 {
-    int g = (db10 < -600) ? -600 : (db10 > 60) ? 60 : db10;
+    int hi = g_gain_ext ? GAIN_DB10_MAX_EXT : GAIN_DB10_MAX;
+    int g = (db10 < -600) ? -600 : (db10 > hi) ? hi : db10;
     InterlockedExchange(&g_gain_db10, g);
     return g;
 }
+
+/* R-47 扩展增益范围：1 = 上限抬到 +14.0 dB（501%，过载/炸麦档）；
+ * 0 = 回到 +6.0 dB（200%）。
+ *
+ * 缩回时会把当前增益**钳到新上限**（否则"关掉开关却仍在 500%"是隐性不一致，
+ * 而滑杆位置又是从 dB 反算的，UI 与引擎会各说一套）。
+ * 上限常量与 UI 共用 ui_draw.h 的 GAIN_DB10_MAX*，不在 engine 里另留一份。 */
+int eng_set_gain_ext(int on)
+{
+    g_gain_ext = on ? 1 : 0;
+    return eng_set_gain_db(g_gain_db10);   /* 顺手按新上限钳一次，返回实际值 */
+}
+
+int eng_gain_ext(void) { return g_gain_ext; }
 
 /* --------------------------------------------------------- 对外 API */
 void eng_set_logger(LogFn fn) { g_log = fn; }

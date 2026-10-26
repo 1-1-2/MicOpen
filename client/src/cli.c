@@ -309,6 +309,9 @@ int cli_parse(CliArgs *a, int argc, wchar_t **argv)
             continue;
         }
         if (!_wcsicmp(s, L"gain-table")) { a->gain_table = 1; continue; }
+        /* R-47：--gain-ext 单独不做事（UI 开关才改变量程），只在 --gain-table
+         * 前打开扩展量程，让回归表打印的是扩展轨道（上限 +14 dB / 501%）。 */
+        if (!_wcsicmp(s, L"gain-ext"))    { a->gain_ext = 1; continue; }
         if (!_wcsicmp(s, L"gain")) {
             int v;
             if (!need_value(argc, argv, i)) return 0;
@@ -467,11 +470,15 @@ int cli_run(CliArgs *a)
     }
     if (a->gain_table) {
         /* R-31 回归用：pos(0..1000) ↔ dB ↔ 倍率。钉住"单调 + -60 dB 不是 0"。
-         * 打印的是**产品同一份**函数（ui_pos_to_db10 / ui_gain_pos / ui_gain_reading）。 */
+         * 打印的是**产品同一份**函数（ui_pos_to_db10 / ui_gain_pos / ui_gain_reading）。
+         * R-47：--gain-ext 让本表打印**扩展量程**（上限 +14 dB / 501%），与常态
+         * 表互为对照 —— 两张表的 pos=1000 分别是 199.5% 与 501.2%。 */
         int pos;
         char line[160];
         cli_ensure_console(1);
-        out("pos\tdB\t倍率\t读数\n");
+        g_ui.gain_ext = a->gain_ext;   /* 映射函数读这个标志，切量程 */
+        out(a->gain_ext ? "pos\tdB\t倍率\t读数（扩展量程 0–501%）\n"
+                        : "pos\tdB\t倍率\t读数（常态量程 0–200%）\n");
         for (pos = 0; pos <= 1000; pos += 50) {
             int db10 = ui_pos_to_db10(pos);
             double m = pow(10.0, db10 / 200.0);

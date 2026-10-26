@@ -209,10 +209,31 @@ void eng_set_mute(int on);
  * 跨网络/过防火墙时必须固定，否则手机端无从放行。必须在 eng_start 之前调用。 */
 int  eng_set_media_port(int port);
 int  eng_media_port(void);
-/* 本地增益：单位 0.1 dB，范围 -600..+60（-60.0..+6.0 dB），运行中生效。
- * 内部按 dB 存：倍率 = pow(10, dB/20)，-60 dB 仍是 0.001 倍（不是静音）。
- * 静音只由 eng_set_mute() 表达，不再用"增益 0"表示。返回实际值（已钳制）。 */
+/* ---- 增益常量（R-31/R-47）：engine 与 UI 共用，只此一份 ----
+ * 本地增益：单位 0.1 dB，低限恒 -600（-60 dB = 0.001 倍，不是静音）。
+ * 上限随「扩展增益」开关在 +6.0 dB（200%）与 +14.0 dB（501%）之间切换，
+ * 轨道 pos(0..1000) ↔ dB 线性，低端恒为 -60 dB，只把高端拉开：
+ *   常态  dB = -60 + 66*pos/1000（跨度 660）
+ *   扩展  dB = -60 + 74*pos/1000（跨度 740）
+ * ⚠ 跨度 = 上限 − 下限：+140 对应 **740**，写成 800 会让拉满变成 1000%
+ * （20 dB），与 GAIN_DB10_MAX_EXT 对不上，钳制会悄悄吃掉最后 60。
+ *
+ * 扩展档是刻意留的"炸麦"档：>100% 对满量程信号必然削波，样本侧在
+ * engine.c 的 apply_gain() 里做 int16 **饱和钳制**（不是回绕），
+ * 所以听到的是"削平的响"，不是整数环绕的爆音。
+ * 静音只由 eng_set_mute() 表达，不再用"增益 0"表示。 */
+#define GAIN_DB10_MIN      (-600)
+#define GAIN_DB10_MAX      (60)     /* 常态上限：+6.0 dB = 200% */
+#define GAIN_DB10_MAX_EXT  (140)    /* 扩展上限：+14.0 dB = 501% */
+#define GAIN_SPAN_NORMAL   (660)    /* -600 → +60  */
+#define GAIN_SPAN_EXT      (740)    /* -600 → +140 */
+
+/* 设置本地增益（0.1 dB）。按当前范围上限钳制，返回实际值。 */
 int  eng_set_gain_db(int db10);
+/* R-47 扩展增益范围：1 = 上限抬到 +14 dB；0 = 回到 +6 dB。
+ * 缩回时会把当前增益钳到新上限，返回钳后的实际值。 */
+int  eng_set_gain_ext(int on);
+int  eng_gain_ext(void);
 /* 监听（R-39）：把灌给驱动的同一份处理后 PCM 再送系统默认输出（waveOut）。
  * 返回 1 = 已开启，0 = 打开失败（无输出设备等，UI 应回弹开关并记 WARN）。 */
 int  eng_set_monitor(int on);
@@ -254,6 +275,7 @@ typedef struct {
     int         feed_write;   /* --feed write：灌音走 WriteFile 而不是 IOCTL */
     int         console;      /* 输出是否需要走 stdout（已挂上控制台） */
     int         gain_table;   /* --gain-table：打印增益映射表后退出（CI/回归用） */
+    int         gain_ext;     /* --gain-ext：配合 --gain-table 打印扩展量程表（R-47） */
     const wchar_t *driver_pack;  /* --driver-pack <dir> */
     int         argc;
     wchar_t   **argv;
@@ -302,7 +324,8 @@ typedef struct {
     int   hover_fade_id;       /* 正在过渡的命中 id */
     int   seg_rate;            /* 0 48k 1 16k 2 8k */
     int   buf_idx;             /* 0 26ms 1 60ms 2 120ms */
-    int   gain_db10;           /* 本地增益，0.1 dB（-600..+60） */
+    int   gain_db10;           /* 本地增益，0.1 dB（低限 -600；上限随 gain_ext 切换） */
+    int   gain_ext;            /* R-47 扩展增益范围：1 = 上限 +14 dB（501%，炸麦档） */
     int   dark;
     int   running;
     int   transport;           /* 0 Wi-Fi（默认且唯一已实现）/1 Wi-Fi 直连 /2 蓝牙 /3 USB */
@@ -334,7 +357,7 @@ enum {
     ID_CONN,
     ID_TRANS0, ID_TRANS1, ID_TRANS2, ID_TRANS3,
     ID_MUTE,
-    ID_MONITOR, ID_AUTOREC,
+    ID_MONITOR, ID_AUTOREC, ID_GAINEXT,
     ID_SLIDER,
     ID_INSTALL, ID_OPENSET, ID_UNINSTALL, ID_HELP,
     ID_EXP_AUDIO, ID_EXP_STATS, ID_EXP_LOG,

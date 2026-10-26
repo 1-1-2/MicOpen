@@ -45,9 +45,12 @@ static int step_label_w(int i)
  * 为什么不把字面量写在绘制里：按钮宽度要按文字实测算，文案和矩形必须是
  * 同一份决定，否则「算宽度用全称、画的时候用简称」这类漂移迟早发生。 */
 static int g_small_hdr;                  /* 1 = 标题行空间不足，用短标签 */
+static int g_small_gainext;              /* R-47：1 = 电平卡底行放不下三开关全称 */
 
 const wchar_t *ui_lbl_uninstall(void) { return g_small_hdr ? L"卸载" : L"卸载驱动"; }
 const wchar_t *ui_lbl_help(void)      { return g_small_hdr ? L"说明" : L"命令行说明书"; }
+/* R-47 扩展增益开关的标签：窄窗缩短为「扩展」（与顶栏同一套口径）。 */
+const wchar_t *ui_lbl_gainext(void)   { return g_small_gainext ? L"扩展" : L"扩展增益"; }
 
 static void layout_once(void)
 {
@@ -231,18 +234,36 @@ static void layout_once(void)
             int rw = c.right - inner - rx;
             g_lo.hist   = cs(rx, c.top + sd(150), c.right - inner, c.top + sd(206));
             g_lo.slider = cs(rx, c.top + sd(280), rx + rw, c.top + sd(296));
-            /* R-39：底行两个开关（静音 / 监听），统一 52×32。
+            /* R-39：底行开关（静音 / 监听），统一 52×32。
              * R-44：自动重连已移出电平卡，归位到左侧连接卡。
+             * R-47：末尾再加一个「扩展增益」，共三个。
              * 从 x0 顺序排，标签画在各自开关左侧。 */
             {
                 HFONT lf = ui_font(14, FW_NORMAL, 0);
                 int sw = sd(52), sh = sd(32);
                 int gap = sd(14), lg = sd(6);
                 int x = rx, y = c.top + sd(330);
-                g_lo.sw_mute = cs(x + ui_measure_text(L"静音", lf) + lg, y,
-                                  x + ui_measure_text(L"静音", lf) + lg + sw, y + sh);
-                x = g_lo.sw_mute.right + gap + ui_measure_text(L"监听", lf) + lg;
+                int avail = (c.right - inner) - rx;
+                /* R-47 窄窗退化：三个开关 + 全标签放不下时，把「扩展增益」缩短为
+                 * 「扩展」。与 R-43 顶栏三件同排同一套口径：宁可短标签，也不让
+                 * 控件越出卡片右内边距。 */
+                int lw_mute = ui_measure_text(L"静音", lf);
+                int lw_mon  = ui_measure_text(L"监听", lf);
+                int lw_ext  = ui_measure_text(L"扩展增益", lf);
+                int need = lw_mute + lw_mon + lw_ext + sw * 3 + lg * 3 + gap * 2;
+                int used_ext = 0;
+                if (need > avail) {
+                    lw_ext = ui_measure_text(L"扩展", lf);
+                    g_small_gainext = 1;
+                } else {
+                    g_small_gainext = 0;
+                }
+                g_lo.sw_mute = cs(x + lw_mute + lg, y, x + lw_mute + lg + sw, y + sh);
+                used_ext = 0; (void)used_ext;
+                x = g_lo.sw_mute.right + gap + lw_mon + lg;
                 g_lo.sw_mon = cs(x, y, x + sw, y + sh);
+                x = g_lo.sw_mon.right + gap + lw_ext + lg;
+                g_lo.sw_gainext = cs(x, y, x + sw, y + sh);
                 (void)sw; (void)sh;
             }
             g_lo.bar_x0 = rx;
@@ -340,6 +361,7 @@ int ui_hit_test(int x, int y)
     if (PtInRect(&g_lo.btn_help, p))      return ID_HELP;
     if (PtInRect(&g_lo.sw_mute, p))       return ID_MUTE;
     if (PtInRect(&g_lo.sw_mon, p))        return ID_MONITOR;
+    if (PtInRect(&g_lo.sw_gainext, p))    return ID_GAINEXT;
     if (PtInRect(&g_lo.sw_autorec, p))    return ID_AUTOREC;
     /* 右列 */
     if (PtInRect(&g_lo.hdr_audio, p)) return ID_EXP_AUDIO;

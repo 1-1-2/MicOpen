@@ -372,18 +372,31 @@ static void draw_gain(HDC dc, RECT card)
     int gy = card.top + sd(257);
     wchar_t rd[48];
     RECT rr = { x1 - sd(220), gy, x1, gy + sd(18) };
-    /* R-24：读数右对齐；窄窗（900×560）放不下全称时逐级缩短，绝不与读数重叠 */
-    static const wchar_t *const lbl_full = L"电脑端本地增益（0–200%）";
-    static const wchar_t *const lbl_mid  = L"本地增益（0–200%）";
-    static const wchar_t *const lbl_short = L"本地增益";
-    const wchar_t *lbl = lbl_full;
+    /* R-24：读数右对齐；窄窗（900×560）放不下全称时逐级缩短，绝不与读数重叠。
+     * R-47：量程随「扩展增益」开关变化（0–200% ↔ 0–501%），标题跟着读数走 ——
+     * 不然标题写死 200%、读数却是 501%，两者互相打架。 */
+    static const wchar_t *const lbl_full_n   = L"电脑端本地增益（0–200%）";
+    static const wchar_t *const lbl_mid_n    = L"本地增益（0–200%）";
+    static const wchar_t *const lbl_short    = L"本地增益";
+    static const wchar_t *const lbl_full_e   = L"电脑端本地增益（0–501%）";
+    static const wchar_t *const lbl_mid_e    = L"本地增益（0–501%）";
+    const wchar_t *lbl;
     int lw, rw, avail = x1 - x0;
     RECT lr;
+
+    lbl = g_ui.gain_ext
+              ? (avail >= sd(420) ? lbl_full_e : lbl_mid_e)
+              : lbl_full_n;
 
     ui_gain_reading(rd, 48, g_ui.gain_db10);
     rw = ui_measure_text(rd, ui_font(14, FW_NORMAL, 1));
     lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0));
-    if (lw + rw + sd(12) > avail) { lbl = lbl_mid;  lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0)); }
+    /* 逐级缩短：全称 → 带量程的短称 → 不带量程（扩展态没有第三级，
+     * 量程数字比"电脑端"三个字短，先缩前缀再缩数字是更省的顺序） */
+    if (lw + rw + sd(12) > avail) {
+        lbl = g_ui.gain_ext ? lbl_mid_e : lbl_mid_n;
+        lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0));
+    }
     if (lw + rw + sd(12) > avail) { lbl = lbl_short; lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0)); }
     lr.left = x0; lr.top = gy; lr.right = x0 + lw + sd(2); lr.bottom = gy + sd(18);
     ui_text(dc, lr, lbl, ui_font(14, FW_NORMAL, 0),
@@ -424,20 +437,29 @@ static void draw_gain(HDC dc, RECT card)
     }
 }
 
-/* ------------------------------------------- 底行：静音 / 监听 */
-/* 两个开关同形态（52×32），标签画在各自开关左侧（右对齐贴开关 6px）。
- * 静音 = 输出截断（D-06）；监听 = 同一份处理后样本再送系统默认输出（R-39）。
- * R-44：自动重连开关已移出电平卡，挪到左侧连接卡（连接行为归连接卡）。 */
+/* ------------------------------------- 底行：静音 / 监听 / 扩展增益 */
+/* 三个开关同形态（52×32），标签画在各自开关左侧（右对齐贴开关 6px）。
+ * 静音 = 输出截断（D-06）；监听 = 同一份处理后样本再送系统默认输出（R-39）；
+ * 扩展增益（R-47）= 把增益上限从 +6 dB（200%）抬到 +14 dB（501%），
+ * 超过 100% 就会削波 —— 这是刻意留的"炸麦"档位。
+ * R-44：自动重连开关已移出电平卡，挪到左侧连接卡（连接行为归连接卡）。
+ *
+ * 标签文案由布局决定（ui_lbl_gainext()），绘制只负责画——和顶栏
+ * R-43 三件同排同一套口径，避免"算宽度用全称、画的时候用简称"。 */
 static void draw_switch_row(HDC dc)
 {
-    struct { RECT r; const wchar_t *lbl; int on; int which; } it[2];
+    struct { RECT r; const wchar_t *lbl; int on; int which; } it[3];
     HFONT f = ui_font(14, FW_NORMAL, 0);
     int i;
 
-    it[0].r = g_lo.sw_mute;   it[0].lbl = L"静音"; it[0].on = g_ui.mute;   it[0].which = SWI_MUTE;
-    it[1].r = g_lo.sw_mon;    it[1].lbl = L"监听"; it[1].on = g_ui.monitor; it[1].which = SWI_MON;
+    it[0].r = g_lo.sw_mute;    it[0].lbl = L"静音"; it[0].on = g_ui.mute;
+    it[0].which = SWI_MUTE;
+    it[1].r = g_lo.sw_mon;     it[1].lbl = L"监听"; it[1].on = g_ui.monitor;
+    it[1].which = SWI_MON;
+    it[2].r = g_lo.sw_gainext; it[2].lbl = ui_lbl_gainext(); it[2].on = g_ui.gain_ext;
+    it[2].which = SWI_GAINEXT;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 3; i++) {
         int lw = ui_measure_text(it[i].lbl, f);
         RECT lr = { it[i].r.left - sd(6) - lw, it[i].r.top,
                     it[i].r.left - sd(6), it[i].r.bottom };

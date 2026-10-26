@@ -269,6 +269,21 @@ void ui_on_click(int id, int x, int y)
         }
         ui_switch_anim_set(SWI_MON, g_ui.monitor);
         break;
+    case ID_GAINEXT:
+        /* R-47 扩展增益范围：量程上限 +6 dB(200%) ↔ +14 dB(501%)。
+         * 打开 = 把轨道上半段让给过载区（炸麦效果）；关闭时引擎会把当前增益
+         * 钳回 +6 dB，这里必须用返回值把 UI 的 dB 也一起钳，否则滑杆位置
+         * （由 dB 反算）与实际增益各说一套。 */
+        g_ui.gain_ext = !g_ui.gain_ext;
+        g_ui.gain_db10 = eng_set_gain_ext(g_ui.gain_ext);
+        ui_switch_anim_set(SWI_GAINEXT, g_ui.gain_ext);
+        ui_log_add(g_ui.gain_ext
+                       ? "扩展增益已开启：上限 +14.0 dB（501%）。超过 100% 必然削波，"
+                         "样本侧按 int16 饱和钳制——这是刻意的「炸麦」效果"
+                       : "扩展增益已关闭：上限回到 +6.0 dB（200%）", 0);
+        if (!g_ui.gain_ext && g_ui.gain_db10 != 0)
+            ui_log_add("增益已按新上限钳制", 0);
+        break;
     case ID_AUTOREC:
         /* R-27：默认关；开启后断线 0.5 s 固定间隔重试，无上限、不退避。
          * R-40：关开关时若正在重连，必须把三个状态一起清掉 —— 否则
@@ -390,6 +405,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         ui_switch_anim_set(SWI_MUTE, g_ui.mute);
         ui_switch_anim_set(SWI_MON, g_ui.monitor);
         ui_switch_anim_set(SWI_REC, g_ui.autorec);
+        ui_switch_anim_set(SWI_GAINEXT, g_ui.gain_ext);
         ui_switch_anim_sync();
         g_ui.edit_host = CreateWindowExW(0, L"EDIT", L"192.168.1.100",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_CENTER,   /* R-10：三处统一水平居中 */

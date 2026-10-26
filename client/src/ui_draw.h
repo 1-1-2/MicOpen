@@ -72,7 +72,7 @@ void  ui_seg_group(HDC dc, RECT r, const wchar_t * const *labels, int n,
                    int active, int id_base, const int *enabled);
 void  ui_slider(HDC dc, RECT r, int pos, int id);       /* pos 0..1000 */
 void  ui_switch(HDC dc, RECT r, int on, int pos);      /* 开关：pos = 动画位置 0..1000 */
-enum { SWI_MUTE = 0, SWI_MON, SWI_REC, SWI_COUNT };
+enum { SWI_MUTE = 0, SWI_MON, SWI_REC, SWI_GAINEXT, SWI_COUNT };
 void  ui_switch_anim_set(int which, int on);   /* 设定目标态（点击时调用） */
 int   ui_switch_anim_step(void);              /* 推进动画，返回 1 = 仍在动（需重绘） */
 int   ui_switch_anim_pos(int which);          /* 当前动画位置 0..1000 */
@@ -85,13 +85,25 @@ void  ui_panel_hdr(HDC dc, RECT r, const wchar_t *title, const wchar_t *sum,
  * 与 Android infiniteTransition 同参数；只在会话运行/连接中调用。 */
 void  ui_breath_glow(HDC dc, RECT r);
 
-/* 增益（R-31/R-32）：内部一律 0.1 dB（-600..+60），% 只在读数里反算显示。
- * 轨道 pos(0..1000) ↔ dB 线性：dB = -60 + 66*pos/1000；倍率 = pow(10,dB/20)，
- * -60 dB 仍是 0.001 倍（不是静音）；静音只由静音开关表达。
- * 吸附：0 dB ±1.5 dB、-12/-24/-36/-48/-60 各 ±0.75 dB；只吸落点，继续拖即可脱离。 */
-#define GAIN_DB10_MIN  (-600)
-#define GAIN_DB10_MAX  (60)
+/* 增益（R-31/R-32）：内部一律 0.1 dB，% 只在读数里反算显示。
+ * 倍率 = pow(10,dB/20)，-60 dB 仍是 0.001 倍（不是静音）；静音只由静音开关表达。
+ *
+ * R-47 扩展增益范围：常态上限 +6.0 dB（200%）；打开「扩展增益」后上限抬到
+ * +14.0 dB（501%）——刻意留的"炸麦"档位：超过 100% 就必然削波，+14 dB 把
+ * 整条轨道的上半段变成过载区。样本侧在 engine.c 的 apply_gain() 里做 int16
+ * **饱和钳制**（不是回绕），所以是"削平的响"，不是"环绕的爆音"。
+ *
+ * 轨道 pos(0..1000) ↔ dB 线性，低端恒为 -60 dB，只把高端拉开：
+ *   常态  dB = -60 + 66*pos/1000
+ *   扩展  dB = -60 + 80*pos/1000
+ * 于是打开扩展后，同一个 dB 值在轨道上更靠左（行程变长），滑手感自然。
+ *
+ * 吸附：0 dB ±1.5 dB、-12/-24/-36/-48/-60 各 ±0.75 dB；只吸落点，继续拖即可脱离。
+ * 扩展模式额外吸附 +14 dB（±1.5 dB）——方便一下拉到满档。
+ *
+ * GAIN_DB10_* / GAIN_SPAN_* 常量在 app.h 里（engine 与 UI 共用一份）。 */
 int   ui_gain_pos(int db10);                 /* dB → 滑杆位置 0..1000 */
+int   ui_gain_db10_max(void);                /* 当前增益上限（受「扩展增益」开关控制） */
 int   ui_pos_to_db10(int pos);               /* 位置 → dB（含吸附） */
 int   ui_gain_snap_target(int db10);         /* 吸到哪个刻度（dB10）；未吸附返回 1000 */
 void  ui_gain_reading(wchar_t *out, int cap, int db10);   /* 「增益 N% · −12.0 dB」 */
