@@ -65,30 +65,44 @@ def center(node):
     return (int(left) + int(right)) // 2, (int(top) + int(bottom)) // 2
 
 
-clickable = []   # (area, x, y)：同名可点节点取面积最小者
+# 两遍法：① 收集所有 text/desc 匹配节点；② 对每个匹配点，找**包含该点的
+# 面积最小可点节点**（Compose 的可点容器常常是空文本的 View，文字只是
+# 其不可点子节点——只按文本找 clickable 会一无所获，兜底又会点错别处，
+# 真机 02-source 实测踩过）。多候选取面积最小（顶栏分段 < 摘要行 < 卡片）。
+clickable = []   # (area, x, y)：最小可点祖先
 fallback = None
+def area_of(b):
+    l, t = b.split("][")[0].strip("[").split(",")
+    r, b2 = b.split("][")[1].strip("]").split(",")
+    return (int(r) - int(l)) * (int(b2) - int(t))
+
+all_nodes = []
 for node in root.iter("node"):
     text = node.get("text") or ""
     desc = node.get("content-desc") or ""
+    b = node.get("bounds") or ""
+    try:
+        x, y = center(node)
+    except Exception:
+        continue
+    all_nodes.append((node, text, desc, x, y, b))
     if needle in text or needle in desc:
-        try:
-            x, y = center(node)
-        except Exception:
-            continue
-        b = node.get("bounds") or ""
-        try:
-            l, t = b.split("][")[0].strip("[").split(",")
-            r2, b2 = b.split("][")[1].strip("]").split(",")
-            area = (int(r2) - int(l)) * (int(b2) - int(t))
-        except Exception:
-            area = 1 << 30
         if node.get("clickable") == "true":
-            clickable.append((area, x, y))
+            clickable.append((area_of(b), x, y))
         elif fallback is None:
             fallback = (x, y)
+
+if not clickable and fallback:
+    fx, fy = fallback
+    for node, text, desc, x, y, b in all_nodes:
+        if node.get("clickable") == "true":
+            lt = b.split("][")[0].strip("[").split(",")
+            rb = b.split("][")[1].strip("]").split(",")
+            l, t, r, b2 = int(lt[0]), int(lt[1]), int(rb[0]), int(rb[1])
+            if l <= fx <= r and t <= fy <= b2:
+                clickable.append(((r - l) * (b2 - t), (l + r) // 2, (t + b2) // 2))
+
 if clickable:
-    # 顶栏分段是小可点块，摘要行/卡片是大可点块：点错的后果是落在
-    # 错误的可点元素上（真机 02-source 实测踩过），故取面积最小者。
     clickable.sort()
     print(clickable[0][1], clickable[0][2])
     sys.exit(0)
@@ -104,7 +118,7 @@ PY
 # 曾出现「点了音源还在连接页」：点击落在重组中的节点上被丢弃）。
 tap_text() {  # tap_text <needle> [expect_after]
     local needle="$1" expect="${2:-}" pos try
-    for try in 1 2; do
+    for try in 1 2 3; do
         dump_ui _tap || { echo "::warning::tap_text($needle)：dump 失败"; return 1; }
         pos=$(find_center "$OUT/_tap.xml" "$needle") || { echo "::warning::找不到控件：$needle"; return 1; }
         # shellcheck disable=SC2086
@@ -115,7 +129,7 @@ tap_text() {  # tap_text <needle> [expect_after]
         if grep -qF "$expect" "$OUT/_tap2.xml" 2>/dev/null; then
             return 0
         fi
-        echo "::warning::tap_text($needle)：点按后未见「$expect」，重试（$try/2）"
+        echo "::warning::tap_text($needle)：点按后未见「$expect」，重试（$try/3）"
     done
 }
 
