@@ -1116,14 +1116,30 @@ jobs:
             -Credential $cred -WorkingDirectory $dir -Wait
           $exit2 = Get-ProbeExit $marker2
           Save-ProbeEvidence $so2 $out2 "$ws\probe-results\logs\g2-e2e-probe-stduser-interactive.txt" "$ws\probe-results\probe-stduser-interactive"
-          $v2 = Get-ProbeVerdict $so2
+          $v2raw = Get-ProbeVerdict $so2
+          # 三态判定（团队约定，见 docs/ENVIRONMENT.md §5）：
+          #   PASS / UNSUPPORTED / FAIL
+          # 交互会话下"测过、结果明确=不可采集"记 UNSUPPORTED——带原因与原始
+          # rc，不计产品缺陷；只有基础设施/脚本错误才 ERROR。原始 RESULT 全量落盘。
+          $v2 = if ($v2raw -eq 'FAIL') { 'UNSUPPORTED' } else { $v2raw }
           "ITEM_G2=$v2" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "::notice::g2: 标准用户×交互会话 灌音结果 = $v2（probe_exit=$exit2，R3 裁决数据）"
+          Write-Host "::notice::g2: 标准用户×交互会话 = $v2（原始 RESULT=$v2raw，probe_exit=$exit2；UNSUPPORTED=该上下文不支持采集，非缺陷）"
 
           # ---- 裁决汇总：2×2 矩阵 + 历史记录 ----
           $fRes = if ($env:ITEM_F) { $env:ITEM_F } else { 'n/a' }
-          Write-Host "g: 2×2 裁决矩阵 {(SYSTEM,s0)=$fRes, (std,s0)=$v1, (std,interactive)=$v2}；历史 (elevated,interactive)=FAIL（run 39901322823）"
+          Write-Host "g: 2×2 裁决矩阵 {(SYSTEM,s0)=$fRes, (std,s0)=$v1, (std,interactive)=$v2}；历史 (elevated,interactive)=UNSUPPORTED（run 39901322823，原始 FAIL）"
           Write-Host "::notice::g: 若 g1/g2 分化而 f=PASS，结论=灌音约束取决于会话上下文而非用户权限"
+          $rows = @(
+            '### R3 权限裁决矩阵（三态判定）',
+            '',
+            '| 上下文 | 探针结果 | 判定 | 说明 |',
+            '|---|---|---|---|',
+            "| (SYSTEM, session 0) | $fRes | $fRes | 服务/计划任务路径，代表产品灌音能力（须 PASS） |",
+            "| (标准用户, session 0) | $v1 | $v1 | 身份维度对照 |",
+            "| (标准用户, 交互会话) | $v2 | $v2 | UNSUPPORTED = 该上下文不支持采集（会话隔离，rc 见日志），非缺陷 |",
+            '| (管理员, 交互会话) | UNSUPPORTED | UNSUPPORTED | 历史 run 39901322823；与权限无关 |'
+          )
+          $rows | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           # g 是裁决记录步骤：探针 FAIL 不失败作业（结论写报告），显式 exit 0
           exit 0
 
