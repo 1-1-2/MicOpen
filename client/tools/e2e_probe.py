@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """e2e_probe — WO Mic 驱动端到端探针（真实 Windows 录音取证）。
 
-从 <local path omitted> vendors 进仓库（该脚本在真实
-Windows 上 PASS 过，但从未入库）。相对原版的修改：
+该脚本在真实 Windows runner 上通过过端到端取证。相对原版的修改：
   1) 修正 docstring 里过时的 IOCTL 表述：灌音是 0x222001（不是 0x222000——
      0x222000 从未在还原的协议里出现过；握手链是 0x222004→0x222008→0x222014→0x222010）；
   2) 路径自包含：只依赖标准库与系统 DLL，不引用 womic-recovery 任何文件；

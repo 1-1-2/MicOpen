@@ -8,7 +8,7 @@
 set -euo pipefail
 
 VER=${OPUS_VER:-1.5.2}
-WORK=${WORK:-<local path omitted>}
+WORK=${WORK:-${TMPDIR:-/tmp}/miclink-opus-build}
 DEST="$(cd "$(dirname "$0")/.." && pwd)/deps/opus"
 HOST=${HOST:-x86_64-w64-mingw32}
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}

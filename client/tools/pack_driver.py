@@ -56,8 +56,6 @@ ARCHS = (
 KINDS = ("inf", "sys", "cat")
 
 CANDIDATE_DIRS = (
-    "<local path omitted>",
-    "<local path omitted>",
     os.path.join(CLIENT, "driver"),
     os.path.join(CLIENT, "..", "driver"),
 )
