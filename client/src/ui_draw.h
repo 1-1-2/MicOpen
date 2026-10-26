@@ -71,7 +71,12 @@ void  ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int ena
 void  ui_seg_group(HDC dc, RECT r, const wchar_t * const *labels, int n,
                    int active, int id_base, const int *enabled);
 void  ui_slider(HDC dc, RECT r, int pos, int id);       /* pos 0..1000 */
-void  ui_switch(HDC dc, RECT r, int on);                /* C-08 开关 40×20 */
+void  ui_switch(HDC dc, RECT r, int on, int pos);      /* 开关：pos = 动画位置 0..1000 */
+enum { SWI_MUTE = 0, SWI_MON, SWI_REC, SWI_COUNT };
+void  ui_switch_anim_set(int which, int on);   /* 设定目标态（点击时调用） */
+int   ui_switch_anim_step(void);              /* 推进动画，返回 1 = 仍在动（需重绘） */
+int   ui_switch_anim_pos(int which);          /* 当前动画位置 0..1000 */
+void  ui_switch_anim_sync(void);              /* 位置直接对齐目标（不播动画） */
 void  ui_badge(HDC dc, RECT r, const wchar_t *text, COLORREF fg, COLORREF bg);
 void  ui_pill(HDC dc, RECT r, const wchar_t *key, const wchar_t *val);
 void  ui_panel_hdr(HDC dc, RECT r, const wchar_t *title, const wchar_t *sum,

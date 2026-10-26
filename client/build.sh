@@ -24,7 +24,7 @@
 #   两者都只依赖 Windows 自带 DLL，都内嵌 VS_VERSION_INFO / 图标 / manifest。
 #
 # 体积预算分开设（安装器不沿用应用那套）：
-#   SIZE_BUDGET_APP      应用预算，默认 320 KiB（实测约 296 KB，与驱动有无无关）
+#   SIZE_BUDGET_APP      应用预算，默认 352 KiB（R-42 后实测约 337 KB，与驱动有无无关）
 #   SIZE_BUDGET_DRVINST  安装器预算，默认 256 KiB（内嵌三套驱动时实测约 209 KB）
 #
 # 自检：每个产物都要过「体积预算 + 导入表只允许系统 DLL + 资源面断言」。
@@ -38,13 +38,13 @@ MODE=${1:-all}
 
 APP_OUT=build/womic.exe
 DRVINST_OUT=build/womic-drvinst.exe
-SIZE_BUDGET_APP=${SIZE_BUDGET_APP:-344064}      # 336 KiB（R-25/R-24：字体字形探测+电平配色+CLIP+卡片裁剪，512B 对齐下 320KiB 档放不下）
+SIZE_BUDGET_APP=${SIZE_BUDGET_APP:-360448}      # 352 KiB（R-25/R-24：字体字形探测+电平配色+CLIP+卡片裁剪；R-42：新增 drvimport 模块=安装包扫描 + 7z/NSIS 两条提取路径 + 三件套整理，实测 337 KiB）
 SIZE_BUDGET_DRVINST=${SIZE_BUDGET_DRVINST:-262144}  # 256 KiB
 
 case "$MODE" in
-    all|app|drvinst|test) ;;
+    all|app|drvinst|test|probe) ;;
     *)
-        echo "用法: $0 [all|app|drvinst|test]" >&2
+        echo "用法: $0 [all|app|drvinst|test|probe]" >&2
         exit 1
         ;;
 esac
@@ -101,10 +101,12 @@ APP_SRC=(
     src/cli.c
     src/theme.c
     src/ui_draw.c
+    src/ui_switch.c
     src/ui_layout.c
     src/ui_voicemeter.c
     src/ui_help.c
     src/drvbridge.c
+    src/drvimport.c
 )
 APP_LIBS=(
     -lgdi32 -luser32 -lws2_32 -luxtheme -ldwmapi -lshell32 -lole32 -lwinmm
@@ -139,6 +141,27 @@ if [ "$MODE" = "test" ]; then
         exit $rc
     fi
     echo "未安装 wine，已产出 build/test_drvpkg.exe，请拷贝到 Windows 上运行"
+    exit 0
+fi
+
+# ---------------------------------------------------------------- 开关动画探针
+# ./build.sh probe —— R-46：证明开关是矢量渲染且真的在插值（不是两态贴图）。
+# 无 WM 环境里点不动开关，只能离屏逐帧渲染、比对滑块圆心位置。
+if [ "$MODE" = "probe" ]; then
+    echo "==> 编开关动画探针"
+    # 探针只关心开关，但 ui_draw.c 里有引用 g_lo / ui_title_h 等布局符号
+    # （那是"绘制与命中同源"的要求，开关绘制之外的卡片绘制需要）。
+    # 这里提供最小 stub —— 它们在探针路径上根本不会被执行到。
+"$CC" -Os -std=c99 -Wall -D_WIN32_WINNT=0x0A00 \
+        -o build/switch_anim_probe.exe \
+        tools/switch_anim_probe.c src/ui_switch.c src/ui_draw.c src/theme.c \
+        -lgdi32 -luser32
+    if command -v wine >/dev/null 2>&1; then
+        echo "==> wine 下运行"
+        WINEDEBUG=-all wine build/switch_anim_probe.exe
+        exit $?
+    fi
+    echo "未安装 wine，已产出 build/switch_anim_probe.exe，请拷贝到 Windows 上运行"
     exit 0
 fi
 

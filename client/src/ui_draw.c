@@ -568,8 +568,9 @@ void ui_button(HDC dc, RECT r, const wchar_t *label, int id, int style, int enab
         break;
     case BTN_TEXT:
     default:
-        /* 小文字按钮（11/15）：text-3 → hover text-1 */
-        ui_text(dc, rr, label, ui_font(11, FW_NORMAL, 0),
+        /* 小文字按钮（R-43：11px / Semibold，与状态徽标同字重同基线）：
+         * text-3 → hover 只提亮前景，宽度由布局按"文字 + 左右各 8px"算好，hover 不变宽 */
+        ui_text(dc, rr, label, ui_font(11, FW_SEMIBOLD, 0),
                 fade ? mix_c(g_th.text_mute, g_th.text, 100 * fade / 1000) : g_th.text_mute,
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         return;
@@ -637,22 +638,6 @@ void ui_slider(HDC dc, RECT r, int pos, int id)
     ui_stroke_round(dc, th, sd(8), g_th.stroke, 255, 1);
 }
 
-/* 开关（C-08 形态 52×32）：滑块直径随控件高度走，40×20 / 52×32 都能用 */
-void ui_switch(HDC dc, RECT r, int on)
-{
-    int h = r.bottom - r.top;
-    int rad = h / 2;
-    int inset = sd(4);
-    int d = h - inset * 2;
-    RECT knob;
-    if (d < sd(8)) d = sd(8);
-    ui_fill_round(dc, r, rad, on ? g_th.accent : g_th.sunken, 255);
-    knob.top = r.top + inset;
-    knob.bottom = knob.top + d;
-    knob.left = on ? (r.right - inset - d) : (r.left + inset);
-    knob.right = knob.left + d;
-    ui_fill_round(dc, knob, d / 2, on ? RGB(255, 255, 255) : g_th.text_mute, 255);
-}
 
 void ui_badge(HDC dc, RECT r, const wchar_t *text, COLORREF fg, COLORREF bg)
 {
@@ -1004,6 +989,20 @@ void ui_draw_conn_card(HDC dc)
             ui_breath_glow(dc, g_lo.btn_conn);
         ui_button(dc, g_lo.btn_conn, lbl, ID_CONN, style, enabled);
     }
+
+    /* R-44：自动重连开关（连接行为，归位到连接卡）。
+     * 排在端口输入与主按钮之间，右对齐到卡片内距，标签在开关左侧。
+     * 「自动重连」与「连接/断开」是同一件事的两端：断了自动续上。 */
+    {
+        RECT sr = g_lo.sw_autorec;
+        HFONT f = ui_font(14, FW_NORMAL, 0);
+        int lw = ui_measure_text(L"自动重连", f);
+        RECT lr = { sr.left - sd(8) - lw, sr.top, sr.left - sd(8), sr.bottom };
+        ui_text(dc, lr, L"自动重连", f,
+                g_ui.autorec ? g_th.text : g_th.text_dim,
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        ui_switch(dc, sr, g_ui.autorec, ui_switch_anim_pos(SWI_REC));
+    }
 }
 
 /* ------------------------------------------------------- 驱动卡 */
@@ -1016,10 +1015,14 @@ void ui_draw_drv_card(HDC dc)
     ui_card(dc, r);
     ui_card_title(dc, r, L"驱动");
 
-    /* 标题行右侧：状态徽标（C-11 三通道）+ 两个小文字按钮 */
+    /* 标题行右侧：状态徽标（C-11 三通道）+ 两个小文字按钮。
+     * R-43：三个元素统一 11px/Semibold、同一行高（top+12 .. top+32）、垂直居中，
+     * 间距统一 8px、按钮左右内边距各 8px；徽标宽度也按 8+8 算，三者基线一致。 */
     {
         HFONT bf = ui_font(11, FW_SEMIBOLD, 0);
         const wchar_t *txt = drv_state_text(d->state);
+        /* 徽标内边距 26 = 左 8 + 圆点 6 + 间隙 4 + 右 8（ui_badge 的固定布局）；
+         * 按钮才是"文字 + 8 + 8"。两者口径不同，别合并。 */
         int bw = ui_measure_text(txt, bf) + sd(26);
         RECT br = { g_lo.btn_uninstall.left - sd(8) - bw, r.top + sd(12),
                     g_lo.btn_uninstall.left - sd(8), r.top + sd(32) };
@@ -1045,7 +1048,20 @@ void ui_draw_drv_card(HDC dc)
             : L"未检测到虚拟麦克风驱动。先装驱动，才能把手机麦克风送进 Windows。";
         ui_text(dc, sr, why, ui_font(12, FW_NORMAL, 0), g_th.text_dim,
                 DT_LEFT | DT_TOP | DT_WORDBREAK);
-        ui_button(dc, g_lo.btn_install, L"安装驱动", ID_INSTALL, BTN_PRIMARY, 1);
+        /* R-42：同目录扫到官方安装包 → 明示来源，并把主按钮改成导入（仍是 primary）；
+         * 找不到就保持「安装驱动」+ 原有空包提示路径。 */
+        if (g_ui.setup_name[0]) {
+            wchar_t line[300];
+            RECT lr = { r.left + ui_pad(), g_lo.btn_install.top - sd(19),
+                        r.right - ui_pad(), g_lo.btn_install.top - sd(3) };
+            swprintf(line, 300, L"检测到官方安装包：%ls", g_ui.setup_name);
+            ui_text(dc, lr, line, ui_font(12, FW_NORMAL, 0), g_th.text_dim,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            ui_button(dc, g_lo.btn_install, L"从安装包导入驱动", ID_INSTALL,
+                      BTN_PRIMARY, 1);
+        } else {
+            ui_button(dc, g_lo.btn_install, L"安装驱动", ID_INSTALL, BTN_PRIMARY, 1);
+        }
     }
 }
 

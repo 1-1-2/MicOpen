@@ -424,28 +424,27 @@ static void draw_gain(HDC dc, RECT card)
     }
 }
 
-/* ------------------------------------------- 底行：静音 / 监听 / 自动重连 */
-/* 三个开关同形态（52×32），标签画在各自开关左侧（右对齐贴开关 6px）。
- * 静音 = 输出截断（D-06）；监听 = 同一份处理后样本再送系统默认输出（R-39）；
- * 重连 = 非用户主动断开时 0.5 s 自动重试（R-27）。 */
+/* ------------------------------------------- 底行：静音 / 监听 */
+/* 两个开关同形态（52×32），标签画在各自开关左侧（右对齐贴开关 6px）。
+ * 静音 = 输出截断（D-06）；监听 = 同一份处理后样本再送系统默认输出（R-39）。
+ * R-44：自动重连开关已移出电平卡，挪到左侧连接卡（连接行为归连接卡）。 */
 static void draw_switch_row(HDC dc)
 {
-    struct { RECT r; const wchar_t *lbl; int on; } it[3];
+    struct { RECT r; const wchar_t *lbl; int on; int which; } it[2];
     HFONT f = ui_font(14, FW_NORMAL, 0);
     int i;
 
-    it[0].r = g_lo.sw_mute;   it[0].lbl = L"静音"; it[0].on = g_ui.mute;
-    it[1].r = g_lo.sw_mon;    it[1].lbl = L"监听"; it[1].on = g_ui.monitor;
-    it[2].r = g_lo.sw_autorec; it[2].lbl = L"重连"; it[2].on = g_ui.autorec;
+    it[0].r = g_lo.sw_mute;   it[0].lbl = L"静音"; it[0].on = g_ui.mute;   it[0].which = SWI_MUTE;
+    it[1].r = g_lo.sw_mon;    it[1].lbl = L"监听"; it[1].on = g_ui.monitor; it[1].which = SWI_MON;
 
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 2; i++) {
         int lw = ui_measure_text(it[i].lbl, f);
         RECT lr = { it[i].r.left - sd(6) - lw, it[i].r.top,
                     it[i].r.left - sd(6), it[i].r.bottom };
         ui_text(dc, lr, it[i].lbl, f,
                 it[i].on ? g_th.text : g_th.text_dim,
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        ui_switch(dc, it[i].r, it[i].on);
+        ui_switch(dc, it[i].r, it[i].on, ui_switch_anim_pos(it[i].which));
     }
 }
 

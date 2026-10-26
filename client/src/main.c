@@ -14,6 +14,7 @@
 #include "cli.h"
 #include "drvinst.h"
 #include "drvbridge.h"
+#include "drvimport.h"   /* R-42：从官方安装包导入驱动 */
 #include "devio.h"
 #include "opusdec.h"
 #include "singleinst.h"
@@ -38,6 +39,32 @@ static void eng_log_cb(const char *line, int kind)
     strncpy(copy, line, LOG_LEN - 1);
     copy[LOG_LEN - 1] = 0;
     if (!PostMessageW(g_ui.hwnd, WM_APP + 1, (WPARAM)copy, (LPARAM)kind)) free(copy);
+}
+
+/* R-42：导入线程的日志也走同一条通道（WM_APP+1 + lParam 带级别），
+ * 这样"识别/解包/复制/安装器退出码"每一步都实时滚进事件面板与状态栏。 */
+static void import_log_cb(const char *line, int kind)
+{
+    char *copy = (char *)malloc(LOG_LEN);
+    if (!copy) return;
+    strncpy(copy, line, LOG_LEN - 1);
+    copy[LOG_LEN - 1] = 0;
+    if (!PostMessageW(g_ui.hwnd, WM_APP + 1, (WPARAM)copy, (LPARAM)kind)) free(copy);
+}
+
+/* 扫描官方安装包并把结果缓存进 g_ui（找不到就清空） */
+static void rescan_setup(void)
+{
+    wchar_t path[MAX_PATH * 2], name[MAX_PATH];
+    if (drvimport_scan(path, MAX_PATH * 2, name, MAX_PATH)) {
+        wcsncpy(g_ui.setup_path, path, MAX_PATH - 1);
+        g_ui.setup_path[MAX_PATH - 1] = 0;
+        wcsncpy(g_ui.setup_name, name, MAX_PATH - 1);
+        g_ui.setup_name[MAX_PATH - 1] = 0;
+    } else {
+        g_ui.setup_path[0] = 0;
+        g_ui.setup_name[0] = 0;
+    }
 }
 
 /* ---------------------------------------------------------------- 主题 */
@@ -238,7 +265,21 @@ void ui_on_click(int id, int x, int y)
     case ID_THEME_LIGHT: if (g_ui.dark) ui_toggle_theme(); return;
     case ID_THEME_DARK:  if (!g_ui.dark) ui_toggle_theme(); return;
     case ID_CONN:  toggle_connection(); return;
-    case ID_INSTALL:   request_driver_op(1); return;
+    case ID_INSTALL:
+        /* R-42：同目录有官方安装包 → 从它导入（后台线程，UI 不阻塞）；
+         * 没有就保持原样（空包提示 + 建议把安装器/驱动包放同目录）。 */
+        if (g_ui.setup_path[0] && !drvimport_busy()) {
+            if (drvimport_begin(g_ui.setup_path, import_log_cb)) {
+                g_ui.import_done_at = 0;
+                ui_log_add("开始从官方安装包导入驱动（后台解包，稍候）", 0);
+            } else {
+                ui_log_add("导入任务已在运行中", 3);
+            }
+            g_dirty = 1;
+            return;
+        }
+        request_driver_op(1);
+        return;
     case ID_UNINSTALL: request_driver_op(0); return;
     case ID_OPENSET:   open_sound_settings(); return;
     case ID_HELP:  ui_show_help(GetModuleHandleW(NULL), g_ui.hwnd); return;
@@ -246,6 +287,7 @@ void ui_on_click(int id, int x, int y)
         /* D-06 静音行：真实生效（engine 灌音前零填充），电平表照常显示输入 */
         g_ui.mute = !g_ui.mute;
         eng_set_mute(g_ui.mute);
+        ui_switch_anim_set(SWI_MUTE, g_ui.mute);
         ui_log_add(g_ui.mute ? "已静音（输出截断，输入电平照常显示）"
                              : "已取消静音", 0);
         break;
@@ -264,6 +306,7 @@ void ui_on_click(int id, int x, int y)
             g_ui.monitor = 0;
             ui_log_add("已关闭监听", 0);
         }
+        ui_switch_anim_set(SWI_MON, g_ui.monitor);
         break;
     case ID_AUTOREC:
         /* R-27：默认关；开启后断线 0.5 s 固定间隔重试，无上限、不退避。
@@ -280,6 +323,7 @@ void ui_on_click(int id, int x, int y)
         }
         ui_log_add(g_ui.autorec ? "已开启自动重连（断线后 0.5 s 重试，无上限）"
                                 : "已关闭自动重连", 0);
+        ui_switch_anim_set(SWI_REC, g_ui.autorec);
         break;
     case ID_COPYLOG:
         if (ui_log_copy_all()) ui_log_add("事件已全部复制到剪贴板", 2);
@@ -373,6 +417,19 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (GetEnvironmentVariableW(L"MICLINK_EXPAND_ALL", NULL, 0) > 0) {
             g_ui.exp_audio = g_ui.exp_stats = g_ui.exp_log = 1;
         }
+        /* 开发/截图用：启动即打开说明书窗口（无 WM 环境下无法用鼠标点开它，
+         * 只能这样取证「无系统标题栏 + 关闭按钮比例正常」）。 */
+        if (GetEnvironmentVariableW(L"MICLINK_SHOW_HELP", NULL, 0) > 0) {
+            PostMessageW(hwnd, WM_APP + 3, 0, 0);
+        }
+        /* R-46：开关动画初值必须**与真实状态一致**。
+         * 动画位置默认全 0（= 关），若某个开关初始就是「开」（比如恢复上次
+         * 设置、或外部改了状态），滑块会画在关闭位，直到用户手动拨一次才归位。
+         * 这里统一对齐：位置直接置到目标，不播入场动画。 */
+        ui_switch_anim_set(SWI_MUTE, g_ui.mute);
+        ui_switch_anim_set(SWI_MON, g_ui.monitor);
+        ui_switch_anim_set(SWI_REC, g_ui.autorec);
+        ui_switch_anim_sync();
         g_ui.edit_host = CreateWindowExW(0, L"EDIT", L"192.168.1.100",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_CENTER,   /* R-10：三处统一水平居中 */
             0, 0, 10, 10, hwnd, (HMENU)100, NULL, NULL);
@@ -476,6 +533,9 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             g_ui.rc_next = 0;
         }
 
+        /* ---- R-46：开关滑块动画推进（120ms 走完 0↔1000）---- */
+        if (ui_switch_anim_step()) g_dirty = 1;
+
         /* ---- D-14：500ms 节拍（状态栏/面板摘要快照 + 峰值保持）---- */
         if (++g_ui.stat_half >= 31) {           /* 16ms × 31 ≈ 500ms */
             double lp;
@@ -505,12 +565,41 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             g_dirty = 1;
         }
 
+        /* R-42：导入线程的结果跟进。
+         * 成功判定 = 安装器退出码 0 **且** 5 s 内驱动变 READY（drv_detect 每 2 s
+         * 复检一次，所以这里只是等它）；否则 WARN 提示重启，并保留失败现场。 */
+        {
+            int r = drvimport_result();
+            if (r == 1) {
+                if (!g_ui.import_done_at) {
+                    g_ui.import_done_at = now;
+                    if (!g_ui.import_done_at) g_ui.import_done_at = 1;   /* 防 0 语义 */
+                } else if (g_ui.drv.state == DRV_READY) {
+                    ui_log_add("驱动已导入（来源：官方安装包）", 2);
+                    drvimport_cleanup();       /* 成功后删临时目录 */
+                    g_ui.import_done_at = 0;
+                    g_dirty = 1;
+                } else if (now - g_ui.import_done_at > 5000) {
+                    ui_log_add("安装器返回 0，但驱动 5 秒内未就绪：请重启电脑后重试"
+                               "（导入现场保留在临时目录，见事件面板）", 3);
+                    drvimport_ack();           /* 不删现场 */
+                    g_ui.import_done_at = 0;
+                    g_dirty = 1;
+                }
+            } else if (r == 2) {
+                drvimport_ack();               /* 失败：日志已由模块打印，保留现场 */
+                g_ui.import_done_at = 0;
+                g_dirty = 1;
+            }
+        }
+
         g_ui.tick++;
         if (g_ui.tick % 125 == 0) {          /* ~2 s 复检一次驱动状态 */
             DrvStatus d;
             drv_detect(&d, 0);
             if (d.state != g_ui.drv.state) {
                 g_ui.drv = d;
+                rescan_setup();               /* R-42：装完/卸完可能多了或少了安装包 */
                 ui_log_add(d.state == DRV_READY ? "虚拟麦克风已就绪" : "驱动状态变化", 0);
                 g_dirty = 1;
             } else {
@@ -538,6 +627,9 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_APP + 2:                          /* 延迟执行的自动连接 */
         if (!g_ui.running) toggle_connection();
+        return 0;
+    case WM_APP + 3:                          /* 开发用：打开说明书窗口 */
+        ui_show_help(GetModuleHandleW(NULL), g_ui.hwnd);
         return 0;
 
     case WM_MOUSEWHEEL: {
@@ -822,6 +914,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
     /* 驱动检测放在窗口创建之后：L1 会打开设备句柄（全进程只开一次），
      * 打开失败不阻塞界面，用户可点“安装驱动”。 */
     drv_detect(&g_ui.drv, 1);
+    rescan_setup();                        /* R-42：同目录有没有官方安装包 */
     if (g_ui.drv.state == DRV_READY)
         ui_log_add("虚拟麦克风驱动已就绪", 2);
     else {

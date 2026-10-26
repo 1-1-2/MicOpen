@@ -96,20 +96,23 @@ static void layout_once(void)
     {
         int T = g_lo.tight;
         int t_title = T ? sd(10)  : sd(12);   /* 卡标题 */
-        int t_step  = T ? sd(42)  : sd(49);   /* 三步进度 */
-        int t_tlab  = T ? sd(76)  : sd(90);   /* 传输方式标签 */
-        int t_seg   = T ? sd(92)  : sd(108);  /* 四段 segmented */
-        int h_seg   = T ? sd(30)  : sd(36);   /* R-24：按钮高 32→36（tight 保持 30 不破版） */
-        int t_hlab  = T ? sd(132) : sd(153);  /* 手机 IP 标签 */
-        int t_host  = T ? sd(148) : sd(170);  /* 手机 IP 输入框 */
-        int h_in    = T ? sd(30)  : sd(32);   /* 输入框高度不变（R-10 只改对齐） */
-        int h_btn   = T ? sd(30)  : sd(36);   /* 主按钮：R-24 32→36 */
-        int t_plab  = T ? sd(188) : sd(216);  /* 端口标签 */
-        int t_port  = T ? sd(204) : sd(234);  /* 端口输入框 */
-        int t_btn   = T ? sd(244) : sd(290);  /* 主按钮 */
+        int t_step  = T ? sd(38)  : sd(49);   /* 三步进度 */
+        int t_tlab  = T ? sd(64)  : sd(90);   /* 传输方式标签 */
+        int t_seg   = T ? sd(76)  : sd(108);  /* 四段 segmented */
+        int h_seg   = T ? sd(28)  : sd(36);   /* R-24：按钮高 32→36（tight 保持 30 不破版） */
+        int t_hlab  = T ? sd(108) : sd(153);  /* 手机 IP 标签 */
+        int t_host  = T ? sd(127) : sd(170);  /* 手机 IP 输入框 */
+        int h_in    = T ? sd(28)  : sd(32);   /* 输入框高度不变（R-10 只改对齐） */
+        int h_btn   = T ? sd(28)  : sd(36);   /* 主按钮：R-24 32→36 */
+        int t_plab  = T ? sd(159) : sd(216);  /* 端口标签 */
+        int t_port  = T ? sd(178) : sd(234);  /* 端口输入框 */
+        int t_sw    = T ? sd(212) : sd(274);  /* R-44：自动重连开关行 */
+        int h_sw    = T ? sd(28)  : sd(32);   /* 开关高 */
+        int t_btn   = T ? sd(244) : sd(314);  /* 主按钮 */
         int bpad    = T ? sd(12)  : sd(16);   (void)bpad;
 
-        g_lo.card_conn = raw(lx0, yl, lx1, yl + (T ? sd(286) : sd(338)));
+        /* 卡片总高：最后一块（主按钮）+ 底部内边距 */
+        g_lo.card_conn = raw(lx0, yl, lx1, yl + (T ? sd(284) : sd(362)));
         {
             int cx0 = lx0 + inner, cx1 = lx1 - inner;
             int dot = sd(16);
@@ -142,6 +145,14 @@ static void layout_once(void)
             }
             /* 主按钮：整卡宽，运行态 = danger + 呼吸（D-04） */
             g_lo.btn_conn = raw(cx0, yl + t_btn, cx1, yl + t_btn + h_btn);
+            /* R-44：自动重连开关归位到**连接卡**（它本来就是连接行为，
+             * 放在电平卡里既不合语义、也和"连接/断开"状态离得太远）。
+             * 位置：端口输入与主按钮之间的一行，右对齐到卡片内距，
+             * 标签「自动重连」在开关左侧（同电平卡静音/监听的排法）。 */
+            {
+                int sw = sd(52);
+                g_lo.sw_autorec = raw(cx1 - sw, yl + t_sw, cx1, yl + t_sw + h_sw);
+            }
             (void)t_title; (void)t_hlab; (void)t_plab; (void)t_tlab;
             (void)bpad;
         }
@@ -169,27 +180,32 @@ static void layout_once(void)
              * 一行放不下（标题 + 状态徽标 + 两个按钮）时退化为短标签
              * （卸载 / 说明），窄到头也不会越界或压到徽标上。 */
             {
-                int bh = sd(18);
+                /* R-43：徽标 / 卸载驱动 / 命令行说明书 三件同排。
+                 * 口径统一：11px Semibold、同一行高（top+12 … top+32）、垂直居中；
+                 * 按钮宽 = 文字 + 左右各 8px（文字居中，hover 不改宽）；
+                 * 三者间距 8px；整行右端留 12px 卡片内距。 */
+                int bh = sd(20);
                 int g8 = sd(8);
+                int pad = sd(16);                        /* 8 + 8 */
                 int hdrw = cx1 - cx0;
-                int titlew, badgew, hw, uw, pad = sd(14);
-                HFONT lf = ui_font(11, FW_NORMAL, 0);     /* 与 BTN_TEXT 同款 */
-                HFONT sf = ui_font(11, FW_SEMIBOLD, 0);   /* 与状态徽标同款 */
+                int titlew, badgew, hw, uw;
+                HFONT lf = ui_font(11, FW_SEMIBOLD, 0);  /* 与徽标/BTN_TEXT 同款 */
+                HFONT sf = ui_font(11, FW_SEMIBOLD, 0);
+                int rright = lx1 - sd(12);
                 /* 标题「驱动」占位 + 徽标最宽文案（驱动已就绪/驱动需重启/驱动未安装） */
-                titlew = ui_measure_text(L"驱动", ui_font(14, FW_SEMIBOLD, 0));
-                badgew = ui_measure_text(L"驱动未安装", sf) + sd(26);
+                titlew = ui_measure_text(L"驱动", ui_font(15, FW_SEMIBOLD, 0));
+                badgew = ui_measure_text(L"驱动未安装", sf) + sd(26);   /* 徽标内含圆点+间隙 */
                 g_small_hdr = 0;
                 hw = ui_measure_text(ui_lbl_help(), lf) + pad;
                 uw = ui_measure_text(ui_lbl_uninstall(), lf) + pad;
                 if (titlew + sd(12) + badgew + g8 * 2 + hw + uw > hdrw) {
-                    g_small_hdr = 1;                      /* 窄窗：短标签 */
-                    pad = sd(10);
+                    g_small_hdr = 1;                     /* 窄窗：短标签（同字号同基线） */
                     hw = ui_measure_text(ui_lbl_help(), lf) + pad;
                     uw = ui_measure_text(ui_lbl_uninstall(), lf) + pad;
                 }
-                g_lo.btn_help = raw(cx1 - hw, yl + sd(13), cx1, yl + sd(13) + bh);
-                g_lo.btn_uninstall = raw(cx1 - hw - g8 - uw, yl + sd(13),
-                                         cx1 - hw - g8, yl + sd(13) + bh);
+                g_lo.btn_help = raw(rright - hw, yl + sd(12), rright, yl + sd(12) + bh);
+                g_lo.btn_uninstall = raw(rright - hw - g8 - uw, yl + sd(12),
+                                         rright - hw - g8, yl + sd(12) + bh);
             }
         }
         yl += g_lo.card_drv.bottom - g_lo.card_drv.top;
@@ -215,8 +231,9 @@ static void layout_once(void)
             int rw = c.right - inner - rx;
             g_lo.hist   = cs(rx, c.top + sd(150), c.right - inner, c.top + sd(206));
             g_lo.slider = cs(rx, c.top + sd(280), rx + rw, c.top + sd(296));
-            /* R-39 / R-27：底行三开关（静音 / 监听 / 重连），统一 52×32。
-             * 从 x0 顺序排，标签画在各自开关左侧；900×560 下总宽 ~286 < 296。 */
+            /* R-39：底行两个开关（静音 / 监听），统一 52×32。
+             * R-44：自动重连已移出电平卡，归位到左侧连接卡。
+             * 从 x0 顺序排，标签画在各自开关左侧。 */
             {
                 HFONT lf = ui_font(14, FW_NORMAL, 0);
                 int sw = sd(52), sh = sd(32);
@@ -226,8 +243,6 @@ static void layout_once(void)
                                   x + ui_measure_text(L"静音", lf) + lg + sw, y + sh);
                 x = g_lo.sw_mute.right + gap + ui_measure_text(L"监听", lf) + lg;
                 g_lo.sw_mon = cs(x, y, x + sw, y + sh);
-                x = g_lo.sw_mon.right + gap + ui_measure_text(L"重连", lf) + lg;
-                g_lo.sw_autorec = cs(x, y, x + sw, y + sh);
                 (void)sw; (void)sh;
             }
             g_lo.bar_x0 = rx;
