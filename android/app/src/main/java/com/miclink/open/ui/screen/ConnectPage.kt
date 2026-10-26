@@ -157,15 +157,26 @@ fun ConnectPage(
             )
             Spacer(Modifier.height(4.dp))
             val wf = vm.waveform
-            LevelWaveform(
-                slots = wf.slots,
-                version = wf.version,
+            // R-35：波形区必须有自己的容器；未连接时也保留可识别的视觉区域。
+            // 容器常驻，内部基线在空态下给出 0 电平参照。
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics {
-                        contentDescription = waveformA11y
-                    }
-            )
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                    .border(1.dp, tokens.border, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                LevelWaveform(
+                    slots = wf.slots,
+                    version = wf.version,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            contentDescription = waveformA11y
+                        }
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
             CardDivider()

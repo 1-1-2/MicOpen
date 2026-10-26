@@ -118,6 +118,15 @@ fun LevelWaveform(
             )
         }
 
+        // R-35：先画一条极淡基线（0 电平线）——空态（未连接 / 静音）时
+        // 波形区不是纯空白，用户能看出"这里是一条电平线"。
+        drawLine(
+            color = tokens.border.copy(alpha = 0.55f),
+            start = Offset(0f, size.height),
+            end = Offset(size.width, size.height),
+            strokeWidth = 1.dp.toPx()
+        )
+
         // 绘制：底层暗柱 -> 峰值保持线 -> 上层亮柱
         val slotW = size.width / WAVEFORM_BARS
         val barW = slotW * 0.7f
