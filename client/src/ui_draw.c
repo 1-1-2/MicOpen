@@ -838,9 +838,11 @@ void ui_draw_drv_card(HDC dc)
                     g_lo.btn_uninstall.left - sd(8), r.top + sd(32) };
         ui_badge(dc, br, txt, drv_state_color(d->state), drv_state_bg(d->state));
     }
-    ui_button(dc, g_lo.btn_uninstall, L"卸载驱动", ID_UNINSTALL, BTN_TEXT,
+    /* 文案由布局决定（窄窗自动缩为「卸载」/「说明」），宽度也是布局算好的，
+     * 两者必须同源，否则文字会溢出矩形被卡片边缘裁掉。 */
+    ui_button(dc, g_lo.btn_uninstall, ui_lbl_uninstall(), ID_UNINSTALL, BTN_TEXT,
               d->state != DRV_NOT_INSTALLED);
-    ui_button(dc, g_lo.btn_help, L"命令行说明书", ID_HELP, BTN_TEXT, 1);
+    ui_button(dc, g_lo.btn_help, ui_lbl_help(), ID_HELP, BTN_TEXT, 1);
 
     if (ready) {
         /* 只读次级信息 pill 化（D-09）：真实设备名 + 真实格式 */

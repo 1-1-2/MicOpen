@@ -26,7 +26,7 @@ typedef struct {
     RECT card_drv;                  /* 左列：驱动卡 */
     RECT pill_dev, pill_fmt;        /* 只读信息 pill（D-09） */
     RECT btn_install, btn_openset;  /* 安装驱动（未就绪）/ 打开声音设置（就绪） */
-    RECT btn_uninstall, btn_help;   /* 标题行小文字按钮 */
+    RECT btn_uninstall, btn_help;   /* 标题行小文字按钮（宽度按文字实测自适应） */
 
     RECT card_meter;                /* 右列：电平卡（常驻） */
     RECT ring;                      /* 环形电平 180×180（D-05） */
@@ -54,5 +54,12 @@ int ui_status_h(void);
 void ui_layout_compute(void);
 int  ui_hit_test(int x, int y);
 const wchar_t *ui_step_label(int i);   /* 三步进度标签（D-02） */
+
+/* 驱动卡标题行两个小文字按钮的文案。宽度由布局按实测字宽决定，
+ * 窄窗（≤960，如 900×560）放不下全称时自动退化为短标签，
+ * 保证「不裁切、不与标题/状态徽标重叠」。绘制方必须用这两个取值，
+ * 不能各写一份字面量，否则文案与矩形宽度会漂移。 */
+const wchar_t *ui_lbl_uninstall(void);  /* 「卸载驱动」/ 窄窗「卸载」 */
+const wchar_t *ui_lbl_help(void);       /* 「命令行说明书」/ 窄窗「说明」 */
 
 #endif /* MICLINK_UI_LAYOUT_H */

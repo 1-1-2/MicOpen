@@ -538,12 +538,14 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return HTCLIENT;
     }
     case WM_GETMINMAXINFO: {
-        /* 最小窗口 900×560（逻辑像素）：两列布局在该尺寸下不破版 */
+        /* 最小窗口 900×560（逻辑像素）：两列布局在该尺寸下不破版。
+         * 本窗口自绘标题栏（WM_NCCALCSIZE 返回 0，客户区 = 整窗），所以
+         * 「窗口尺寸」与「客户区尺寸」是同一个数 —— 这里**不能**再套
+         * AdjustWindowRectEx 加边框补偿，否则客户区会比规格大一圈（D-03：
+         * 曾得到 916×599），与「最小客户区 900×560」的验收口径不符。 */
         MINMAXINFO *mm = (MINMAXINFO *)lp;
-        RECT wr = { 0, 0, sd(900), sd(560) };
-        AdjustWindowRectEx(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0);
-        mm->ptMinTrackSize.x = wr.right - wr.left;
-        mm->ptMinTrackSize.y = wr.bottom - wr.top;
+        mm->ptMinTrackSize.x = sd(900);
+        mm->ptMinTrackSize.y = sd(560);
         return 0;
     }
     case WM_DESTROY:

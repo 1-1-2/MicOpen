@@ -41,6 +41,14 @@ static int step_label_w(int i)
     return ui_measure_text(ui_step_label(i), ui_font(11, FW_NORMAL, 0));
 }
 
+/* 驱动卡标题行两个小文字按钮的文案（宽度决定权在布局手里，见 layout_once）。
+ * 为什么不把字面量写在绘制里：按钮宽度要按文字实测算，文案和矩形必须是
+ * 同一份决定，否则「算宽度用全称、画的时候用简称」这类漂移迟早发生。 */
+static int g_small_hdr;                  /* 1 = 标题行空间不足，用短标签 */
+
+const wchar_t *ui_lbl_uninstall(void) { return g_small_hdr ? L"卸载" : L"卸载驱动"; }
+const wchar_t *ui_lbl_help(void)      { return g_small_hdr ? L"说明" : L"命令行说明书"; }
+
 static void layout_once(void)
 {
     int pad = sd(20), gap = sd(16), inner = sd(16);
@@ -153,12 +161,34 @@ static void layout_once(void)
             /* 就绪 = 打开声音设置（secondary 通栏）；未就绪 = 安装驱动（primary 通栏） */
             g_lo.btn_openset  = raw(cx0, yl + t_btn, cx1, yl + t_btn + h_btn);
             g_lo.btn_install  = g_lo.btn_openset;
-            /* 标题行右侧两个小文字按钮（卸载驱动 / 命令行说明书） */
+            /* 标题行右侧两个小文字按钮：宽度按**实测字宽**算，不再写死 56px。
+             * 原来固定 56px 装不下 11px 下的「命令行说明书」（实测约 66px），
+             * DT_CENTER 会让文字居中溢出矩形，右侧被卡片边缘裁掉 ——
+             * leftW 固定 320（900×560）时表现为「行说明书」。
+             * 一行放不下（标题 + 状态徽标 + 两个按钮）时退化为短标签
+             * （卸载 / 说明），窄到头也不会越界或压到徽标上。 */
             {
-                int bw = sd(56), bh = sd(18);
-                g_lo.btn_help      = raw(lx1 - inner - bw, yl + sd(13), lx1 - inner, yl + sd(13) + bh);
-                g_lo.btn_uninstall = raw(g_lo.btn_help.left - sd(8) - bw, yl + sd(13),
-                                         g_lo.btn_help.left - sd(8), yl + sd(13) + bh);
+                int bh = sd(18);
+                int g8 = sd(8);
+                int hdrw = cx1 - cx0;
+                int titlew, badgew, hw, uw, pad = sd(14);
+                HFONT lf = ui_font(11, FW_NORMAL, 0);     /* 与 BTN_TEXT 同款 */
+                HFONT sf = ui_font(11, FW_SEMIBOLD, 0);   /* 与状态徽标同款 */
+                /* 标题「驱动」占位 + 徽标最宽文案（驱动已就绪/驱动需重启/驱动未安装） */
+                titlew = ui_measure_text(L"驱动", ui_font(14, FW_SEMIBOLD, 0));
+                badgew = ui_measure_text(L"驱动未安装", sf) + sd(26);
+                g_small_hdr = 0;
+                hw = ui_measure_text(ui_lbl_help(), lf) + pad;
+                uw = ui_measure_text(ui_lbl_uninstall(), lf) + pad;
+                if (titlew + sd(12) + badgew + g8 * 2 + hw + uw > hdrw) {
+                    g_small_hdr = 1;                      /* 窄窗：短标签 */
+                    pad = sd(10);
+                    hw = ui_measure_text(ui_lbl_help(), lf) + pad;
+                    uw = ui_measure_text(ui_lbl_uninstall(), lf) + pad;
+                }
+                g_lo.btn_help = raw(cx1 - hw, yl + sd(13), cx1, yl + sd(13) + bh);
+                g_lo.btn_uninstall = raw(cx1 - hw - g8 - uw, yl + sd(13),
+                                         cx1 - hw - g8, yl + sd(13) + bh);
             }
         }
         yl += g_lo.card_drv.bottom - g_lo.card_drv.top;
