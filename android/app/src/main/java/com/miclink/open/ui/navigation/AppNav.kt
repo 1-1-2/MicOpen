@@ -8,36 +8,38 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,7 +48,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.miclink.open.MainViewModel
 import com.miclink.open.R
-import com.miclink.open.ui.component.LocalMicLinkTokens
 import com.miclink.open.ui.screen.AboutScreen
 import com.miclink.open.ui.screen.AdvancedPage
 import com.miclink.open.ui.screen.AppearanceScreen
@@ -113,7 +114,6 @@ fun AppNav(
 }
 
 /** 三段外壳：顶栏 + 内容区（含返回键与 Snackbar）。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeShell(
     vm: MainViewModel,
@@ -160,12 +160,27 @@ private fun HomeShell(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                // 标题位改为三段导航（R-12）
-                title = {
-                    HomeTabRow(tab = tab, onSelect = vm::selectTab)
-                },
-                actions = {
+            // R-12 顶栏：**不用 M3 TopAppBar**。
+            //
+            // 根因（两轮 CI 五屏取证 + dump 实证）：三段自绘分段控件放在
+            // TopAppBar 的 title 槽（SubcomposeLayout + 槽位约束）里时，点按
+            // 命中与 dump 的 a11y bounds 不一致——三段中只有最后一段能切页，
+            // 「连接 / 音源」的 onClick 根本不触发（dump 显示页面纹丝不动、
+            // 无崩溃、无异常）；而**同一顶栏 actions 槽的 M3 IconButton**
+            // （Surface(onClick) + 48dp 最小触摸目标）两轮全部正常。
+            // 修复：顶栏改为普通 Row（无子组合、无槽位约束），三段换用与
+            // IconButton 同一家族的 M3 SegmentedButton——其触摸路径就是
+            // 实证可用的那条。
+            Surface(tonalElevation = 2.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .height(64.dp)
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HomeTabRow(tab = tab, onSelect = vm::selectTab, modifier = Modifier.weight(1f))
                     // 外观 / 主题入口：小衣服图标，与三段同高、垂直居中
                     IconButton(onClick = onOpenAppearance) {
                         Icon(
@@ -174,7 +189,7 @@ private fun HomeShell(
                         )
                     }
                 }
-            )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -228,37 +243,32 @@ private fun HomeShell(
 /**
  * 顶栏三段（R-12）：连接 / 音源 / 高级。
  *
- * 高 36（在 `TopAppBar` 内垂直居中，与右侧 👕 图标按钮同高）；选中段 accent
- * 填充 + onAccent 文字，未选段透明底 + text-2。整段可点，点击即切页（无横滑）。
+ * 用 M3 [SegmentedButton]（`Surface(onClick)` + 48dp 最小触摸目标，与 IconButton
+ * 同一家族）而不是裸 `Modifier.clickable`——CI 实证后者在顶栏里点按命中不稳定
+ * （三段中只有最后一段能触发，见 [HomeShell] 顶栏注释）。每段等宽（weight），
+ * 高 40dp，与右侧 👕 同高垂直居中；每段带 [key] 避免重组期节点复用歧义。
  */
 @Composable
-private fun HomeTabRow(tab: HomeTab, onSelect: (HomeTab) -> Unit) {
-    val tokens = LocalMicLinkTokens.current
-    Row(
-        modifier = Modifier
-            .height(36.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(tokens.bgSunken)
-            .padding(horizontal = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        HOME_TAB_ORDER.forEach { item: HomeTab ->
-            val selected = item == tab
-            Box(
-                modifier = Modifier
-                    .height(32.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (selected) tokens.accent else Color.Transparent)
-                    .clickable { onSelect(item) }
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(tabLabelRes(item)),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = if (selected) tokens.onAccent else tokens.text2,
-                    maxLines = 1
+private fun HomeTabRow(tab: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Modifier = Modifier) {
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+        HOME_TAB_ORDER.forEachIndexed { index, item: HomeTab ->
+            key(item) {
+                SegmentedButton(
+                    selected = item == tab,
+                    onClick = { onSelect(item) },
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = HOME_TAB_ORDER.size
+                    ),
+                    modifier = Modifier.weight(1f),
+                    label = {
+                        Text(
+                            text = stringResource(tabLabelRes(item)),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
                 )
             }
         }
