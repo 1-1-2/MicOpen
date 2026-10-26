@@ -613,17 +613,20 @@ void ui_slider(HDC dc, RECT r, int pos, int id)
     ui_stroke_round(dc, th, sd(8), g_th.stroke, 255, 1);
 }
 
+/* 开关（C-08 形态 52×32）：滑块直径随控件高度走，40×20 / 52×32 都能用 */
 void ui_switch(HDC dc, RECT r, int on)
 {
-    int rad = (r.bottom - r.top) / 2;
-    int d = sd(12);
+    int h = r.bottom - r.top;
+    int rad = h / 2;
+    int inset = sd(4);
+    int d = h - inset * 2;
     RECT knob;
+    if (d < sd(8)) d = sd(8);
     ui_fill_round(dc, r, rad, on ? g_th.accent : g_th.sunken, 255);
-    if (on) knob.left = r.left + sd(24);
-    else    knob.left = r.left + sd(4);
-    knob.top = r.top + sd(4);
-    knob.right = knob.left + d;
+    knob.top = r.top + inset;
     knob.bottom = knob.top + d;
+    knob.left = on ? (r.right - inset - d) : (r.left + inset);
+    knob.right = knob.left + d;
     ui_fill_round(dc, knob, d / 2, on ? RGB(255, 255, 255) : g_th.text_mute, 255);
 }
 
@@ -1222,8 +1225,8 @@ void ui_draw_stats_card(HDC dc)
 /* ------------------------------------------------------- 事件面板 */
 void ui_draw_log_card(HDC dc)
 {
-    static const wchar_t *lv_name[3] = { L"INFO", L"ERROR", L"OK" };
-    COLORREF lv_col[3];
+    static const wchar_t *lv_name[4] = { L"INFO", L"ERROR", L"OK", L"WARN" };
+    COLORREF lv_col[4];
     int y, i, line_h = sd(22);
     RECT c = g_lo.card_log;
     wchar_t sum[160];
@@ -1232,6 +1235,7 @@ void ui_draw_log_card(HDC dc)
     lv_col[0] = g_th.text_dim;
     lv_col[1] = g_th.err;
     lv_col[2] = g_th.ok;
+    lv_col[3] = g_th.warn;
 
     if (ui_log_count() > 0) {
         const LogLine *L = ui_log_get(0);
@@ -1262,7 +1266,7 @@ void ui_draw_log_card(HDC dc)
         if (y + line_h > c.bottom - sd(8)) break;
         MultiByteToWideChar(CP_UTF8, 0, L->text, -1, msg, LOG_LEN);
         msg[LOG_LEN - 1] = 0;
-        lc = lv_col[L->kind < 0 || L->kind > 2 ? 0 : L->kind];
+        lc = lv_col[L->kind < 0 || L->kind > 3 ? 0 : L->kind];
         /* 左侧 3px 级别竖条 */
         {
             RECT bar = { c.left + ui_pad(), y + sd(3), c.left + ui_pad() + sd(3), y + line_h - sd(3) };
@@ -1273,7 +1277,7 @@ void ui_draw_log_card(HDC dc)
         ui_text(dc, tr, L->ts, tf, g_th.text_mute, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         /* 级别标签（着色） */
         SetRect(&lr, c.left + sd(126), y, c.left + sd(126) + sd(52), y + line_h);
-        ui_text(dc, lr, lv_name[L->kind < 0 || L->kind > 2 ? 0 : L->kind], lf, lc,
+        ui_text(dc, lr, lv_name[L->kind < 0 || L->kind > 3 ? 0 : L->kind], lf, lc,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         /* 消息正文 text-1 */
         SetRect(&mr, c.left + sd(182), y, c.right - ui_pad(), y + line_h);
@@ -1486,7 +1490,8 @@ int ui_log_copy_all(void)
     buf[0] = 0;
     for (i = n - 1; i >= 0; i--) {
         const LogLine *L = ui_log_get(i);
-        const wchar_t *lv = (L->kind == 1) ? L"ERROR" : (L->kind == 2) ? L"OK" : L"INFO";
+        const wchar_t *lv = (L->kind == 1) ? L"ERROR" : (L->kind == 2) ? L"OK"
+                          : (L->kind == 3) ? L"WARN" : L"INFO";
         wchar_t msg[LOG_LEN];
         size_t used = wcslen(buf);
         if (!L) continue;

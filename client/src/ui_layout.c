@@ -215,8 +215,21 @@ static void layout_once(void)
             int rw = c.right - inner - rx;
             g_lo.hist   = cs(rx, c.top + sd(150), c.right - inner, c.top + sd(206));
             g_lo.slider = cs(rx, c.top + sd(280), rx + rw, c.top + sd(296));
-            g_lo.sw_mute = cs(c.right - inner - sd(40), c.top + sd(341),
-                              c.right - inner, c.top + sd(361));
+            /* R-39 / R-27：底行三开关（静音 / 监听 / 重连），统一 52×32。
+             * 从 x0 顺序排，标签画在各自开关左侧；900×560 下总宽 ~286 < 296。 */
+            {
+                HFONT lf = ui_font(14, FW_NORMAL, 0);
+                int sw = sd(52), sh = sd(32);
+                int gap = sd(14), lg = sd(6);
+                int x = rx, y = c.top + sd(330);
+                g_lo.sw_mute = cs(x + ui_measure_text(L"静音", lf) + lg, y,
+                                  x + ui_measure_text(L"静音", lf) + lg + sw, y + sh);
+                x = g_lo.sw_mute.right + gap + ui_measure_text(L"监听", lf) + lg;
+                g_lo.sw_mon = cs(x, y, x + sw, y + sh);
+                x = g_lo.sw_mon.right + gap + ui_measure_text(L"重连", lf) + lg;
+                g_lo.sw_autorec = cs(x, y, x + sw, y + sh);
+                (void)sw; (void)sh;
+            }
             g_lo.bar_x0 = rx;
             g_lo.bar_x1 = c.right - inner;
             g_lo.bar_y  = c.top + sd(83) - g_ui.scroll;   /* 与 cs() 同一坐标系 */
@@ -300,6 +313,8 @@ int ui_hit_test(int x, int y)
     if (PtInRect(&g_lo.btn_uninstall, p)) return ID_UNINSTALL;
     if (PtInRect(&g_lo.btn_help, p))      return ID_HELP;
     if (PtInRect(&g_lo.sw_mute, p))       return ID_MUTE;
+    if (PtInRect(&g_lo.sw_mon, p))        return ID_MONITOR;
+    if (PtInRect(&g_lo.sw_autorec, p))    return ID_AUTOREC;
     /* 右列 */
     if (PtInRect(&g_lo.hdr_audio, p)) return ID_EXP_AUDIO;
     if (PtInRect(&g_lo.hdr_stats, p)) return ID_EXP_STATS;

@@ -237,6 +237,31 @@ void ui_on_click(int id, int x, int y)
         ui_log_add(g_ui.mute ? "已静音（输出截断，输入电平照常显示）"
                              : "已取消静音", 0);
         break;
+    case ID_MONITOR:
+        /* R-39：监听 = 同一份处理后 PCM 再送系统默认输出。开不起来就回弹 + WARN */
+        if (!g_ui.monitor) {
+            if (eng_set_monitor(1)) {
+                g_ui.monitor = 1;
+                ui_log_add("已开启监听（系统默认输出设备）", 2);
+            } else {
+                g_ui.monitor = 0;
+                ui_log_add("监听开启失败：没有可用的输出设备（开关已回弹）", 3);
+            }
+        } else {
+            eng_set_monitor(0);
+            g_ui.monitor = 0;
+            ui_log_add("已关闭监听", 0);
+        }
+        break;
+    case ID_AUTOREC:
+        /* R-27：默认关；开启后断线 0.5 s 固定间隔重试，无上限、不退避 */
+        g_ui.autorec = !g_ui.autorec;
+        g_ui.rc_count = 0;
+        g_ui.rc_next = 0;
+        if (!g_ui.autorec) g_ui.rc_armed = 0;
+        ui_log_add(g_ui.autorec ? "已开启自动重连（断线后 0.5 s 重试，无上限）"
+                                : "已关闭自动重连", 0);
+        break;
     case ID_COPYLOG:
         if (ui_log_copy_all()) ui_log_add("事件已全部复制到剪贴板", 2);
         else ui_log_add("复制失败：剪贴板被其他程序占用", 1);

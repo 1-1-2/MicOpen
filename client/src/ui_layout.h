@@ -34,6 +34,8 @@ typedef struct {
     RECT hist;                      /* 最近 10 秒历史图区（D-08） */
     RECT slider;                    /* 本地增益滑杆（D-07） */
     RECT sw_mute;                   /* 静音开关（D-06） */
+    RECT sw_mon;                    /* 监听开关（R-39） */
+    RECT sw_autorec;                /* 自动重连开关（R-27） */
     int  bar_x0, bar_x1, bar_y;     /* 横条电平（60 段，D-06/C-12） */
 
     RECT card_audio, hdr_audio, seg_rate[3], seg_buf[3];

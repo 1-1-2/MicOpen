@@ -424,14 +424,29 @@ static void draw_gain(HDC dc, RECT card)
     }
 }
 
-/* ---------------------------------------------------------------- 静音行 */
-static void draw_mute_row(HDC dc)
+/* ------------------------------------------- 底行：静音 / 监听 / 自动重连 */
+/* 三个开关同形态（52×32），标签画在各自开关左侧（右对齐贴开关 6px）。
+ * 静音 = 输出截断（D-06）；监听 = 同一份处理后样本再送系统默认输出（R-39）；
+ * 重连 = 非用户主动断开时 0.5 s 自动重试（R-27）。 */
+static void draw_switch_row(HDC dc)
 {
-    RECT sw = g_lo.sw_mute;
-    RECT lr = { g_lo.bar_x0, sw.top, g_lo.bar_x0 + sd(200), sw.bottom };
-    ui_text(dc, lr, L"静音", ui_font(14, FW_NORMAL, 0), g_th.text,
-            DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    ui_switch(dc, sw, g_ui.mute);
+    struct { RECT r; const wchar_t *lbl; int on; } it[3];
+    HFONT f = ui_font(14, FW_NORMAL, 0);
+    int i;
+
+    it[0].r = g_lo.sw_mute;   it[0].lbl = L"静音"; it[0].on = g_ui.mute;
+    it[1].r = g_lo.sw_mon;    it[1].lbl = L"监听"; it[1].on = g_ui.monitor;
+    it[2].r = g_lo.sw_autorec; it[2].lbl = L"重连"; it[2].on = g_ui.autorec;
+
+    for (i = 0; i < 3; i++) {
+        int lw = ui_measure_text(it[i].lbl, f);
+        RECT lr = { it[i].r.left - sd(6) - lw, it[i].r.top,
+                    it[i].r.left - sd(6), it[i].r.bottom };
+        ui_text(dc, lr, it[i].lbl, f,
+                it[i].on ? g_th.text : g_th.text_dim,
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        ui_switch(dc, it[i].r, it[i].on);
+    }
 }
 
 /* ---------------------------------------------------------------- 整卡 */
@@ -496,5 +511,5 @@ void ui_meter_draw(HDC dc, RECT r)
         ui_line(dc, g_lo.bar_x0, dy, g_lo.bar_x1, dy, g_th.stroke, 1.0, 255);
     }
     draw_gain(dc, r);
-    draw_mute_row(dc);
+    draw_switch_row(dc);
 }
