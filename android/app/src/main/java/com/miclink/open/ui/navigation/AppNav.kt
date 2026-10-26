@@ -1,12 +1,9 @@
 package com.miclink.open.ui.navigation
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -18,7 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Checkroom
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,12 +32,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
@@ -53,6 +59,7 @@ import com.miclink.open.ui.screen.AdvancedPage
 import com.miclink.open.ui.screen.AppearanceScreen
 import com.miclink.open.ui.screen.ConnectPage
 import com.miclink.open.ui.screen.SourcePage
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -63,6 +70,9 @@ private const val ROUTE_ABOUT: String = "about"
 
 /** R-05：设置类提示的停留时长（1.8s 自动消失，不用对话框打断）。 */
 private const val SNACKBAR_DURATION_MS: Long = 1800L
+
+/** R-33：切页位移时长（180ms；去 spring 回弹，点击即动）。 */
+private const val TAB_SLIDE_MS: Int = 180
 
 /**
  * AppNav -- 顶部三段导航（R-12）：`连接 / 音源 / 高级` + 右上角外观（👕）。
@@ -181,10 +191,11 @@ private fun HomeShell(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     HomeTabRow(tab = tab, onSelect = vm::selectTab, modifier = Modifier.weight(1f))
-                    // 外观 / 主题入口：小衣服图标，与三段同高、垂直居中
+                    // 外观 / 主题入口（R-36）：调色板图标（M3 自带，不自绘）——
+                    // 「改皮肤/换配色」的行业惯用符号；content-desc 仍为「外观」
                     IconButton(onClick = onOpenAppearance) {
                         Icon(
-                            imageVector = Icons.Outlined.Checkroom,
+                            imageVector = Icons.Outlined.Palette,
                             contentDescription = stringResource(R.string.nav_appearance)
                         )
                     }
@@ -197,43 +208,97 @@ private fun HomeShell(
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
-            AnimatedContent(
-                targetState = tab,
-                transitionSpec = {
-                    // 横向滑入 + 淡入：只是表现，**没有任何横滑手势**
-                    val toRight = slideEnterFromRight(initialState, targetState)
-                    val enterOffset: (Int) -> Int =
-                        { full: Int -> if (toRight) full else -full }
-                    val exitOffset: (Int) -> Int =
-                        { full: Int -> if (toRight) -full else full }
-                    (slideInHorizontally(initialOffsetX = enterOffset) + fadeIn())
-                        .togetherWith(slideOutHorizontally(targetOffsetX = exitOffset) + fadeOut())
-                },
-                contentKey = { it },
-                label = "home-tab-content",
-                modifier = Modifier.fillMaxSize()
-            ) { current: HomeTab ->
-                when (current) {
-                    HomeTab.CONNECT -> ConnectPage(
-                        vm = vm,
-                        scrollState = connectScroll,
-                        onStartClicked = onStartClicked,
-                        onJump = { row ->
-                            val (target, targetFocus) = summaryTarget(row)
-                            vm.goToTab(target, targetFocus)
+            // ---- R-33：三页**常驻组合**，切页只做绘制层位移 ----
+            //
+            // 时序（"点击即切换"到底是谁在什么时刻改状态）：
+            //   1. 手指抬起 → SegmentedButton.onClick → vm.selectTab(page) —— **同步**
+            //      写入 homeTab（Compose 状态，同一帧内生效）；
+            //   2. HomeShell 因 homeTab 变化重组，本作用域读到新的 tab；
+            //   3. LaunchedEffect(tab) 立刻把 shift 置为「目标索引 − 起始索引」并
+            //      animateTo(0)（180ms FastOutSlowIn）——于是**第一帧就开始位移**；
+            //   4. 三个页面在这之前早已组合完成（常驻），没有"目标页首帧组合"的
+            //      0.2–0.4s 延迟——这正是旧 AnimatedContent 方案的病根。
+            //
+            // 动画只写 graphicsLayer（translationX / alpha），不改布局尺寸、
+            // 不产生任何手势（R-16b 纪律 + R-12 禁横滑）。
+            val shift = remember { Animatable(0f) }
+            var prevIndex by remember { mutableIntStateOf(tab.index) }
+            var outgoingIndex by remember { mutableIntStateOf(-1) }
+            var animating by remember { mutableStateOf(false) }
+            LaunchedEffect(tab) {
+                val from = prevIndex
+                prevIndex = tab.index
+                if (from == tab.index) {
+                    return@LaunchedEffect
+                }
+                outgoingIndex = from
+                animating = true
+                shift.snapTo((tab.index - from).toFloat())
+                shift.animateTo(0f, tween(TAB_SLIDE_MS, easing = FastOutSlowInEasing))
+                animating = false
+                outgoingIndex = -1
+            }
+
+            HomeTab.entries.forEach { page ->
+                val active = isPageInteractive(page, tab)
+                val pageAlpha = when {
+                    // 新页随位移淡入（180ms 位移前段 ≈ 120ms 的观感）
+                    active -> (1f - abs(shift.value)).coerceIn(0f, 1f)
+                    // 退出的页在动画期间仍可见（否则会出现"闪白"）
+                    animating && page.index == outgoingIndex -> 1f
+                    else -> 0f
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationX = pageOffsetUnits(page, tab, shift.value) * size.width
+                            alpha = pageAlpha
                         }
-                    )
-                    HomeTab.SOURCE -> SourcePage(
-                        vm = vm,
-                        scrollState = sourceScroll,
-                        focus = focus
-                    )
-                    HomeTab.ADVANCED -> AdvancedPage(
-                        vm = vm,
-                        scrollState = advancedScroll,
-                        focus = focus,
-                        onOpenAbout = onOpenAbout
-                    )
+                        .then(
+                            if (active) {
+                                Modifier
+                            } else {
+                                // 非当前页：吞掉一切指针事件（否则点击会落到看不见的页上）
+                                Modifier.pointerInput(page) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            event.changes.forEach { it.consume() }
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                        .semantics {
+                            if (!active) {
+                                // 非当前页对无障碍"不存在"（读屏不会念到屏外的页）
+                                hideFromAccessibility()
+                            }
+                        }
+                ) {
+                    when (page) {
+                        HomeTab.CONNECT -> ConnectPage(
+                            vm = vm,
+                            scrollState = connectScroll,
+                            onStartClicked = onStartClicked,
+                            onJump = { row ->
+                                val (target, targetFocus) = summaryTarget(row)
+                                vm.goToTab(target, targetFocus)
+                            }
+                        )
+                        HomeTab.SOURCE -> SourcePage(
+                            vm = vm,
+                            scrollState = sourceScroll,
+                            focus = focus
+                        )
+                        HomeTab.ADVANCED -> AdvancedPage(
+                            vm = vm,
+                            scrollState = advancedScroll,
+                            focus = focus,
+                            onOpenAbout = onOpenAbout
+                        )
+                    }
                 }
             }
         }

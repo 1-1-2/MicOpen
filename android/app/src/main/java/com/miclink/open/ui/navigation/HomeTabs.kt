@@ -36,7 +36,7 @@ enum class HomeFocus {
     PORT
 }
 
-/** 连接页「参数摘要」的三行。 */
+/** 连接页「参数摘要」的三行。保留到摘要区替换为只读状态后移除。 */
 enum class SummaryRow {
     SOURCE,
     NOISE,
@@ -54,17 +54,31 @@ val HOME_TAB_ORDER: List<HomeTab> = HomeTab.entries.sortedBy { it.index }
 fun backTargetFrom(tab: HomeTab): HomeTab? =
     if (tab == HomeTab.CONNECT) null else HomeTab.CONNECT
 
-/**
- * 摘要行 → (目标页, 页内锚点)：
- *  - 音源 → 音源页·音源 chips；
- *  - 系统降噪 → 高级页·系统效果卡；
- *  - 控制端口 → 高级页·端口输入框。
- */
+/** 摘要行 → (目标页, 页内锚点)。 */
 fun summaryTarget(row: SummaryRow): Pair<HomeTab, HomeFocus> = when (row) {
     SummaryRow.SOURCE -> HomeTab.SOURCE to HomeFocus.SOURCE_CHIPS
     SummaryRow.NOISE -> HomeTab.ADVANCED to HomeFocus.EFFECTS
     SummaryRow.PORT -> HomeTab.ADVANCED to HomeFocus.PORT
 }
+
+/**
+ * R-33 三页常驻布局：页 [page] 相对当前页 [current] 的**横向位移**（单位 = 页宽）。
+ *
+ * `slideUnits` 是切页动画的瞬时进度（1 → 0）：切页那一刻 `slideUnits = 目标索引 −
+ * 起始索引`，于是新页正好停在"旧页原来的位置"，随后动画把它送回 0——这就是
+ * 「点击瞬间整排开始移动」的实现，动画只改绘制（graphicsLayer.translationX），
+ * 不改布局尺寸，也不产生任何手势。
+ *
+ * @return 0 = 居中（当前页）；+1 = 右侧一页；−1 = 左侧一页。
+ */
+fun pageOffsetUnits(page: HomeTab, current: HomeTab, slideUnits: Float): Float =
+    (page.index - current.index) + slideUnits
+
+/**
+ * R-33：只有当前页可交互（其余页在常驻组合里但必须"看得见地不存在"——
+ * 触摸被吞掉 + 无障碍 invisibleToUser）。
+ */
+fun isPageInteractive(page: HomeTab, current: HomeTab): Boolean = page == current
 
 /**
  * 切页动画方向：目标页在右侧时新页**从右滑入**、旧页向左滑出，反之亦然。

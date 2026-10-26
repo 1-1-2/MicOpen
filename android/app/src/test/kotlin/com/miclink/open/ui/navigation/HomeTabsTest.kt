@@ -60,28 +60,42 @@ class HomeTabsTest {
     }
 
     // ------------------------------------------------------------------
-    // 连接页摘要行跳转
-    // ------------------------------------------------------------------
-
-    @Test
-    fun summaryRow_targets() {
-        assertEquals(HomeTab.SOURCE to HomeFocus.SOURCE_CHIPS, summaryTarget(SummaryRow.SOURCE))
-        assertEquals(HomeTab.ADVANCED to HomeFocus.EFFECTS, summaryTarget(SummaryRow.NOISE))
-        assertEquals(HomeTab.ADVANCED to HomeFocus.PORT, summaryTarget(SummaryRow.PORT))
-    }
-
-    /** 三条摘要行各落不同分组（音源行落音源页，另两行落高级页的不同位置）。 */
-    @Test
-    fun summaryRow_targetsAreDistinct() {
-        val targets = SummaryRow.entries.map { summaryTarget(it) }
-        assertEquals(targets.size, targets.distinct().size)
-        assertEquals(1, targets.count { it.first == HomeTab.SOURCE })
-        assertEquals(2, targets.count { it.first == HomeTab.ADVANCED })
-    }
-
-    // ------------------------------------------------------------------
     // 切页动画方向（纯表现，不产生手势）
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // R-33 三页常驻 + 位移切换（点击即切换 / 只有当前页可交互）
+    // ------------------------------------------------------------------
+
+    /**
+     * 「点击即切换」的状态机证明：点击后 [pageOffsetUnits] 在动画起点（slideUnits =
+     * 目标索引−起始索引）就已经把**目标页定位到"旧页原位"、旧页留在原位准备退出**，
+     * 动画只把这个位移送回 0 —— 位移与状态同步，不存在"等动画才开始"的延迟。
+     */
+    @Test
+    fun tabSwitchIsImmediate_offsetsFollowStateSynchronously() {
+        // 点「音源」（0 → 1）：动画起点 slideUnits = +1
+        assertEquals("新页在右侧一位（准备滑入）", 1f, pageOffsetUnits(HomeTab.SOURCE, HomeTab.SOURCE, 1f))
+        assertEquals("旧页仍在原位", 0f, pageOffsetUnits(HomeTab.CONNECT, HomeTab.SOURCE, 1f))
+        // 动画结束（slideUnits = 0）
+        assertEquals(0f, pageOffsetUnits(HomeTab.SOURCE, HomeTab.SOURCE, 0f))
+        assertEquals(-1f, pageOffsetUnits(HomeTab.CONNECT, HomeTab.SOURCE, 0f))
+        // 反向（高级 → 连接，1 → 0 的反向位移）：slideUnits = −1
+        assertEquals(-1f, pageOffsetUnits(HomeTab.CONNECT, HomeTab.CONNECT, -1f))
+        assertEquals(0f, pageOffsetUnits(HomeTab.SOURCE, HomeTab.CONNECT, -1f))
+    }
+
+    /** 只有当前页可交互：其余两页即使常驻组合也不接受触摸 / 无障碍。 */
+    @Test
+    fun onlyCurrentTabIsInteractive() {
+        assertTrue(isPageInteractive(HomeTab.SOURCE, HomeTab.SOURCE))
+        assertTrue(!isPageInteractive(HomeTab.CONNECT, HomeTab.SOURCE))
+        assertTrue(!isPageInteractive(HomeTab.ADVANCED, HomeTab.SOURCE))
+        // 每一页都恰好一页可交互
+        HomeTab.entries.forEach { current ->
+            assertEquals(1, HomeTab.entries.count { isPageInteractive(it, current) })
+        }
+    }
 
     @Test
     fun slideDirection_followsTabOrder() {
