@@ -69,7 +69,6 @@ import com.miclink.open.R
  *   - [DotTrack]         D-18 音量十档离散点轨（协议 0-9，吸附整数档）
  *   - [IconChip]         D-19/D-20 图标+文字横排 chip（音源 / 输入设备）
  *   - [ChipGroup]        chip 的 flex-wrap 容器
- *   - [SettingsNavRow]   D-17 主页设置摘要跳转行（高 56 + 右端值 + chevron）
  *   - [LabeledSwitchRow] C-08 开关行（标签整行可点）
  *   - [ReadOnlyValueRow] D-21 只读值行（采样率）
  *   - [PortInputField]   D-21/C-06 控制端口输入框（高 56、右对齐等宽、聚焦 2dp accent）
@@ -385,47 +384,6 @@ fun ChipGroup(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         content = content
     )
-}
-
-/**
- * 设置摘要跳转行（D-17）：行高 56、左标签 14sp + 右端当前值 13sp text-2 +
- * chevron 16px text-3。整行可点（进采集设置 / 外观页）。
- */
-@Composable
-fun SettingsNavRow(
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val tokens = LocalMicLinkTokens.current
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = tokens.text1
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-            color = tokens.text2,
-            maxLines = 1
-        )
-        Spacer(Modifier.width(4.dp))
-        Icon(
-            imageVector = Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = tokens.text3
-        )
-    }
 }
 
 /**

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -40,6 +41,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miclink.open.AudioSourceOption
+import com.miclink.open.CaptureSettings
+import com.miclink.open.ReconcileStatus
+import com.miclink.open.ReconcileText
 import com.miclink.open.MainUiState
 import com.miclink.open.MainViewModel
 import com.miclink.open.MicCaptureService
@@ -53,9 +57,7 @@ import com.miclink.open.ui.component.LabeledSwitchRow
 import com.miclink.open.ui.component.LevelWaveform
 import com.miclink.open.ui.component.LocalMicLinkTokens
 import com.miclink.open.ui.component.SectionCard
-import com.miclink.open.ui.component.SettingsNavRow
 import com.miclink.open.ui.component.StatusBadge
-import com.miclink.open.ui.navigation.SummaryRow
 import com.miclink.open.ui.theme.WomicTheme
 
 /**
@@ -73,14 +75,12 @@ import com.miclink.open.ui.theme.WomicTheme
  * （R-20：app 侧无测量通道）。
  *
  * @param scrollState 由 AppNav 持有（切页不重置滚动，R-12）。
- * @param onJump 摘要行跳转（目标页 + 锚点由 [com.miclink.open.ui.navigation.summaryTarget] 决定）。
  */
 @Composable
 fun ConnectPage(
     vm: MainViewModel,
     scrollState: ScrollState,
     onStartClicked: () -> Unit,
-    onJump: (SummaryRow) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state = vm.uiState
@@ -157,8 +157,10 @@ fun ConnectPage(
             )
             Spacer(Modifier.height(4.dp))
             val wf = vm.waveform
-            // R-35：波形区必须有自己的容器；未连接时也保留可识别的视觉区域。
-            // 容器常驻，内部基线在空态下给出 0 电平参照。
+            // R-35：波形区**必须有自己的容器**——未连接时也是一块"区域"，
+            // 不再是空白断层（1dp border + surfaceVariant 低透明度底 + R2 圆角，
+            // 与卡片语言一致）。容器常驻，内部画一条极淡基线（见 LevelWaveform），
+            // 空态也有"这里是一条 0 电平线"的视觉交代。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -197,32 +199,71 @@ fun ConnectPage(
             onMuteChanged = { vm.onMuteChanged(it) }
         )
 
-        // ---- ③ 参数摘要 ----
-        SectionCard {
-            SettingsNavRow(
-                label = stringResource(R.string.home_row_source),
-                value = audioSourceLabel(state.capture.audioSource),
-                onClick = { onJump(SummaryRow.SOURCE) }
+        // ---- ③ R-34 只读状态栏（无卡片 / 无分隔线 / 不可点）----
+        //
+        // 用户视角：这三行是"现在是什么配置"的**事实陈述**，不是入口——
+        // 所以全部不可点（没有 clickable、没有 ripple），信息按 2 列 × 3 行排布：
+        //   左列 = 音源 / 输入设备 / 采样率（声音从哪来、按什么采）
+        //   右列 = 效果三态 / 控制端口 / 已发送（处理链、连什么端口、走了多少数据）
+        // 全部值都有真实来源：音源与效果来自 CaptureSettings（已落盘），采样率与
+        // 已发送来自服务（协商值 / 真实发包字节计数），没有就显示「—」。
+        val effectsLine = stringResource(
+            R.string.status_effects_format,
+            stringResource(R.string.status_ns),
+            onOff(state.capture.noiseSuppressor),
+            stringResource(R.string.status_aec),
+            onOff(state.capture.echoCanceler),
+            stringResource(R.string.status_agc),
+            onOff(state.capture.gainControl)
+        )
+        val deviceText = when {
+            state.capture.micDeviceId == CaptureSettings.MIC_DEVICE_AUTO ->
+                stringResource(R.string.capture_mic_auto)
+            state.routedDeviceLabel != null -> state.routedDeviceLabel!!
+            else -> stringResource(R.string.status_device_selected)
+        }
+        val rateText = if (state.negotiatedSampleRate > 0) {
+            formatRateKHz(state.negotiatedSampleRate)
+        } else {
+            stringResource(R.string.home_value_unknown)
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            StatusLine(
+                leftLabel = stringResource(R.string.home_row_source),
+                leftValue = audioSourceLabel(state.capture.audioSource),
+                rightLabel = null,
+                rightValue = effectsLine,
+                rightValueSmall = true
             )
-            CardDivider()
-            SettingsNavRow(
-                label = stringResource(R.string.home_row_noise),
-                value = stringResource(
-                    if (state.capture.noiseSuppressor) {
-                        R.string.home_value_on
-                    } else {
-                        R.string.home_value_off
-                    }
-                ),
-                onClick = { onJump(SummaryRow.NOISE) }
-            )
-            CardDivider()
-            SettingsNavRow(
-                label = stringResource(R.string.label_control_port),
-                value = state.controlPortText.ifBlank {
+            StatusLine(
+                leftLabel = stringResource(R.string.capture_group_device),
+                leftValue = deviceText,
+                rightLabel = stringResource(R.string.label_control_port),
+                rightValue = state.controlPortText.ifBlank {
                     Prefs.DEFAULT_CONTROL_PORT.toString()
-                },
-                onClick = { onJump(SummaryRow.PORT) }
+                }
+            )
+            StatusLine(
+                leftLabel = stringResource(R.string.capture_sample_rate),
+                leftValue = rateText,
+                rightLabel = stringResource(R.string.status_sent),
+                rightValue = ReconcileText.formatBytes(state.bytes)
+            )
+            // R-38a 回执行：常驻一行（不随状态增减、不抖布局），
+            // 未回执时用 WARN 色警示，但**不阻断推流**。
+            Text(
+                text = ReconcileText.line(state.reconcileStatus, state.reconcileLossPermille),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = if (state.reconcileStatus == ReconcileStatus.NO_REPLY) {
+                    tokens.warn
+                } else {
+                    tokens.text2
+                }
             )
         }
     }
@@ -231,6 +272,76 @@ fun ConnectPage(
 // ------------------------------------------------------------------
 // 状态卡零件
 // ------------------------------------------------------------------
+
+/** 开 / 关（状态栏三态用，与 settings 里的语义一致）。 */
+@Composable
+private fun onOff(value: Boolean): String =
+    stringResource(if (value) R.string.home_value_on else R.string.home_value_off)
+
+/**
+ * 只读状态行（R-34）：一行两格，左格权重 1、右格权重 1.15（右侧内容更长）。
+ *
+ * 每格 = 标签（13sp text-2）+ 值（14sp text-1）；[rightLabel] 为 null 时右格
+ * 只渲染值（用于「降噪 开 · 回声消除 关 · 自动增益 关」这种自带标签的紧凑行）。
+ * 整行**没有任何 clickable / ripple**——它是事实陈述，不是入口。
+ */
+@Composable
+private fun StatusLine(
+    leftLabel: String,
+    leftValue: String,
+    rightLabel: String?,
+    rightValue: String,
+    rightValueSmall: Boolean = false
+) {
+    val tokens = LocalMicLinkTokens.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = leftLabel,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                color = tokens.text2,
+                maxLines = 1
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = leftValue,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                color = tokens.text1,
+                maxLines = 1
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Row(
+            modifier = Modifier.weight(1.15f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (rightLabel != null) {
+                Text(
+                    text = rightLabel,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                    color = tokens.text2,
+                    maxLines = 1
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                text = rightValue,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = if (rightValueSmall) 12.sp else 14.sp
+                ),
+                color = tokens.text1,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
+}
 
 /**
  * 状态字段格（R-06 两列并排用）：标签 13sp text-2 左、值 14sp text-1 右，
@@ -467,8 +578,7 @@ private fun ConnectPagePreview() {
         ConnectPage(
             vm = MainViewModel(),
             scrollState = ScrollState(0),
-            onStartClicked = {},
-            onJump = {}
+            onStartClicked = {}
         )
     }
 }

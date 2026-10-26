@@ -110,6 +110,15 @@
     <string name="capture_msg_device_switch_failed">无法切换到所选输入设备「%1$s」（设备失效或不支持），本次使用系统默认设备</string>
     <string name="capture_msg_effect_failed">系统%1$s启用失败：%2$s</string>
 
+    <!-- ==================== R-34 连接页只读状态栏 ==================== -->
+    <string name="status_sent">已发送</string>
+    <string name="status_device_selected">已选设备</string>
+    <string name="status_ns">降噪</string>
+    <string name="status_aec">回声消除</string>
+    <string name="status_agc">自动增益</string>
+    <!-- 一行紧凑三态：降噪 开 · 回声消除 关 · 自动增益 关 -->
+    <string name="status_effects_format">%1$s %2$s · %3$s %4$s · %5$s %6$s</string>
+
     <!-- ==================== 提示 / 错误 ==================== -->
     <string name="error_invalid_port">控制端口须为 1-65535 的整数</string>
     <string name="error_start_service">启动前台服务失败：%1$s</string>

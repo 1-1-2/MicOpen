@@ -609,7 +609,7 @@ STUB_EOF
 chmod +x "$T23/bin/adb"
 # 连接页：三段（可点）+ 同名页内小标题（不可点，验证"可点击优先"）+ 👕 + 主按钮/地址/音量
 cat > "$T23/fx/connect.xml" <<'X'
-<hierarchy rotation="0"><node text="连接" content-desc="" clickable="true" bounds="[60,140][140,180]"/><node text="音源" content-desc="" clickable="true" bounds="[160,140][240,180]"/><node text="高级" content-desc="" clickable="true" bounds="[260,140][340,180]"/><node text="" content-desc="外观" clickable="true" bounds="[880,140][960,180]"/><node text="音源" content-desc="" clickable="false" bounds="[100,1000][300,1050]"/><node text="启动服务" content-desc="" clickable="true" bounds="[300,1600][780,1700]"/><node text="手机地址" content-desc="" clickable="false" bounds="[100,900][300,950]"/><node text="推流音量" content-desc="" clickable="false" bounds="[100,1200][300,1250]"/></hierarchy>
+<hierarchy rotation="0"><node text="连接" content-desc="" clickable="true" bounds="[60,140][140,180]"/><node text="音源" content-desc="" clickable="true" bounds="[160,140][240,180]"/><node text="高级" content-desc="" clickable="true" bounds="[260,140][340,180]"/><node text="" content-desc="外观" clickable="true" bounds="[880,140][960,180]"/><node text="音源" content-desc="" clickable="false" bounds="[100,1000][300,1050]"/><node text="启动服务" content-desc="" clickable="true" bounds="[300,1600][780,1700]"/><node text="手机地址" content-desc="" clickable="false" bounds="[100,900][300,950]"/><node text="推流音量" content-desc="" clickable="false" bounds="[100,1200][300,1250]"/><node text="已发送" content-desc="" clickable="false" bounds="[600,2000][700,2050]"/><node text="回执：—" content-desc="" clickable="false" bounds="[100,2100][400,2150]"/></hierarchy>
 X
 # 音源页：三段仍在顶栏（可点），chips 为麦克风 / 跟随系统
 cat > "$T23/fx/source.xml" <<'X'
@@ -626,7 +626,7 @@ X
 echo connect > "$T23/state"
 PATH="$T23/bin:$PATH" bash "$SCRIPTS/ui-capture.sh" "$T23/out" > "$T23/run.log" 2>&1
 t23_pass=$(grep -c '\[PASS\]' "$T23/run.log")
-assert_eq "$t23_pass" "13" "T23 五屏断言 13 项全 PASS"
+assert_eq "$t23_pass" "15" "T23 五屏断言 15 项全 PASS（含 R-34/R-38a 新增 2 项）"
 assert_eq "$(tr '\n' ' ' < "$T23/taps" 2>/dev/null | sed 's/ $//')" \
           "tap 200 160 tap 300 160 tap 920 160 tap 100 160" \
           "T23 导航序列正确（连接→音源→高级→外观→回连接，全程点中可点击项）"

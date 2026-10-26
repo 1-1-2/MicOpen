@@ -158,7 +158,7 @@ echo "[ui] 前置：确保 MainActivity 在前台"
 adb_t shell am start -n "$PKG/.MainActivity" >/dev/null 2>&1 || true
 sleep 3
 
-echo "[ui] 1/5 连接页（三段导航 + 状态卡 + 主按钮 + 音量 + 摘要）"
+echo "[ui] 1/5 连接页（三段导航 + 状态卡 + 主按钮 + 音量 + 只读状态栏）"
 snap 01-connect
 # R-12：顶栏三段（放在原来「主页」标题的位置）
 assert_text 01-connect "连接" "三段导航-连接"
@@ -175,8 +175,12 @@ fi
 assert_text 01-connect "推流音量" "连接页-推流音量点轨（D-18）"
 # 地址行可见文本只有 IP:端口（无标签），其无障碍 content-desc 带「手机地址」前缀
 assert_text 01-connect "手机地址" "连接页-手机地址（D-16）"
+# R-34：底部只读状态栏（右列最后一行「已发送」= 真实发包字节计数）
+assert_text 01-connect "已发送" "连接页-只读状态栏（R-34）"
+# R-38a：对账回执行（未推流时为「回执：—」，对端不回执时是警示句）
+assert_text 01-connect "回执" "连接页-对账回执行（R-38a）"
 
-echo "[ui] 2/5 音源页（音源 chips + 输入设备 chips）"
+echo "[ui] 2/5 音源页（音源竖排列表 R-37 + 输入设备 chips）"
 tap_text "音源" "跟随系统"
 snap 02-source
 # D-19/D-20：音源与输入设备已 chips 化

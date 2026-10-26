@@ -281,11 +281,7 @@ private fun HomeShell(
                         HomeTab.CONNECT -> ConnectPage(
                             vm = vm,
                             scrollState = connectScroll,
-                            onStartClicked = onStartClicked,
-                            onJump = { row ->
-                                val (target, targetFocus) = summaryTarget(row)
-                                vm.goToTab(target, targetFocus)
-                            }
+                            onStartClicked = onStartClicked
                         )
                         HomeTab.SOURCE -> SourcePage(
                             vm = vm,

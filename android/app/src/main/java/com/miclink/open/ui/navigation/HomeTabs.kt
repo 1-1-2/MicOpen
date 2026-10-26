@@ -36,13 +36,6 @@ enum class HomeFocus {
     PORT
 }
 
-/** 连接页「参数摘要」的三行。保留到摘要区替换为只读状态后移除。 */
-enum class SummaryRow {
-    SOURCE,
-    NOISE,
-    PORT
-}
-
 /** 顶栏三段从左到右的顺序。 */
 val HOME_TAB_ORDER: List<HomeTab> = HomeTab.entries.sortedBy { it.index }
 
@@ -53,13 +46,6 @@ val HOME_TAB_ORDER: List<HomeTab> = HomeTab.entries.sortedBy { it.index }
  */
 fun backTargetFrom(tab: HomeTab): HomeTab? =
     if (tab == HomeTab.CONNECT) null else HomeTab.CONNECT
-
-/** 摘要行 → (目标页, 页内锚点)。 */
-fun summaryTarget(row: SummaryRow): Pair<HomeTab, HomeFocus> = when (row) {
-    SummaryRow.SOURCE -> HomeTab.SOURCE to HomeFocus.SOURCE_CHIPS
-    SummaryRow.NOISE -> HomeTab.ADVANCED to HomeFocus.EFFECTS
-    SummaryRow.PORT -> HomeTab.ADVANCED to HomeFocus.PORT
-}
 
 /**
  * R-33 三页常驻布局：页 [page] 相对当前页 [current] 的**横向位移**（单位 = 页宽）。

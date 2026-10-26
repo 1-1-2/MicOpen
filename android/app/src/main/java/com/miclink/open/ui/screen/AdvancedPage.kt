@@ -253,7 +253,7 @@ private fun EffectSwitchRow(
 }
 
 /** 采样率 -> 「48 kHz」样式：整千显示整数，否则保留一位小数（如 44100 → 44.1 kHz）。 */
-private fun formatRateKHz(rateHz: Int): String =
+internal fun formatRateKHz(rateHz: Int): String =
     if (rateHz % 1000 == 0) {
         "${rateHz / 1000} kHz"
     } else {
