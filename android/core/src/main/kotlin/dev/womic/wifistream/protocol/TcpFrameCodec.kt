@@ -68,8 +68,29 @@ fun buildHello(payload: ByteArray = HELLO_PAYLOAD_OFFICIAL): ByteArray =
     FrameDecoder.encode(Msg.HELLO, payload)
 
 /** Phone -> PC: hello reply. status=0, level byte must be 4 (client checks it). */
-fun buildHelloReply(status: Int = Status.OK, level: Int = 4): ByteArray =
-    FrameDecoder.encode(Msg.HELLO, byteArrayOf(status.toByte(), level.toByte()))
+/**
+ * Phone -> PC: hello reply.
+ *
+ * R-38a：`status == OK` 时在**尾部追加 1 字节能力位** `cap = 1`（支持对账探针
+ * 回执）。只追加、不改既有字段顺序与语义：官方端按 len 读前 2 字节，多余字节
+ * 不参与解析（施工书 §0：对已知 type 尾部追加风险低；新增未知 type 才危险）。
+ * 错误应答（如 10）保持 2 字节，与官方 trace 逐字节一致。
+ */
+fun buildHelloReply(
+    status: Int = Status.OK,
+    level: Int = 4,
+    cap: Int = HELLO_CAP_RECONCILE
+): ByteArray {
+    val payload = if (status == Status.OK) {
+        byteArrayOf(status.toByte(), level.toByte(), cap.toByte())
+    } else {
+        byteArrayOf(status.toByte(), level.toByte())
+    }
+    return FrameDecoder.encode(Msg.HELLO, payload)
+}
+
+/** R-38a 能力位：`1` = 本端支持对账探针（media_port + 1）。 */
+const val HELLO_CAP_RECONCILE: Int = 1
 
 /** PC -> phone: codec/rate/media-port. */
 fun buildConfig(codec: Int, rateIndex: Int, mediaPort: Int): ByteArray {

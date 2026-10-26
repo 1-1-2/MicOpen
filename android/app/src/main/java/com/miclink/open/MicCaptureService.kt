@@ -261,6 +261,17 @@ class MicCaptureService : Service() {
     @Volatile
     private var udpSender: UdpSender? = null
 
+    /**
+     * R-38a 对账链路（旁路 UDP，`media_port + 1`）。独立 socket、独立线程：
+     * 任何异常只记日志，绝不影响推流；停推流即关闭。
+     */
+    @Volatile
+    private var reconcileLink: ReconcileLink? = null
+
+    /** 采集线程最近一次发出的 seq（探针里要报给 PC 对账）。 */
+    @Volatile
+    private var lastSeqSent: Int = 0
+
     private var wakeLock: PowerManager.WakeLock? = null
     private var audioManager: AudioManager? = null
 
@@ -431,6 +442,15 @@ class MicCaptureService : Service() {
 
     /** 连续发送失败次数。 */
     fun sendFailures(): Int = udpSender?.failureStreak ?: 0
+
+    /**
+     * R-38a：对账回执状态（未推流 / 等回执 / 正常 / 对方未回执）。
+     * UI 只读，轮询取用；不参与任何推流判定。
+     */
+    fun reconcileStatus(): ReconcileStatus = reconcileLink?.status ?: ReconcileStatus.IDLE
+
+    /** R-38a：真实丢包（千分比）；未回执或无数据返回 null（UI 显示「—」）。 */
+    fun reconcileLossPermille(): Int? = reconcileLink?.lossPermille()
 
     /**
      * 当前实际生效的输入设备名（[AudioRecord.getRoutedDevice]，API 24+）。
@@ -895,6 +915,22 @@ class MicCaptureService : Service() {
             android.util.Log.i(TAG, "调试音模式：不打开 AudioRecord，合成 ${TONE_FREQUENCY_HZ}Hz 正弦")
         }
 
+        // 3.5) R-38a 对账链路：旁路 UDP 到 media_port + 1（端口越界则跳过）。
+        //     独立 socket / 独立线程，任何失败只记日志，推流照常。
+        reconcileLink?.close()
+        val reconcilePort = port + RECONCILE_PORT_OFFSET
+        if (reconcilePort in 1..65535) {
+            reconcileLink = ReconcileLink(
+                peerHost = peer,
+                peerPort = reconcilePort,
+                sentPackets = { udpSender?.packetsSent?.toInt() ?: 0 },
+                lastSeq = { lastSeqSent },
+                log = { android.util.Log.w(TAG, it) }
+            ).also { it.start() }
+        } else {
+            android.util.Log.w(TAG, "媒体端口 $port 加 1 越界，跳过对账通道")
+        }
+
         // 4) 采集线程
         hardwareChanged.set(false)
         val thread = Thread({ captureLoop() }, "womic-capture")
@@ -930,6 +966,8 @@ class MicCaptureService : Service() {
         encoder = null
         udpSender?.close()
         udpSender = null
+        reconcileLink?.close()
+        reconcileLink = null
 
         try {
             audioManager?.unregisterAudioDeviceCallback(deviceCallback)
@@ -1032,6 +1070,7 @@ class MicCaptureService : Service() {
                 val frameSeq = seq
                 val packet = WomicPacketizer.build(frameSeq, ts, payload.copyOf(payloadLen), volume)
                 seq = (seq + 1) and 0xFFFF
+                lastSeqSent = frameSeq // R-38a：探针里要报给 PC 对账
 
                 // 发送
                 val sender = udpSender

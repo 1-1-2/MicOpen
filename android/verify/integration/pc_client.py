@@ -61,6 +61,22 @@ import time
 # ---------------------------------------------------------------------------
 
 MSG_HELLO = 101       # 0x65 版本/UDP 头格式协商
+
+# R-38a：101 应答 = 官方 2 字节载荷（status=0, level=4）+ 尾部追加 1 字节 cap=1。
+# 只校验"前缀一致 + 若带能力字节则必须为 1"，避免把兼容性锁死在字节数上。
+HELLO_REPLY_PREFIX = bytes([0, 4])
+HELLO_CAP_RECONCILE = 1
+
+
+def hello_reply_ok(payload):
+    if payload is None or len(payload) < len(HELLO_REPLY_PREFIX):
+        return False
+    if payload[:len(HELLO_REPLY_PREFIX)] != HELLO_REPLY_PREFIX:
+        return False
+    if len(payload) > len(HELLO_REPLY_PREFIX):
+        return payload[len(HELLO_REPLY_PREFIX)] == HELLO_CAP_RECONCILE
+    return True
+
 MSG_CONFIG = 102      # 0x66 codec/采样率/媒体端口
 MSG_START = 103       # 0x67 开始推流
 MSG_STOP = 104        # 0x68 停止推流
@@ -1272,9 +1288,9 @@ def run_interop(args):
     # ---- hello（101）----
     client.send_frame(MSG_HELLO, HELLO_PAYLOAD)
     reply = client.recv_frame(timeout=10)
-    ok = reply is not None and reply[0] == MSG_HELLO and reply[1] == bytes([0, 4])
+    ok = reply is not None and reply[0] == MSG_HELLO and hello_reply_ok(reply[1])
     results.check("C02", "hello_reply", ok,
-                  "期望 65 00000002 00 04，实得 %s"
+                  "期望 65 00000003 00 04 01（R-38a 尾部追加 cap=1；前两字节仍为 00 04），实得 %s"
                   % ("None" if reply is None else "%02X %s %s"
                      % (reply[0], len(reply[1]).to_bytes(4, "big").hex(), hexs(reply[1]))))
 
@@ -1474,7 +1490,7 @@ def run_interop(args):
         detail = []
         client2.send_frame(MSG_HELLO, HELLO_PAYLOAD)
         r = client2.recv_frame(timeout=10)
-        ok = ok and r is not None and r[0] == MSG_HELLO and r[1] == bytes([0, 4])
+        ok = ok and r is not None and r[0] == MSG_HELLO and hello_reply_ok(r[1])
         detail.append("hello=%s" % ("ok" if ok else "bad"))
         client2.send_frame(MSG_CONFIG,
                            bytes([args.codec, args.rate_index]) + args.media_port.to_bytes(4, "big"))

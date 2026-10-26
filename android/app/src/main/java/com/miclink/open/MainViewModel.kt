@@ -58,6 +58,13 @@ data class MainUiState(
      * AudioRecord；采集设置页「采样率」只读行显示它（R-18）。
      */
     val negotiatedSampleRate: Int = 0,
+    /**
+     * R-38a：对账回执状态（空闲 / 等回执 / 正常 / 对方未回执）。
+     * 值来自服务侧 [MicCaptureService.reconcileStatus]，不是 UI 自己编的。
+     */
+    val reconcileStatus: ReconcileStatus = ReconcileStatus.IDLE,
+    /** R-38a：真实丢包（千分比）；null = 无回执或还没发过包（UI 显示「—」）。 */
+    val reconcileLossPermille: Int? = null,
     // 统计（轮询）
     val packets: Long = 0L,
     val bytes: Long = 0L,
@@ -395,8 +402,15 @@ class MainViewModel : ViewModel() {
         val svc = service
         if (svc == null) {
             // 服务断开（停止/崩溃）：清会话时长与协商采样率，不显示上一会话的残留值
-            if (uiState.sessionStartElapsedMs != 0L || uiState.negotiatedSampleRate != 0) {
-                uiState = uiState.copy(sessionStartElapsedMs = 0L, negotiatedSampleRate = 0)
+            if (uiState.sessionStartElapsedMs != 0L || uiState.negotiatedSampleRate != 0 ||
+                uiState.reconcileStatus != ReconcileStatus.IDLE
+            ) {
+                uiState = uiState.copy(
+                    sessionStartElapsedMs = 0L,
+                    negotiatedSampleRate = 0,
+                    reconcileStatus = ReconcileStatus.IDLE,
+                    reconcileLossPermille = null
+                )
             }
             return
         }
@@ -407,6 +421,9 @@ class MainViewModel : ViewModel() {
             routedDeviceLabel = svc.routedDeviceLabel(),
             // 采样率是 PC 客户端握手时协商的（R-18：采集设置页只读行显示真实值）
             negotiatedSampleRate = svc.negotiatedSampleRateHz(),
+            // R-38a：对账回执状态与真实丢包（服务侧旁路通道算出来的）
+            reconcileStatus = svc.reconcileStatus(),
+            reconcileLossPermille = svc.reconcileLossPermille(),
             // 会话开始时刻是服务级全局状态（单连接服务，同 isStreaming 风格）
             sessionStartElapsedMs = MicCaptureService.sessionStartElapsedMs
         )

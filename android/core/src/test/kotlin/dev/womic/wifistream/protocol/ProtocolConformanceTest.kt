@@ -65,9 +65,16 @@ class ProtocolConformanceTest {
     }
 
     @Test
-    fun `hello reply matches official app (trace)`() {
+    fun `hello reply matches official app prefix plus R-38a capability byte`() {
+        // R-38a：OK 应答在官方 2 字节载荷后**追加** cap=1（对账能力位）。
+        // 前两字节与官方 trace（65 00000002 00 04）逐字节一致，只是尾部多 1 字节。
         val r = buildHelloReply()
-        assertEquals("65 00 00 00 02 00 04", r.hex())
+        assertEquals("65 00 00 00 03 00 04 01", r.hex())
+        val payload = FrameDecoder().decodeSingle(r).payload
+        assertEquals(3, payload.size)
+        assertEquals(0, payload[0].toInt()) // status OK
+        assertEquals(4, payload[1].toInt()) // header format level
+        assertEquals(HELLO_CAP_RECONCILE, payload[2].toInt()) // cap = 1
     }
 
     @Test
