@@ -1,12 +1,6 @@
 package com.miclink.open.ui.screen
 
 import android.os.SystemClock
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,7 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -37,6 +30,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,7 +44,6 @@ import com.miclink.open.MicCaptureService
 import com.miclink.open.Prefs
 import com.miclink.open.R
 import com.miclink.open.theme.ThemeMode
-import com.miclink.open.ui.component.CardDivider
 import com.miclink.open.ui.component.DotTrack
 import com.miclink.open.ui.component.HintText
 import com.miclink.open.ui.component.LabeledSwitchRow
@@ -125,7 +118,8 @@ fun ConnectPage(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
+            // R-47：12dp（原 16）—— 徽标行与字段行同属"当前状态"，不必留大空档
+            Spacer(Modifier.height(12.dp))
 
             // ② 字段**两列并排**（R-06）：真实字段只有传输方式与时长，一行放得下
             Row(
@@ -149,7 +143,8 @@ fun ConnectPage(
 
             // ③ 「最近 10 秒」双层波形（R-14/R-15）：底层=采集电平（暗）、
             //    上层=实际推流电平（亮）；静音 / 0 档时上层归零
-            Spacer(Modifier.height(12.dp))
+            // R-47：8dp（原 12）—— 标题「最近 10 秒」与波形容器是一组
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = stringResource(R.string.waveform_caption),
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
@@ -180,11 +175,11 @@ fun ConnectPage(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
-            CardDivider()
-            Spacer(Modifier.height(16.dp))
-
-            // ③ 主按钮
+            // R-47：波形与按钮之间的**分隔线已删除**（用户反馈：状态页被这根线
+            // 割成两块，显长）。原来这里是 16dp + 分隔线 + 16dp = 33dp 的断层，
+            // 现在压到 12dp 的连续留白 —— 波形容器与按钮同属"当前状态"这一件事，
+            // 中间不需要再画一道墙。
+            Spacer(Modifier.height(12.dp))
             MainActionButton(
                 running = state.isRunning,
                 onStart = onStartClicked,
@@ -201,21 +196,21 @@ fun ConnectPage(
 
         // ---- ③ R-34 只读状态栏（无卡片 / 无分隔线 / 不可点）----
         //
-        // 用户视角：这三行是"现在是什么配置"的**事实陈述**，不是入口——
-        // 所以全部不可点（没有 clickable、没有 ripple），信息按 2 列 × 3 行排布：
-        //   左列 = 音源 / 输入设备 / 采样率（声音从哪来、按什么采）
-        //   右列 = 效果三态 / 控制端口 / 已发送（处理链、连什么端口、走了多少数据）
+        // 用户视角：这些行是"现在是什么配置"的**事实陈述**，不是入口——
+        // 所以全部不可点（没有 clickable、没有 ripple）。
+        //
+        // ⚠ R-47 布局改造（用户反馈：降噪 + 回声消除 + 自动增益都打开时，
+        //   那一行会超出文字长度范围）：
+        //   旧布局把三个效果**挤在同一格**里（"降噪 开 · 回声消除 开 · 自动增益
+        //   开"），右列给了 1.15 权重仍然放不下，超出的部分被硬裁掉。
+        //   现在改成 **2 列 × 4 行、每格只放一个「标签 + 值」**：
+        //     音源 / 输入设备   采样率 / 控制端口   降噪 / 回声消除   自动增益 / 已发送
+        //   · 每格只有一个数值 → 不再有三态挤一行的溢出；
+        //   · 行距压到 2dp（原 6dp）、字号 11sp 标签 / 12sp 值 —— 像文本清单一样密排；
+        //   · 标签列固定 52dp → 上下两行的值**左对齐成一条竖线**，扫读更快。
+        //
         // 全部值都有真实来源：音源与效果来自 CaptureSettings（已落盘），采样率与
         // 已发送来自服务（协商值 / 真实发包字节计数），没有就显示「—」。
-        val effectsLine = stringResource(
-            R.string.status_effects_format,
-            stringResource(R.string.status_ns),
-            onOff(state.capture.noiseSuppressor),
-            stringResource(R.string.status_aec),
-            onOff(state.capture.echoCanceler),
-            stringResource(R.string.status_agc),
-            onOff(state.capture.gainControl)
-        )
         val deviceText = when {
             state.capture.micDeviceId == CaptureSettings.MIC_DEVICE_AUTO ->
                 stringResource(R.string.capture_mic_auto)
@@ -231,26 +226,32 @@ fun ConnectPage(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            // R-47：2dp（原 6dp）—— 清单式密排，四行只占三行的高度
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            StatusLine(
+            StatusRow(
                 leftLabel = stringResource(R.string.home_row_source),
                 leftValue = audioSourceLabel(state.capture.audioSource),
-                rightLabel = null,
-                rightValue = effectsLine,
-                rightValueSmall = true
+                rightLabel = stringResource(R.string.capture_group_device),
+                rightValue = deviceText
             )
-            StatusLine(
-                leftLabel = stringResource(R.string.capture_group_device),
-                leftValue = deviceText,
+            StatusRow(
+                leftLabel = stringResource(R.string.capture_sample_rate),
+                leftValue = rateText,
                 rightLabel = stringResource(R.string.label_control_port),
                 rightValue = state.controlPortText.ifBlank {
                     Prefs.DEFAULT_CONTROL_PORT.toString()
                 }
             )
-            StatusLine(
-                leftLabel = stringResource(R.string.capture_sample_rate),
-                leftValue = rateText,
+            StatusRow(
+                leftLabel = stringResource(R.string.status_ns),
+                leftValue = onOff(state.capture.noiseSuppressor),
+                rightLabel = stringResource(R.string.status_aec),
+                rightValue = onOff(state.capture.echoCanceler)
+            )
+            StatusRow(
+                leftLabel = stringResource(R.string.status_agc),
+                leftValue = onOff(state.capture.gainControl),
                 rightLabel = stringResource(R.string.status_sent),
                 rightValue = ReconcileText.formatBytes(state.bytes)
             )
@@ -279,67 +280,69 @@ private fun onOff(value: Boolean): String =
     stringResource(if (value) R.string.home_value_on else R.string.home_value_off)
 
 /**
- * 只读状态行（R-34）：一行两格，左格权重 1、右格权重 1.15（右侧内容更长）。
+ * 只读状态行（R-34 / R-47）：一行两格，**每格只放一个「标签 + 值」**。
  *
- * 每格 = 标签（13sp text-2）+ 值（14sp text-1）；[rightLabel] 为 null 时右格
- * 只渲染值（用于「降噪 开 · 回声消除 关 · 自动增益 关」这种自带标签的紧凑行）。
+ * 与旧 [StatusLine] 的差别：
+ *  - 两格**等宽**（各 50%），不再给右格 1.15 的超额权重 —— 每格只有一个短值，
+ *    不需要靠权重抢空间，也不会再有一格被撑破；
+ *  - 标签列固定 52dp，于是上下两行的值**左对齐成一条竖线**；
+ *  - 标签 11sp / 值 12sp，行距由调用方压到 2dp。
+ *
  * 整行**没有任何 clickable / ripple**——它是事实陈述，不是入口。
  */
 @Composable
-private fun StatusLine(
+private fun StatusRow(
     leftLabel: String,
     leftValue: String,
-    rightLabel: String?,
-    rightValue: String,
-    rightValueSmall: Boolean = false
+    rightLabel: String,
+    rightValue: String
 ) {
-    val tokens = LocalMicLinkTokens.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = leftLabel,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                color = tokens.text2,
-                maxLines = 1
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = leftValue,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                color = tokens.text1,
-                maxLines = 1
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Row(
-            modifier = Modifier.weight(1.15f),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (rightLabel != null) {
-                Text(
-                    text = rightLabel,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                    color = tokens.text2,
-                    maxLines = 1
-                )
-                Spacer(Modifier.width(6.dp))
-            }
-            Text(
-                text = rightValue,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = if (rightValueSmall) 12.sp else 14.sp
-                ),
-                color = tokens.text1,
-                maxLines = 1,
-                softWrap = false
-            )
-        }
+        StatusItem(
+            label = leftLabel,
+            value = leftValue,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(10.dp))
+        StatusItem(
+            label = rightLabel,
+            value = rightValue,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+/**
+ * 状态栏的一格：标签（11sp text-2，固定 52dp 宽）+ 值（12sp text-1）。
+ *
+ * 值超长时**省略号**收尾（旧实现用 `softWrap = false` 硬裁，会把「已选设备」
+ * 切成「已选设」这种半截词）。
+ */
+@Composable
+private fun StatusItem(label: String, value: String, modifier: Modifier = Modifier) {
+    val tokens = LocalMicLinkTokens.current
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+            color = tokens.text2,
+            maxLines = 1,
+            modifier = Modifier.width(52.dp)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = tokens.text1,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -400,23 +403,25 @@ private fun formatSessionDuration(startElapsedMs: Long, nowElapsedMs: Long): Str
 }
 
 // ------------------------------------------------------------------
-// 主按钮（D-15 / D-22 呼吸外发光）
+// 主按钮（D-15；R-47 起不再有呼吸外发光）
 // ------------------------------------------------------------------
-
-/** 呼吸外发光半周期（ms）：600ms 正向 + 600ms 反向 = 1200ms 整周期。 */
-private const val GLOW_HALF_CYCLE_MS = 600
-
-/** 呼吸外发光峰值 alpha（0 → 0.30 → 0）。 */
-private const val GLOW_MAX_ALPHA = 0.30f
 
 /**
  * 主操作按钮：高 48、R2、整宽。
  *
  * - 空闲：accent 填充 + onAccent 文字「启动」；
- * - 运行：transparent 底 + err 1px 描边 + err 文字「停止」+ err 呼吸外发光。
+ * - 运行：transparent 底 + err 1px 描边 + err 文字「停止」。
  *
- * 呼吸参数与 Windows 接收端一致（D-22）：周期 1200ms（tween 600ms +
- * RepeatMode.Reverse）、alpha 0→0.30→0、err 语义色、**仅采集运行中**。
+ * ⚠ R-47：**呼吸外发光已关闭**。用户反馈"连接之后按钮一直闪"。
+ *   原本的外发光（D-22，周期 1200ms、alpha 0→0.30→0、err 语义色）在采集运行期间
+ *   持续呼吸，既是视觉噪音，也让「停止」按钮看起来像在待处理状态。
+ *   「正在推流」这件事已经由**状态徽标 + 时长 + 波形 + 已发送字节**四处在陈述，
+ *   不需要按钮再自己闪一遍。
+ *
+ *   容器高度保持 60dp 不变（R-16b 纪律）：外发光层退出组合时，容器会随它一起
+ *   缩到 48dp，整页每隔 1.2s 跳一下——那是比"闪"更糟的抖动。
+ *   所以这里保留常驻的 60dp 盒子，只是不再往里面放会动的东西。
+ *   60 → 48 的 12dp 留白用于视觉呼吸，也让按钮在两态间不再跳动。
  */
 @Composable
 private fun MainActionButton(
@@ -426,33 +431,13 @@ private fun MainActionButton(
 ) {
     val tokens = LocalMicLinkTokens.current
     val shape = RoundedCornerShape(8.dp)
-    val glowAlpha = rememberBreathingGlow(enabled = running)
 
-    // R-16b：容器高度**恒为 60dp**（发光层与按钮都常驻），呼吸动画只作用于
-    // 绘制层的 alpha，绝不参与布局。
-    //
-    // 旧实现 `if (running && glowAlpha > 0.001f)` 会把 60dp 的发光层在 alpha
-    // 归零时**移出组合** → 容器 60dp → 48dp；下一轮插回来又 48 → 60：
-    // 每 1.2s 伸缩 12dp，用户看到"页面每隔几秒跳一下"。
-    // 纪律：任何动画只许改绘制（alpha / 变换 / 颜色），不许改布局尺寸。
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(60.dp),
         contentAlignment = Alignment.Center
     ) {
-        // 呼吸外发光层：常驻组合，只改 alpha（0 时不可见，但**不退出布局**）。
-        val glowVisible = running && glowAlpha > 0.001f
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .then(if (glowVisible) Modifier.blur(16.dp) else Modifier)
-                .background(
-                    color = tokens.err.copy(alpha = if (glowVisible) glowAlpha else 0f),
-                    shape = RoundedCornerShape(12.dp)
-                )
-        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -477,25 +462,6 @@ private fun MainActionButton(
             )
         }
     }
-}
-
-/** 呼吸外发光 alpha（0 → [GLOW_MAX_ALPHA] → 0，周期 2 * [GLOW_HALF_CYCLE_MS]）。 */
-@Composable
-private fun rememberBreathingGlow(enabled: Boolean): Float {
-    if (!enabled) {
-        return 0f
-    }
-    val transition = rememberInfiniteTransition(label = "stop-glow")
-    val alpha by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = GLOW_MAX_ALPHA,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = GLOW_HALF_CYCLE_MS, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "stop-glow-alpha"
-    )
-    return alpha
 }
 
 // ------------------------------------------------------------------

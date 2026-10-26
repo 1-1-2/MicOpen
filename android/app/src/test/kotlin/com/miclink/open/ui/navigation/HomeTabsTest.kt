@@ -67,22 +67,68 @@ class HomeTabsTest {
     // R-33 三页常驻 + 位移切换（点击即切换 / 只有当前页可交互）
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // R-47：切页首帧不能闪出目标页（闪屏回归）
+    // ------------------------------------------------------------------
+
     /**
-     * 「点击即切换」的状态机证明：点击后 [pageOffsetUnits] 在动画起点（slideUnits =
-     * 目标索引−起始索引）就已经把**目标页定位到"旧页原位"、旧页留在原位准备退出**，
-     * 动画只把这个位移送回 0 —— 位移与状态同步，不存在"等动画才开始"的延迟。
+     * **闪屏修复的机器证明**（R-47）。
+     *
+     * 旧闪屏的成因：位移是「(新页, 动画进度)」两个量算出来的，动画进度在
+     * LaunchedEffect 里才被 snapTo 成起始值，而 LaunchedEffect 跑在重组**之后**
+     * ——于是切页那一帧读到「新页 + 进度 0」，新页直接被画在中央。
+     *
+     * 现在的位移只由连续位置 pos 决定：重组时 pos 仍是**旧索引**（动画尚未推进），
+     * 因此本用例断言的正是「切页首帧」这一刻：
+     *   · 新页 offset = ±1（在屏外）+ alpha = 0（完全透明）——不可能闪出来；
+     *   · 旧页 offset = 0（仍在中央）+ alpha = 1——画面连续。
      */
     @Test
-    fun tabSwitchIsImmediate_offsetsFollowStateSynchronously() {
-        // 点「音源」（0 → 1）：动画起点 slideUnits = +1
-        assertEquals("新页在右侧一位（准备滑入）", 1f, pageOffsetUnits(HomeTab.SOURCE, HomeTab.SOURCE, 1f))
-        assertEquals("旧页仍在原位", 0f, pageOffsetUnits(HomeTab.CONNECT, HomeTab.SOURCE, 1f))
-        // 动画结束（slideUnits = 0）
-        assertEquals(0f, pageOffsetUnits(HomeTab.SOURCE, HomeTab.SOURCE, 0f))
-        assertEquals(-1f, pageOffsetUnits(HomeTab.CONNECT, HomeTab.SOURCE, 0f))
-        // 反向（高级 → 连接，1 → 0 的反向位移）：slideUnits = −1
-        assertEquals(-1f, pageOffsetUnits(HomeTab.CONNECT, HomeTab.CONNECT, -1f))
-        assertEquals(0f, pageOffsetUnits(HomeTab.SOURCE, HomeTab.CONNECT, -1f))
+    fun tabSwitchFirstFrame_targetPageIsOffScreenAndTransparent() {
+        // 连接(0) → 音源(1)：切页首帧 pos 仍是 0
+        assertEquals("新页在屏外右侧", 1f, pageOffsetUnits(HomeTab.SOURCE, 0f))
+        assertEquals("新页首帧完全透明（不会闪出来）", 0f, pageAlpha(HomeTab.SOURCE, 0f))
+        assertEquals("旧页仍在中央", 0f, pageOffsetUnits(HomeTab.CONNECT, 0f))
+        assertEquals("旧页首帧完全不透明（画面连续）", 1f, pageAlpha(HomeTab.CONNECT, 0f))
+
+        // 反向：音源(1) → 连接(0)，切页首帧 pos 仍是 1
+        assertEquals("新页在屏外左侧", -1f, pageOffsetUnits(HomeTab.CONNECT, 1f))
+        assertEquals(0f, pageAlpha(HomeTab.CONNECT, 1f))
+        assertEquals(0f, pageOffsetUnits(HomeTab.SOURCE, 1f))
+        assertEquals(1f, pageAlpha(HomeTab.SOURCE, 1f))
+    }
+
+    /** 动画终点：新页居中完全不透明，旧页滑出且透明。 */
+    @Test
+    fun tabSwitchLastFrame_targetPageIsCentered() {
+        // 连接(0) → 音源(1) 结束：pos = 1
+        assertEquals("新页居中", 0f, pageOffsetUnits(HomeTab.SOURCE, 1f))
+        assertEquals("新页完全不透明", 1f, pageAlpha(HomeTab.SOURCE, 1f))
+        assertEquals("旧页滑到左侧", -1f, pageOffsetUnits(HomeTab.CONNECT, 1f))
+        assertEquals("旧页完全透明", 0f, pageAlpha(HomeTab.CONNECT, 1f))
+    }
+
+    /** 位移与 alpha 必须在动画中途连续（不是两态硬切）。 */
+    @Test
+    fun tabSwitchMidFrame_interpolatesContinuously() {
+        // 连接(0) → 音源(1) 走到一半：pos = 0.5
+        assertEquals(0.5f, pageOffsetUnits(HomeTab.SOURCE, 0.5f))
+        assertEquals(-0.5f, pageOffsetUnits(HomeTab.CONNECT, 0.5f))
+        // 两页各半透明，互不遮挡地交叉淡化
+        assertEquals(0.5f, pageAlpha(HomeTab.SOURCE, 0.5f))
+        assertEquals(0.5f, pageAlpha(HomeTab.CONNECT, 0.5f))
+    }
+
+    /** 任意时刻，屏外的页都不该可见（alpha 被夹在 0..1）。 */
+    @Test
+    fun pageAlpha_isClampedForDistantPages() {
+        for (pos in listOf(-1f, 0f, 1f, 2f, 3f)) {
+            HomeTab.entries.forEach { page ->
+                val a = pageAlpha(page, pos)
+                assertTrue("alpha 必须在 0..1（page=$page pos=$pos）", a >= 0f && a <= 1f)
+            }
+        }
+        assertEquals("隔两页的页完全透明", 0f, pageAlpha(HomeTab.ADVANCED, 0f))
     }
 
     /** 只有当前页可交互：其余两页即使常驻组合也不接受触摸 / 无障碍。 */
@@ -97,13 +143,19 @@ class HomeTabsTest {
         }
     }
 
+    /**
+     * 切页方向（R-47）：方向不再是独立的布尔量，而是 pos 的**单调方向**——
+     * 往右切 pos 递增，往左切 pos 递减，页面整排随之移动。
+     */
     @Test
-    fun slideDirection_followsTabOrder() {
-        assertTrue(slideEnterFromRight(HomeTab.CONNECT, HomeTab.SOURCE))
-        assertTrue(slideEnterFromRight(HomeTab.SOURCE, HomeTab.ADVANCED))
-        assertTrue(slideEnterFromRight(HomeTab.CONNECT, HomeTab.ADVANCED))
-        // 反向：从右往左切
-        assertTrue(!slideEnterFromRight(HomeTab.ADVANCED, HomeTab.CONNECT))
-        assertTrue(!slideEnterFromRight(HomeTab.SOURCE, HomeTab.CONNECT))
+    fun slideDirection_isEncodedInPosMonotonicity() {
+        // 连接(0) → 高级(2)：pos 从 0 递增到 2，两页的位移都在减小
+        assertEquals(2f, pageOffsetUnits(HomeTab.ADVANCED, 0f))   // 首帧：在右侧两页外
+        assertEquals(0f, pageOffsetUnits(HomeTab.ADVANCED, 2f))   // 末帧：居中
+        assertEquals(1f, pageOffsetUnits(HomeTab.SOURCE, 0f))     // 中间页首帧在右侧一页
+        assertEquals(-1f, pageOffsetUnits(HomeTab.SOURCE, 2f))    // 中间页末帧被推到左侧
+        // 反向：高级(2) → 连接(0)，pos 从 2 递减到 0
+        assertEquals(-2f, pageOffsetUnits(HomeTab.CONNECT, 2f))
+        assertEquals(0f, pageOffsetUnits(HomeTab.CONNECT, 0f))
     }
 }

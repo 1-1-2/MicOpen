@@ -116,8 +116,7 @@
     <string name="status_ns">降噪</string>
     <string name="status_aec">回声消除</string>
     <string name="status_agc">自动增益</string>
-    <!-- 一行紧凑三态：降噪 开 · 回声消除 关 · 自动增益 关 -->
-    <string name="status_effects_format">%1$s %2$s · %3$s %4$s · %5$s %6$s</string>
+    <!-- R-47：三个效果不再挤成一行（会超长），各自独立成格，故删掉三态格式串 -->
 
     <!-- ==================== 提示 / 错误 ==================== -->
     <string name="error_invalid_port">控制端口须为 1-65535 的整数</string>

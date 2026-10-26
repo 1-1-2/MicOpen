@@ -34,8 +34,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,7 +57,6 @@ import com.miclink.open.ui.screen.AdvancedPage
 import com.miclink.open.ui.screen.AppearanceScreen
 import com.miclink.open.ui.screen.ConnectPage
 import com.miclink.open.ui.screen.SourcePage
-import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -210,50 +207,40 @@ private fun HomeShell(
         ) {
             // ---- R-33：三页**常驻组合**，切页只做绘制层位移 ----
             //
-            // 时序（"点击即切换"到底是谁在什么时刻改状态）：
-            //   1. 手指抬起 → SegmentedButton.onClick → vm.selectTab(page) —— **同步**
-            //      写入 homeTab（Compose 状态，同一帧内生效）；
-            //   2. HomeShell 因 homeTab 变化重组，本作用域读到新的 tab；
-            //   3. LaunchedEffect(tab) 立刻把 shift 置为「目标索引 − 起始索引」并
-            //      animateTo(0)（180ms FastOutSlowIn）——于是**第一帧就开始位移**；
-            //   4. 三个页面在这之前早已组合完成（常驻），没有"目标页首帧组合"的
-            //      0.2–0.4s 延迟——这正是旧 AnimatedContent 方案的病根。
+            // 状态只有**一个**：连续位置 posAnim（0 = 连接页，1 = 音源页…）。
             //
+            // ⚠ 为什么不再用「(当前页 tab, 位移 shift)」两个量（R-47 修复闪屏）：
+            //   旧写法在 LaunchedEffect 里才 `shift.snapTo(目标−起始)`，而
+            //   LaunchedEffect 跑在重组**之后**——切页那一帧的绘制读到
+            //   `tab = 新页、shift = 0`，新页直接被画在屏幕中央；下一帧才被 snap
+            //   到屏外再滑回来。用户看到的就是「先闪一下目标卡片，再变成动画」。
+            //
+            //   现在 posAnim 是唯一的位移真值：重组时它还是旧值（动画尚未推进），
+            //   而 tab 已是新页 → 位移天然是「新页在屏外、旧页在中央」，
+            //   动画从这一帧才开始，**不需要 snapTo，不存在时序差**。
+            //
+            // 三个页面早已组合完成（常驻），没有"目标页首帧组合"的 0.2–0.4s 延迟
+            // ——那是更早的 AnimatedContent 方案的病根。
             // 动画只写 graphicsLayer（translationX / alpha），不改布局尺寸、
             // 不产生任何手势（R-16b 纪律 + R-12 禁横滑）。
-            val shift = remember { Animatable(0f) }
-            var prevIndex by remember { mutableIntStateOf(tab.index) }
-            var outgoingIndex by remember { mutableIntStateOf(-1) }
-            var animating by remember { mutableStateOf(false) }
+            val posAnim = remember { Animatable(tab.index.toFloat()) }
             LaunchedEffect(tab) {
-                val from = prevIndex
-                prevIndex = tab.index
-                if (from == tab.index) {
-                    return@LaunchedEffect
-                }
-                outgoingIndex = from
-                animating = true
-                shift.snapTo((tab.index - from).toFloat())
-                shift.animateTo(0f, tween(TAB_SLIDE_MS, easing = FastOutSlowInEasing))
-                animating = false
-                outgoingIndex = -1
+                // 动画中途再点其它页：这里会取消上一次 animateTo，从当前 pos
+                // 接续到新目标，不会跳帧回弹。
+                posAnim.animateTo(
+                    targetValue = tab.index.toFloat(),
+                    animationSpec = tween(TAB_SLIDE_MS, easing = FastOutSlowInEasing)
+                )
             }
 
             HomeTab.entries.forEach { page ->
                 val active = isPageInteractive(page, tab)
-                val pageAlpha = when {
-                    // 新页随位移淡入（180ms 位移前段 ≈ 120ms 的观感）
-                    active -> (1f - abs(shift.value)).coerceIn(0f, 1f)
-                    // 退出的页在动画期间仍可见（否则会出现"闪白"）
-                    animating && page.index == outgoingIndex -> 1f
-                    else -> 0f
-                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            translationX = pageOffsetUnits(page, tab, shift.value) * size.width
-                            alpha = pageAlpha
+                            translationX = pageOffsetUnits(page, posAnim.value) * size.width
+                            alpha = pageAlpha(page, posAnim.value)
                         }
                         .then(
                             if (active) {

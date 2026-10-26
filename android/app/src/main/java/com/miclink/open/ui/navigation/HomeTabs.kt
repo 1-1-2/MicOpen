@@ -48,26 +48,37 @@ fun backTargetFrom(tab: HomeTab): HomeTab? =
     if (tab == HomeTab.CONNECT) null else HomeTab.CONNECT
 
 /**
- * R-33 三页常驻布局：页 [page] 相对当前页 [current] 的**横向位移**（单位 = 页宽）。
+ * R-33 三页常驻布局：页 [page] 相对**连续位置** [pos] 的横向位移（单位 = 页宽）。
  *
- * `slideUnits` 是切页动画的瞬时进度（1 → 0）：切页那一刻 `slideUnits = 目标索引 −
- * 起始索引`，于是新页正好停在"旧页原来的位置"，随后动画把它送回 0——这就是
- * 「点击瞬间整排开始移动」的实现，动画只改绘制（graphicsLayer.translationX），
- * 不改布局尺寸，也不产生任何手势。
+ * ⚠ 为什么用「连续位置」而不是「(当前页, 动画进度)」两个量：
+ *   旧写法是 `pageOffsetUnits(page, current, slideUnits)`，位移在 `LaunchedEffect`
+ *   里才 `snapTo` 成「目标索引 − 起始索引」。而 `LaunchedEffect` 跑在**重组之后**，
+ *   于是切页那一帧的绘制读到的是 `current = 新页、slideUnits = 0` —— 新页直接
+ *   出现在屏幕中央并被画出去，下一帧才被 snap 到屏外、再滑回来。用户看到的就是
+ *   「先闪一下目标卡片，再变成动画」。
  *
- * @return 0 = 居中（当前页）；+1 = 右侧一页；−1 = 左侧一页。
+ *   改成单一连续位置 [pos] 后，`pos` 是动画状态（重组时仍是**旧值**），而
+ *   `current` 已经是新页：位移天然是「新页在屏外、旧页在中央」，动画从这一帧
+ *   开始把 pos 送向新索引。**不需要任何 snapTo，也不存在时序差。**
+ *
+ * 动画只改绘制（`graphicsLayer.translationX`），不改布局尺寸，也不产生任何手势。
+ *
+ * @param pos 连续位置（动画中的插值结果，如 0.4f），不必是整数
+ * @return 0 = 居中；+1 = 右侧一页；−1 = 左侧一页
  */
-fun pageOffsetUnits(page: HomeTab, current: HomeTab, slideUnits: Float): Float =
-    (page.index - current.index) + slideUnits
+fun pageOffsetUnits(page: HomeTab, pos: Float): Float = page.index - pos
+
+/**
+ * 页 [page] 的淡入淡出 alpha：越靠近屏幕中央越不透明。
+ *
+ * 退出去的页随着位移离开而自然淡出，**不需要**为"退出页在动画期间仍可见"单独
+ * 留特判（旧实现的 `animating && page.index == outgoingIndex` 两个状态因此删除）。
+ */
+fun pageAlpha(page: HomeTab, pos: Float): Float =
+    (1f - kotlin.math.abs(pageOffsetUnits(page, pos))).coerceIn(0f, 1f)
 
 /**
  * R-33：只有当前页可交互（其余页在常驻组合里但必须"看得见地不存在"——
  * 触摸被吞掉 + 无障碍 invisibleToUser）。
  */
 fun isPageInteractive(page: HomeTab, current: HomeTab): Boolean = page == current
-
-/**
- * 切页动画方向：目标页在右侧时新页**从右滑入**、旧页向左滑出，反之亦然。
- * （动画只影响绘制，不产生任何手势——横滑切页是被禁止的。）
- */
-fun slideEnterFromRight(from: HomeTab, to: HomeTab): Boolean = to.index >= from.index
