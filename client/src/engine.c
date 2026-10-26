@@ -58,6 +58,14 @@ static int           g_vol_warn;           /* vol 越界只提示一次 */
 static int           g_seq_valid;
 static uint16_t      g_next_seq;
 
+/* R-01：无音频超时提示（防火墙引导）。
+ * 场景：TCP 三步全绿但 UDP 入站被防火墙拦 → 一个媒体包都收不到，统计全 0，
+ * 界面毫无提示，用户只能靠猜。条件卡得很死：START 发出后 5 秒零包才提示
+ * （协议里 START 后手机立即发包），一次性不刷屏；收到首个媒体包即清理。 */
+static DWORD  g_start_at;         /* 103 START 发出时刻 */
+static int    g_got_media;        /* 本会话是否收到过媒体包 */
+static int    g_fw_hint_shown;    /* 防火墙提示是否已显示 */
+
 /* 抖动估计：UDP 帧间隔的 EMA（D-14 状态栏/会话统计的「抖动」读数）。
  * 手机端固定 20 ms 一帧，到达间隔的抖动就是网络抖动的直接体现；
  * 旧的硬编码 20 会让读数永远是 20 ms，是个假读数。
@@ -74,7 +82,7 @@ static int16_t       g_feedbuf[DEV_SAMPLES_20MS];
 static int           g_short_writes;
 
 /* ------------------------------------------------------------ 日志 */
-static void elog(const char *fmt, ...)
+static void elog_lvl(int kind, const char *fmt, ...)
 {
     char buf[512];
     va_list ap;
@@ -82,7 +90,30 @@ static void elog(const char *fmt, ...)
     _vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
     va_end(ap);
     buf[sizeof(buf) - 1] = 0;
-    if (g_log) g_log(buf);
+    if (g_log) g_log(buf, kind);
+}
+
+static void elog(const char *fmt, ...)
+{
+    va_list ap;
+    char buf[512];
+    va_start(ap, fmt);
+    _vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
+    va_end(ap);
+    buf[sizeof(buf) - 1] = 0;
+    elog_lvl(0, "%s", buf);
+}
+
+/* ERROR 级（事件面板红色；「复制全部」同样收入） */
+static void elog_err(const char *fmt, ...)
+{
+    va_list ap;
+    char buf[512];
+    va_start(ap, fmt);
+    _vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
+    va_end(ap);
+    buf[sizeof(buf) - 1] = 0;
+    elog_lvl(1, "%s", buf);
 }
 
 /* ------------------------------------------------------- 采样率转换 */
@@ -295,6 +326,12 @@ static void on_udp_frame(const unsigned char *buf, int n)
         g_vol_seen = 1;
     }
 
+    /* R-01：第一个媒体包到了。若防火墙提示已显示，补一条收尾，把状态清干净 */
+    if (!g_got_media) {
+        g_got_media = 1;
+        if (g_fw_hint_shown) elog("已开始接收音频");
+    }
+
     EnterCriticalSection(&g_cs);
     /* 丢包 = seq 跳号数 / 期望总数。seq 是 16 位循环计数，只统计「向前跳号」：
      * 重复包与乱序包不记丢失 —— 否则 seq 回退（手机端重启推流、网络乱序）会
@@ -491,6 +528,7 @@ static unsigned __stdcall worker(void *arg)
 
     g_st.state = ST_STREAMING;
     g_st.started_at = GetTickCount();
+    g_start_at = g_st.started_at;        /* R-01：无音频 5 秒计时从此刻起 */
     elog("已连接，进入推流状态");
 
     while (g_run) {
@@ -522,6 +560,22 @@ static unsigned __stdcall worker(void *arg)
             }
         }
         DWORD now = GetTickCount();
+        /* R-01：START 后 5 秒零媒体包 → 防火墙引导（ERROR，一次性）。
+         * 不做自动 netsh：改防火墙要管理员，弹 UAC 的体验比一句可复制的
+         * 命令差得多。命令里带本 exe 完整路径，复制即可用。 */
+        if (!g_got_media && !g_fw_hint_shown &&
+            (int)(now - g_start_at) > 5000) {
+            wchar_t exe[MAX_PATH];
+            char exeA[MAX_PATH * 3];
+            g_fw_hint_shown = 1;
+            GetModuleFileNameW(NULL, exe, MAX_PATH);
+            exe[MAX_PATH - 1] = 0;
+            WideCharToMultiByte(CP_UTF8, 0, exe, -1, exeA, sizeof(exeA), NULL, NULL);
+            elog_err("已连接但未收到音频数据。最常见原因：Windows 防火墙拦截了"
+                     "本程序的 UDP 入站。可执行下方命令放行（需管理员）。");
+            elog("netsh advfirewall firewall add rule name=\"MicLink\" dir=in "
+                 "action=allow program=\"%s\" enable=yes", exeA);
+        }
         if (now - last_hb >= 1000) {              /* 105 心跳 1s/次；对端无应答 */
             msg_send(105, NULL, 0);
             last_hb = now;
@@ -601,10 +655,12 @@ int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, 
     LeaveCriticalSection(&g_cs);
     g_last_frame_at = 0;                 /* 抖动 EMA 状态随会话复位 */
     g_lat_ema = 0.0;
-    /* 丢包/vol 的会话内状态一并复位：不清的话重连后第一帧会被当成跳号，
-     * 或者沿用上一次会话的 vol（界面一开始就显示错的档位）。 */
+    /* 丢包/vol/防火墙提示的会话内状态一并复位：不清的话重连后第一帧会被
+     * 当成跳号、沿用上一次会话的 vol，或者因为残留标志而永远不再提示。 */
     g_seq_valid = 0;
     g_next_seq = 0;
+    g_got_media = 0;
+    g_fw_hint_shown = 0;
     g_vol = 5;
     g_vol_seen = 0;
     g_vol_warn = 0;

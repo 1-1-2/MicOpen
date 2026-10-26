@@ -90,7 +90,8 @@ class UdpPump(threading.Thread):
 
     def __init__(self, host: str, port: int, tone: ToneEncoder | None,
                  vol: int = 5, drop_every: int = 0,
-                 vol_cycle: list | None = None, cycle_sec: float = 3.0):
+                 vol_cycle: list | None = None, cycle_sec: float = 3.0,
+                 delay_sec: float = 0.0):
         super().__init__(daemon=True)
         self.addr = (host, port)
         self.stop = threading.Event()
@@ -100,9 +101,15 @@ class UdpPump(threading.Thread):
         self.drop_every = drop_every      # >0：每 N 个 seq 真的不发包一次（制造跳号）
         self.vol_cycle = vol_cycle or []  # 非空：按 cycle_sec 轮换 vol（验证运行期生效）
         self.cycle_sec = cycle_sec
+        self.delay_sec = delay_sec        # >0：START 后延迟 N 秒才发第一个包
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def run(self):
+        if self.delay_sec > 0:
+            time.sleep(self.delay_sec)    # R-01：延迟起播（先让 PC 端超时提示出现）
+            if self.stop.is_set():
+                return
+            log(f"延迟 {self.delay_sec:g}s 结束，开始下发 UDP")
         t0 = time.time()
         next_t = t0
         while not self.stop.is_set():
@@ -135,7 +142,8 @@ class UdpPump(threading.Thread):
 
 def serve(host: str, port: int, once: bool, tone_hz: float, amp: int,
           vol: int = 5, drop_every: int = 0,
-          vol_cycle: list | None = None, cycle_sec: float = 3.0):
+          vol_cycle: list | None = None, cycle_sec: float = 3.0,
+          media_delay: float = 0.0):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host, port))
@@ -174,10 +182,12 @@ def serve(host: str, port: int, once: bool, tone_hz: float, amp: int,
                     if tone_hz > 0:
                         pump = UdpPump(peer[0], media_port,
                                        ToneEncoder(RATE[rate_idx], tone_hz, amp),
-                                       vol, drop_every, vol_cycle, cycle_sec)
+                                       vol, drop_every, vol_cycle, cycle_sec,
+                                       media_delay)
                     else:
                         pump = UdpPump(peer[0], media_port, None,
-                                       vol, drop_every, vol_cycle, cycle_sec)
+                                       vol, drop_every, vol_cycle, cycle_sec,
+                                       media_delay)
                     pump.start()
                     log(f"UDP 下发开始 → {peer[0]}:{media_port} @ {RATE[rate_idx]}Hz"
                         + (f"，{tone_hz:g}Hz 正弦（Opus 编码）" if tone_hz > 0 else "，随机负载")
@@ -223,6 +233,8 @@ if __name__ == "__main__":
     ap.add_argument("--vol-cycle", default="",
                     help="运行期轮换 vol，如 9,5,0,3（每 --cycle-sec 秒换一次）")
     ap.add_argument("--cycle-sec", type=float, default=3.0)
+    ap.add_argument("--media-delay", type=float, default=0.0,
+                    help=">0：握手后延迟 N 秒才发第一个 UDP 包（R-01 超时提示用）")
     a = ap.parse_args()
     vol_cycle = [int(x) for x in a.vol_cycle.split(",") if x.strip()] or None
     if not 0 <= a.vol <= 9:
@@ -230,6 +242,7 @@ if __name__ == "__main__":
     try:
         serve(a.host, a.port, once=not a.loop, tone_hz=a.tone, amp=a.amp,
               vol=a.vol, drop_every=a.drop_every,
-              vol_cycle=vol_cycle, cycle_sec=a.cycle_sec)
+              vol_cycle=vol_cycle, cycle_sec=a.cycle_sec,
+              media_delay=a.media_delay)
     except KeyboardInterrupt:
         sys.exit(0)

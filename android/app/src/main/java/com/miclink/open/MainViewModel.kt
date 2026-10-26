@@ -4,12 +4,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.miclink.open.theme.AppPalette
 import com.miclink.open.theme.ThemeMode
 import com.miclink.open.theme.ThemeState
 import com.miclink.open.ui.navigation.HomeFocus
 import com.miclink.open.ui.navigation.HomeTab
 import com.miclink.open.ui.navigation.backTargetFrom
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * 主界面状态：配置 + 服务状态 + 会话统计。
@@ -109,6 +113,44 @@ class MainViewModel : ViewModel() {
 
     /** 静音前的音量档位（取消静音时恢复；前值为 0 时恢复 [Prefs.DEFAULT_VOLUME]）。 */
     private var volumeBeforeMute: Int = Prefs.DEFAULT_VOLUME
+
+    // ------------------------------------------------------------------
+    // 「最近 10 秒」双层波形（R-14/R-15）：连接页状态卡消费
+    // ------------------------------------------------------------------
+
+    /** 10 秒环形缓冲（50 柱 × 200ms）。 */
+    private val levelHistory = LevelHistory()
+
+    /** 灌数版本号：每采样 +1，渲染层据此左移一格并重置平移相位。 */
+    private var waveformVersion = 0L
+
+    /** onLevel 回调（50ms 粒度）里的最新采集电平；采样器按 200ms 取用。 */
+    private var latestRmsDb: Double = LevelMeter.SILENCE_DB.toDouble()
+
+    /** 连接页状态卡的波形快照（每次采样即更新，5 次/秒）。 */
+    var waveform: WaveformData by mutableStateOf(WaveformData(emptyList(), 0L))
+        private set
+
+    init {
+        // 200ms 采样器：把 onLevel 回调按采样粒度灌进环形缓冲（渲染每帧重画，
+        // 数据只按 200ms 进——R-17）。数据链对调试音模式同样成立（440Hz 恒定
+        // → 平线，属正确行为）；未推流时灌数字静音（灰、高度 0）。
+        viewModelScope.launch {
+            while (isActive) {
+                delay(WAVEFORM_SAMPLE_MS)
+                val streaming = MicCaptureService.isStreaming
+                val collected = if (streaming) latestRmsDb else LevelMeter.SILENCE_DB.toDouble()
+                levelHistory.push(
+                    collectedDb = collected,
+                    // 增益取**当前**音量档位 / 静音态：拖点轨时上层柱即时变化，
+                    // 正好可视化"音量字节链路"（R-15）
+                    streamDb = LevelHistory.streamDbFor(collected, uiState.volume, uiState.muted)
+                )
+                waveformVersion++
+                waveform = WaveformData(levelHistory.snapshot(), waveformVersion)
+            }
+        }
+    }
 
     /** Activity 创建时从 Prefs 灌入可编辑配置。 */
     fun loadConfig(prefs: Prefs) {
@@ -344,6 +386,8 @@ class MainViewModel : ViewModel() {
      */
     fun onLevel(rmsDb: Float, peakDb: Float) {
         uiState = uiState.copy(rmsDb = rmsDb, peakDb = peakDb)
+        // R-14：电平从此有了 UI 消费者——灌进「最近 10 秒」波形的数据链
+        latestRmsDb = rmsDb.toDouble()
     }
 
     /** 轮询统计（Activity 的 500ms 刷新循环调用）。 */

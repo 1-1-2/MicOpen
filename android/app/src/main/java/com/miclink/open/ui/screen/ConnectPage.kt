@@ -50,6 +50,7 @@ import com.miclink.open.ui.component.CardDivider
 import com.miclink.open.ui.component.DotTrack
 import com.miclink.open.ui.component.HintText
 import com.miclink.open.ui.component.LabeledSwitchRow
+import com.miclink.open.ui.component.LevelWaveform
 import com.miclink.open.ui.component.LocalMicLinkTokens
 import com.miclink.open.ui.component.SectionCard
 import com.miclink.open.ui.component.SettingsNavRow
@@ -84,6 +85,8 @@ fun ConnectPage(
 ) {
     val state = vm.uiState
     val tokens = LocalMicLinkTokens.current
+    // 波形无障碍标签（semantics lambda 不是 @Composable 上下文，组合层先取好）
+    val waveformA11y = stringResource(R.string.waveform_caption)
 
     Column(
         modifier = modifier
@@ -143,6 +146,26 @@ fun ConnectPage(
                     modifier = Modifier.weight(1f)
                 )
             }
+
+            // ③ 「最近 10 秒」双层波形（R-14/R-15）：底层=采集电平（暗）、
+            //    上层=实际推流电平（亮）；静音 / 0 档时上层归零
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.waveform_caption),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                color = tokens.text2
+            )
+            Spacer(Modifier.height(4.dp))
+            val wf = vm.waveform
+            LevelWaveform(
+                slots = wf.slots,
+                version = wf.version,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = waveformA11y
+                    }
+            )
 
             Spacer(Modifier.height(16.dp))
             CardDivider()

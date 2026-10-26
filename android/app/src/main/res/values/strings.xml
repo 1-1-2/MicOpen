@@ -25,6 +25,9 @@
     <!-- 地址行的无障碍标签：可见文本只有地址本身，朗读时补上用途（CI 断言同源） -->
     <string name="phone_address">手机地址</string>
 
+    <!-- ==================== 「最近 10 秒」双层波形（R-14/R-15） ==================== -->
+    <string name="waveform_caption">最近 10 秒</string>
+
     <!-- ==================== 主页音量卡（D-18：协议 0-9 十档点轨 + 静音开关） ==================== -->
     <string name="home_volume_title">推流音量</string>
     <string name="home_volume_hint">手机端音源档位（协议 0–9）</string>

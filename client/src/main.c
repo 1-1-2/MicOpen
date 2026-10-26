@@ -29,13 +29,15 @@ static int g_dirty;              /* 有交互产生、需要重绘 */
 static CliArgs g_args;
 
 /* ---------------------------------------------------------------- 日志 */
-static void eng_log_cb(const char *line)
+static void eng_log_cb(const char *line, int kind)
 {
+    /* kind 随行携带（0 INFO / 1 ERROR / 2 OK），PostMessage 只有一个
+     * 自定义消息槽，把 kind 塞进 lParam。 */
     char *copy = (char *)malloc(LOG_LEN);
     if (!copy) return;
     strncpy(copy, line, LOG_LEN - 1);
     copy[LOG_LEN - 1] = 0;
-    if (!PostMessageW(g_ui.hwnd, WM_APP + 1, (WPARAM)copy, 0)) free(copy);
+    if (!PostMessageW(g_ui.hwnd, WM_APP + 1, (WPARAM)copy, (LPARAM)kind)) free(copy);
 }
 
 /* ---------------------------------------------------------------- 主题 */
@@ -431,7 +433,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_APP + 1: {                        /* 引擎线程日志 */
         char *s = (char *)wp;
-        ui_log_add(s, 0);
+        ui_log_add(s, (int)lp);
         free(s);
         g_dirty = 1;
         InvalidateRect(hwnd, NULL, FALSE);
@@ -691,8 +693,26 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
                 BOOL dark = TRUE;
                 set(hwnd, 20, &dark, sizeof(dark));
             }
+            /* R-23：把 DWM 画的非客户区收掉（零边框扩展）。
+             * 症状：首次显示时 DWM 会按 WS_CAPTION 合成一层原生标题栏叠在
+             * 自绘标题栏上，最小化/还原重算非客户区后才“自愈”。根因是
+             * DWM 的合成在首帧早于应用对非客户区的改写 —— 零边框扩展
+             * （DwmExtendFrameIntoClientArea 0,0,0,0）+ 下面的 FRAMECHANGED
+             * 强制在显示前重算一次，第一帧就是自绘标题栏。 */
+            typedef struct { int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight; } Margins;
+            typedef HRESULT (WINAPI *fn_ext)(HWND, const Margins *);
+            fn_ext ext = (fn_ext)(void *)GetProcAddress(dwm, "DwmExtendFrameIntoClientArea");
+            if (ext) {
+                Margins m = { 0, 0, 0, 0 };
+                ext(hwnd, &m);
+            }
         }
     }
+    /* R-23：显示前强制重算非客户区（WM_NCCALCSIZE 无条件返回 0 的结果
+     * 必须在首帧就生效；SHOW 之后再改就晚了一帧）。 */
+    SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                 SWP_FRAMECHANGED);
 
     cli_apply_to_ui(&g_args);
     if (g_args.feed_write) eng_set_feed_mode(DEV_FEED_WRITE);

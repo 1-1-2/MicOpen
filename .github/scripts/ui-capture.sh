@@ -65,20 +65,33 @@ def center(node):
     return (int(left) + int(right)) // 2, (int(top) + int(bottom)) // 2
 
 
+clickable = []   # (area, x, y)：同名可点节点取面积最小者
 fallback = None
 for node in root.iter("node"):
     text = node.get("text") or ""
     desc = node.get("content-desc") or ""
     if needle in text or needle in desc:
         try:
-            xy = center(node)
+            x, y = center(node)
         except Exception:
             continue
+        b = node.get("bounds") or ""
+        try:
+            l, t = b.split("][")[0].strip("[").split(",")
+            r2, b2 = b.split("][")[1].strip("]").split(",")
+            area = (int(r2) - int(l)) * (int(b2) - int(t))
+        except Exception:
+            area = 1 << 30
         if node.get("clickable") == "true":
-            print(*xy)
-            sys.exit(0)
-        if fallback is None:
-            fallback = xy
+            clickable.append((area, x, y))
+        elif fallback is None:
+            fallback = (x, y)
+if clickable:
+    # 顶栏分段是小可点块，摘要行/卡片是大可点块：点错的后果是落在
+    # 错误的可点元素上（真机 02-source 实测踩过），故取面积最小者。
+    clickable.sort()
+    print(clickable[0][1], clickable[0][2])
+    sys.exit(0)
 if fallback:
     print(*fallback)
     sys.exit(0)
@@ -86,14 +99,24 @@ sys.exit(1)
 PY
 }
 
-# 点按 text/content-desc 包含 <needle> 的控件（先 dump 再找）
-tap_text() {  # tap_text <needle>
-    local needle="$1" pos
-    dump_ui _tap || { echo "::warning::tap_text($needle)：dump 失败"; return 1; }
-    pos=$(find_center "$OUT/_tap.xml" "$needle") || { echo "::warning::找不到控件：$needle"; return 1; }
-    # shellcheck disable=SC2086
-    adb_t shell input tap $pos
-    sleep 1
+# 点按 text/content-desc 包含 <needle> 的控件（先 dump 再找）。
+# [expect_after]：点按后目标页应出现的文本；未出现则重试一次（真实设备上
+# 曾出现「点了音源还在连接页」：点击落在重组中的节点上被丢弃）。
+tap_text() {  # tap_text <needle> [expect_after]
+    local needle="$1" expect="${2:-}" pos try
+    for try in 1 2; do
+        dump_ui _tap || { echo "::warning::tap_text($needle)：dump 失败"; return 1; }
+        pos=$(find_center "$OUT/_tap.xml" "$needle") || { echo "::warning::找不到控件：$needle"; return 1; }
+        # shellcheck disable=SC2086
+        adb_t shell input tap $pos
+        sleep 1
+        [ -z "$expect" ] && return 0
+        dump_ui _tap2 || return 0
+        if grep -qF "$expect" "$OUT/_tap2.xml" 2>/dev/null; then
+            return 0
+        fi
+        echo "::warning::tap_text($needle)：点按后未见「$expect」，重试（$try/2）"
+    done
 }
 
 # 返回键（外观 / 关于是独立目的地，靠导航栈回退到三段外壳）
@@ -135,14 +158,14 @@ assert_text 01-connect "推流音量" "连接页-推流音量点轨（D-18）"
 assert_text 01-connect "手机地址" "连接页-手机地址（D-16）"
 
 echo "[ui] 2/5 音源页（音源 chips + 输入设备 chips）"
-tap_text "音源"
+tap_text "音源" "跟随系统"
 snap 02-source
 # D-19/D-20：音源与输入设备已 chips 化
 assert_text 02-source "麦克风" "音源页-音源 chips（麦克风档）"
 assert_text 02-source "跟随系统" "音源页-输入设备 chips（跟随系统）"
 
 echo "[ui] 3/5 高级页（系统效果 + 控制端口 + 采样率 + 调试音 + 关于）"
-tap_text "高级"
+tap_text "高级" "关于与帮助"
 snap 03-advanced
 assert_text 03-advanced "降噪" "高级页-降噪开关"
 assert_text 03-advanced "控制端口" "高级页-控制端口"
@@ -150,7 +173,7 @@ assert_text 03-advanced "控制端口" "高级页-控制端口"
 assert_text 03-advanced "关于与帮助" "高级页-关于与帮助（R-07）"
 
 echo "[ui] 4/5 外观页（顶栏右上角 👕 进入）"
-tap_text "外观"
+tap_text "外观" "主题模式"
 sleep 1
 snap 04-appearance
 assert_text 04-appearance "主题模式" "外观-主题模式"
@@ -158,7 +181,7 @@ assert_text 04-appearance "配色" "外观-配色"
 
 echo "[ui] 5/5 复原：回到连接页（不影响后续 interop）"
 press_back
-tap_text "连接"
+tap_text "连接" "推流音量"
 snap 05-connect-back
 
 echo "[ui] 完成，产物如下："

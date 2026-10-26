@@ -208,7 +208,8 @@ int  eng_set_gain(int gain_pct);
 void eng_set_feed_mode(int mode);      /* DEV_FEED_IOCTL（默认）/ DEV_FEED_WRITE */
 
 /* 日志回调：引擎线程调用，UI 通过 PostMessage 转投 */
-typedef void (*LogFn)(const char *line);
+/* kind：0 INFO / 1 ERROR / 2 OK（与 ui_log_add 的分级一致，「复制全部」同收） */
+typedef void (*LogFn)(const char *line, int kind);
 void eng_set_logger(LogFn fn);
 
 /* 单实例回调：第二个实例的命令行被转发过来 */
