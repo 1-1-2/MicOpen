@@ -460,6 +460,23 @@ void ui_meter_draw(HDC dc, RECT r)
         ui_text(dc, (RECT){ r.right - ui_pad() - vw, r.top + sd(12),
                             r.right - ui_pad(), r.top + sd(32) },
                 pv, vf, g_th.text, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+
+        /* R-38w 回执状态：正常 / 未启用 / 未回执 —— 贴着「峰值」左侧 */
+        {
+            const wchar_t *et;
+            COLORREF ec;
+            int ew, px;
+            switch (g_ui.st_disp.echo_state) {
+            case 1:  et = L"回执 正常";   ec = g_th.ok;       break;
+            case 2:  et = L"回执 未回执"; ec = g_th.warn;     break;
+            default: et = L"回执 未启用"; ec = g_th.text_mute; break;
+            }
+            ew = ui_measure_text(et, ui_font(11, FW_NORMAL, 0));
+            px = r.right - ui_pad() - vw - pw - sd(14) - ew;
+            ui_text(dc, (RECT){ px, r.top + sd(12), px + ew, r.top + sd(32) },
+                    et, ui_font(11, FW_NORMAL, 0), ec,
+                    DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        }
     }
 
     /* hint（12/16 text-2） */

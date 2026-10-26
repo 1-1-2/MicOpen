@@ -181,6 +181,12 @@ typedef struct {
     char     opus_src[16];    /* static / dll / none */
     char     last_error[160];
     DWORD    started_at;
+    /* R-38w 对账通道（旁路 UDP media_port+1）：
+     *   0 未启用（side socket bind 失败 / 未协商）
+     *   1 正常（收到过探针并已回 report）
+     *   2 对端未回执（我们开着，但对方一直不发探针） */
+    int      echo_state;
+    int      echo_probes;     /* 收到的探针数 */
 } EngineStats;
 
 /* 引擎线程生命周期 */

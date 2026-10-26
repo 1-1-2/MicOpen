@@ -37,6 +37,12 @@
 static volatile LONG g_run;
 static HANDLE        g_thread;
 static SOCKET        g_tcp = INVALID_SOCKET, g_udp = INVALID_SOCKET;
+/* R-38w 对账通道：旁路 UDP（media_port+1）。只在收到探针时回 report，
+ * 绝不主动发 —— 对官方客户端零影响。 */
+static SOCKET        g_side = INVALID_SOCKET;
+static int           g_echo_state;      /* 0 未启用 / 1 正常 / 2 对端未回执 */
+static int           g_echo_probes;
+static DWORD         g_echo_warned;
 static CRITICAL_SECTION g_cs;
 static int           g_cs_inited;
 static EngineStats   g_st;
@@ -290,7 +296,13 @@ static int do_handshake(int rate_idx)
     if (!msg_recv(&type, rsp, sizeof(rsp), &len, 6000)) { strcpy(g_st.last_error, "101 无应答"); return 0; }
     if (type != 101 || len < 2) { sprintf(g_st.last_error, "101 应答异常 type=%u len=%d", type, len); return 0; }
     if (rsp[0] != 0) { sprintf(g_st.last_error, "对端拒绝 hello，status=%u", rsp[0]); return 0; }
-    if (rsp[1] != 4) { sprintf(g_st.last_error, "对端头格式=%u（预期 4）", rsp[1]); return 0; }
+    /* R-38w：bit0 现在兼作"支持回执"标志（官方端恒为 0，不影响兼容）。
+     * 头格式本体仍然必须是 4，只是允许最低位带上能力位。 */
+    if ((rsp[1] & (unsigned char)~1u) != 4) {
+        sprintf(g_st.last_error, "对端头格式=%u（预期 4）", rsp[1]);
+        return 0;
+    }
+    if (len >= 2 && (rsp[1] & 1)) elog("对端支持回执（cap=1），旁路对账通道可用");
     elog("101 hello 成功：头格式 C（variant=4）");
 
     /* 102：codec=2(Opus) / rateIdx / 媒体端口（大端） */
@@ -629,6 +641,30 @@ static unsigned __stdcall worker(void *arg)
              g_media_port_req > 0 ? "--media-port 指定" : "系统随机分配");
     }
 
+    /* R-38w：旁路对账端口 = media_port+1。bind 失败只降级（不启用回执），
+     * 绝不影响主链路 —— 这个通道纯属附加观测。 */
+    g_echo_state = 0;
+    g_echo_probes = 0;
+    g_echo_warned = 0;
+    if (g_st.media_port > 0 && g_st.media_port < 65535) {
+        SOCKADDR_IN sa2;
+        g_side = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (g_side != INVALID_SOCKET) {
+            memset(&sa2, 0, sizeof(sa2));
+            sa2.sin_family = AF_INET;
+            sa2.sin_addr.s_addr = INADDR_ANY;
+            sa2.sin_port = htons((u_short)(g_st.media_port + 1));
+            if (bind(g_side, (SOCKADDR *)&sa2, sizeof(sa2)) == 0) {
+                elog("对账通道已就绪（UDP %d，仅回执不主动发包）", g_st.media_port + 1);
+            } else {
+                elog_warn("对账通道不可用（UDP %d 绑定失败，WSA=%d）：不影响录音",
+                          g_st.media_port + 1, WSAGetLastError());
+                closesocket(g_side);
+                g_side = INVALID_SOCKET;
+            }
+        }
+    }
+
     /* 2) 再连 TCP（port 已在上面校验过 1..65535，这里的 u_short 转换是恒等映射，
      *    不再是截断兜底） */
     memset(&sa, 0, sizeof(sa));
@@ -663,8 +699,50 @@ static unsigned __stdcall worker(void *arg)
         FD_ZERO(&rf);
         FD_SET(g_tcp, &rf);
         FD_SET(g_udp, &rf);
+        if (g_side != INVALID_SOCKET) FD_SET(g_side, &rf);
         int sel = select(0, &rf, NULL, NULL, &tv);
         if (sel > 0) {
+            if (g_side != INVALID_SOCKET && FD_ISSET(g_side, &rf)) {
+                /* 探针：magic4 "MLK1" + type1(=1) + seq4 + packets4 + last_seq2 + rsv1
+                 * 回 report：同布局，type=2，packets/last_seq 填我们这边的真实计数。 */
+                unsigned char pb[64], rb[16];
+                SOCKADDR_IN from;
+                int fl = sizeof(from);
+                int rn = recvfrom(g_side, (char *)pb, sizeof(pb), 0,
+                                  (SOCKADDR *)&from, &fl);
+                if (rn >= 16 && memcmp(pb, "MLK1", 4) == 0 && pb[4] == 1) {
+                    uint32_t seq = ((uint32_t)pb[5] << 24) | ((uint32_t)pb[6] << 16) |
+                                   ((uint32_t)pb[7] << 8) | (uint32_t)pb[8];
+                    uint16_t last;
+                    EnterCriticalSection(&g_cs);
+                    last = (uint16_t)g_st.last_seq;
+                    LeaveCriticalSection(&g_cs);
+                    memcpy(rb, "MLK1", 4);
+                    rb[4] = 2;
+                    rb[5]  = (unsigned char)(seq >> 24); rb[6] = (unsigned char)(seq >> 16);
+                    rb[7]  = (unsigned char)(seq >> 8);  rb[8] = (unsigned char)seq;
+                    EnterCriticalSection(&g_cs);
+                    rb[9]  = (unsigned char)(g_st.frames >> 24);
+                    rb[10] = (unsigned char)(g_st.frames >> 16);
+                    rb[11] = (unsigned char)(g_st.frames >> 8);
+                    rb[12] = (unsigned char)(g_st.frames);
+                    LeaveCriticalSection(&g_cs);
+                    rb[13] = (unsigned char)(last >> 8);
+                    rb[14] = (unsigned char)(last & 0xFF);
+                    rb[15] = 0;
+                    sendto(g_side, (const char *)rb, 16, 0, (SOCKADDR *)&from, fl);
+                    g_echo_probes++;
+                    if (g_echo_state != 1) {
+                        g_echo_state = 1;
+                        elog("对账通道收到探针（第 %d 次），已回执：对端支持回执",
+                             g_echo_probes);
+                    }
+                    EnterCriticalSection(&g_cs);
+                    g_st.echo_state = 1;
+                    g_st.echo_probes = g_echo_probes;
+                    LeaveCriticalSection(&g_cs);
+                }
+            }
             if (FD_ISSET(g_udp, &rf)) {
                 unsigned char buf[MAX_PKT];
                 int n = recv(g_udp, (char *)buf, sizeof(buf), 0);
@@ -689,6 +767,18 @@ static unsigned __stdcall worker(void *arg)
         /* R-01：START 后 5 秒零媒体包 → 防火墙引导（ERROR，一次性）。
          * 不做自动 netsh：改防火墙要管理员，弹 UAC 的体验比一句可复制的
          * 命令差得多。命令里带本 exe 完整路径，复制即可用。 */
+        /* R-38w：旁路通道开着但对方从不发探针 → 一次 WARN（不刷屏）。
+         * 官方客户端不会发探针，这是预期现象，只是让用户知道"回执没开"。 */
+        if (g_side != INVALID_SOCKET && g_echo_state != 1 && !g_echo_warned &&
+            (int)(now - g_start_at) > 10000) {
+            g_echo_warned = 1;
+            g_echo_state = 2;
+            EnterCriticalSection(&g_cs);
+            g_st.echo_state = 2;
+            LeaveCriticalSection(&g_cs);
+            elog_warn("对端未回执（可能是原厂客户端或防火墙拦截）；录音不受影响，"
+                      "对账通道 UDP %d 已就绪", g_st.media_port + 1);
+        }
         if (!g_got_media && !g_fw_hint_shown &&
             (int)(now - g_start_at) > 5000) {
             wchar_t exe[MAX_PATH];
@@ -728,6 +818,7 @@ out:
         closesocket(g_tcp); g_tcp = INVALID_SOCKET;
     }
     if (g_udp != INVALID_SOCKET) { closesocket(g_udp); g_udp = INVALID_SOCKET; }
+    if (g_side != INVALID_SOCKET) { closesocket(g_side); g_side = INVALID_SOCKET; }
     WSACleanup();
     devio_stop();
     if (g_st.state != ST_ERROR) g_st.state = ST_IDLE;
