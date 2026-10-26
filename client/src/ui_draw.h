@@ -29,6 +29,9 @@ int   ui_pad(void);
 int   ui_clip_push(HDC dc, RECT r);
 void  ui_clip_pop(HDC dc, int saved);
 int   ui_measure_text(const wchar_t *s, HFONT f);
+/* 该字号一行文字的高度（设备像素）。R-30：单行 EDIT 不会自己垂直居中，
+ * 要让它的高度=一行文字高再整体居中，所以得有这个测量。 */
+int   ui_text_height(int px);
 
 /* 颜色混合：a 与 b 按 pct%（b 的占比）混合。电平卡 dim 段等派生色复用。 */
 COLORREF ui_mix(COLORREF a, COLORREF b, int pct);

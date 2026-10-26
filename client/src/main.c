@@ -301,21 +301,28 @@ void ui_on_release(void)
 }
 
 /* ---------------------------------------------------------------- 窗口 */
-/* 编辑框内缩 1px：让 draw_input 画的 1px border 不被编辑框客户区盖住 */
+/* 输入框定位（R-10 水平居中 / R-30 垂直居中）
+ *
+ * 单行 EDIT **不会**在自己客户区里垂直居中（它把文字贴在顶部），而视觉上的"框"
+ * 是自绘的、比一行文字高 —— 所以不能让 EDIT 撑满整框，否则文字看着贴顶。
+ * 做法：EDIT 高度 = 一行文字高，整体在自绘框内垂直居中；左右各内缩 1px，
+ * 免得盖住自绘的 1px 描边。框线仍然由 draw_input 画。 */
+static void place_one_edit(HWND h, RECT box)
+{
+    int w = box.right - box.left - 2;
+    int th = ui_text_height(14) + sd(2);      /* 一行文字高 + 上下各 1px 余量 */
+    int y;
+    if (w < sd(8)) w = sd(8);
+    y = box.top + (box.bottom - box.top - th) / 2;
+    if (y < box.top + 1) y = box.top + 1;
+    MoveWindow(h, box.left + 1, y, w, th, TRUE);
+}
+
 static void place_edits(void)
 {
-    if (g_ui.edit_host)
-        MoveWindow(g_ui.edit_host, g_lo.ed_host.left + 1, g_lo.ed_host.top + 1,
-                   g_lo.ed_host.right - g_lo.ed_host.left - 2,
-                   g_lo.ed_host.bottom - g_lo.ed_host.top - 2, TRUE);
-    if (g_ui.edit_port)
-        MoveWindow(g_ui.edit_port, g_lo.ed_port.left + 1, g_lo.ed_port.top + 1,
-                   g_lo.ed_port.right - g_lo.ed_port.left - 2,
-                   g_lo.ed_port.bottom - g_lo.ed_port.top - 2, TRUE);
-    if (g_ui.edit_media)
-        MoveWindow(g_ui.edit_media, g_lo.ed_media.left + 1, g_lo.ed_media.top + 1,
-                   g_lo.ed_media.right - g_lo.ed_media.left - 2,
-                   g_lo.ed_media.bottom - g_lo.ed_media.top - 2, TRUE);
+    if (g_ui.edit_host)  place_one_edit(g_ui.edit_host, g_lo.ed_host);
+    if (g_ui.edit_port)  place_one_edit(g_ui.edit_port, g_lo.ed_port);
+    if (g_ui.edit_media) place_one_edit(g_ui.edit_media, g_lo.ed_media);
 }
 
 static void paint(HWND hwnd)

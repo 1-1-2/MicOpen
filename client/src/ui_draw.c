@@ -243,6 +243,21 @@ void ui_clip_pop(HDC dc, int saved)
     RestoreDC(dc, saved);
 }
 
+int ui_text_height(int px)
+{
+    HDC dc = CreateCompatibleDC(NULL);
+    TEXTMETRICW tm;
+    HFONT f, old;
+    int h = px;
+    if (!dc) return h;
+    f = ui_font(px, FW_NORMAL, 1);
+    old = (HFONT)SelectObject(dc, f);
+    if (GetTextMetricsW(dc, &tm)) h = tm.tmHeight;
+    SelectObject(dc, old);
+    DeleteDC(dc);
+    return h;
+}
+
 int ui_measure_text(const wchar_t *s, HFONT f)
 {
     HDC dc = CreateCompatibleDC(NULL);
