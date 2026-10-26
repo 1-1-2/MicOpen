@@ -65,49 +65,54 @@ def center(node):
     return (int(left) + int(right)) // 2, (int(top) + int(bottom)) // 2
 
 
-# 两遍法：① 收集所有 text/desc 匹配节点；② 对每个匹配点，找**包含该点的
-# 面积最小可点节点**（Compose 的可点容器常常是空文本的 View，文字只是
-# 其不可点子节点——只按文本找 clickable 会一无所获，兜底又会点错别处，
-# 真机 02-source 实测踩过）。多候选取面积最小（顶栏分段 < 摘要行 < 卡片）。
-clickable = []   # (area, x, y)：最小可点祖先
-fallback = None
-def area_of(b):
+# 两遍法 v3：① 收集**所有** text/desc 匹配点（精确匹配优先于子串匹配，
+# 避免「连接」撞上徽标「等待连接」、「音源」撞上提示「手机端音源档位」）；
+# ② 对**每个**匹配点，找包含该点的面积最小可点节点（Compose 的可点容器
+# 常是空文本 View，文字只是其不可点子节点）。v2 的缺陷：只为文档序第一个
+# 匹配点找祖先——「音源」先撞提示文本（周围无可点祖先）→ 永远点在死点，
+# 而 tab 容器明明包含另一个匹配点（三轮 CI 复现，01-connect.xml 实证）。
+# 多候选取面积最小（顶栏分段 < 摘要行 < 卡片）。
+def bounds_of(b):
     l, t = b.split("][")[0].strip("[").split(",")
     r, b2 = b.split("][")[1].strip("]").split(",")
-    return (int(r) - int(l)) * (int(b2) - int(t))
+    return int(l), int(t), int(r), int(b2)
 
-all_nodes = []
+
+def area_of(b):
+    l, t, r, b2 = bounds_of(b)
+    return (r - l) * (b2 - t)
+
+
+clickables = []   # (area, x, y, l, t, r, b2)：全部可点节点
+exact, fuzzy = [], []   # 匹配点 (x, y)
 for node in root.iter("node"):
     text = node.get("text") or ""
     desc = node.get("content-desc") or ""
     b = node.get("bounds") or ""
     try:
         x, y = center(node)
+        l, t, r, b2 = bounds_of(b)
     except Exception:
         continue
-    all_nodes.append((node, text, desc, x, y, b))
-    if needle in text or needle in desc:
-        if node.get("clickable") == "true":
-            clickable.append((area_of(b), x, y))
-        elif fallback is None:
-            fallback = (x, y)
+    if node.get("clickable") == "true":
+        clickables.append((area_of(b), x, y, l, t, r, b2))
+    if text == needle or desc == needle:
+        exact.append((x, y))
+    elif needle in text or needle in desc:
+        fuzzy.append((x, y))
 
-if not clickable and fallback:
-    fx, fy = fallback
-    for node, text, desc, x, y, b in all_nodes:
-        if node.get("clickable") == "true":
-            lt = b.split("][")[0].strip("[").split(",")
-            rb = b.split("][")[1].strip("]").split(",")
-            l, t, r, b2 = int(lt[0]), int(lt[1]), int(rb[0]), int(rb[1])
-            if l <= fx <= r and t <= fy <= b2:
-                clickable.append(((r - l) * (b2 - t), (l + r) // 2, (t + b2) // 2))
+pts = exact or fuzzy
+best = None
+for mx, my in pts:
+    for area, cx, cy, l, t, r, b2 in clickables:
+        if l <= mx <= r and t <= my <= b2 and (best is None or area < best[0]):
+            best = (area, cx, cy)
 
-if clickable:
-    clickable.sort()
-    print(clickable[0][1], clickable[0][2])
+if best:
+    print(best[1], best[2])
     sys.exit(0)
-if fallback:
-    print(*fallback)
+if pts:
+    print(*pts[0])
     sys.exit(0)
 sys.exit(1)
 PY
