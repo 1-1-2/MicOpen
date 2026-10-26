@@ -1313,7 +1313,7 @@ jobs:
           $g1s = $(if ($env:ITEM_G1) { $env:ITEM_G1 } else { 'n/a' })
           $g2s = $(if ($env:ITEM_G2) { $env:ITEM_G2 } else { 'n/a' })
           $fs = $(if ($env:ITEM_F) { $env:ITEM_F } else { 'n/a' })
-          $md += "R3 2×2 裁决矩阵: (SYSTEM,s0)=$fs ; (std,s0)=$g1s ; (std,interactive)=$g2s ; 历史(elevated,interactive)=FAIL"
+          $md += "R3 2×2 裁决矩阵: (SYSTEM,s0)=$fs ; (std,s0)=$g1s ; (std,interactive)=$g2s ; 历史(elevated,interactive)=UNSUPPORTED（run 39901322823，原始 FAIL）"
           $md | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           # 同步落一份到 probe-results 根：既保证 upload-artifact 的
           # 公共祖先目录是 probe-results（否则只有 logs/ 有文件时 artifact
