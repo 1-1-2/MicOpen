@@ -181,6 +181,13 @@ typedef struct {
 /* 引擎线程生命周期 */
 int  eng_start(const char *host, int ctrl_port, int rate_idx, int buffer_ms, int gain);
 void eng_stop(void);
+/* 回收「worker 已自行结束」的会话资源（线程句柄 / 设备 / 解码器），
+ * 但**保留** g_st.state —— 状态栏要靠它继续显示「连接错误」。
+ * 为什么需要它：worker 因连接失败自己退出时不会清 g_run，若没人回收，
+ * 下一次 eng_start() 会在 `if (g_run) return 0;` 处立刻失败（表现为
+ * 「启动引擎失败」且无任何原因），用户必须重启程序才能重连。
+ * 幂等：线程仍在跑、或已回收过，都直接返回。 */
+void eng_reap(void);
 void eng_snapshot(EngineStats *out);   /* 线程安全快照 */
 int  eng_device_available(void);       /* 不再独立开句柄：返回 devio_is_open() */
 void eng_set_monitor(int on);          /* 本地监听（预留，当前无 waveOut 实现） */

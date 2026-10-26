@@ -576,6 +576,29 @@ void eng_stop(void)
     LeaveCriticalSection(&g_cs);
 }
 
+/* 回收自行结束的会话（见 app.h 的说明）。
+ *
+ * 与 eng_stop() 的区别只有后半段：不动 g_st.state。
+ * 连接失败时 worker 已经把 state 置成 ST_ERROR 就退出了，若这里也跟着
+ * 复位成 ST_IDLE，状态栏的「连接错误」徽标会瞬间变回「未连接」——
+ * 那就把刚修好的「不静默」又改回去了。
+ *
+ * 只做资源回收，不动任何状态字段，因此幂等：
+ *   · g_run 已清（回收过 / 用户主动断过）→ 直接返回；
+ *   · 线程还活着（重连中/推流中）→ 直接返回，绝不打断它。 */
+void eng_reap(void)
+{
+    if (!g_run) return;
+    if (g_thread && WaitForSingleObject(g_thread, 0) == WAIT_TIMEOUT) return;
+    InterlockedExchange(&g_run, 0);
+    if (g_thread) {
+        CloseHandle(g_thread);      /* 线程自己已经退出，无需再 Wait */
+        g_thread = NULL;
+    }
+    devio_stop();
+    opusdec_close();
+}
+
 void eng_snapshot(EngineStats *out)
 {
     if (!g_cs_inited) { memset(out, 0, sizeof(*out)); return; }

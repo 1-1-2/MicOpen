@@ -342,6 +342,15 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (st.state == ST_ERROR) ui_log_add(st.last_error, 1);
             g_dirty = 1;
         }
+        /* worker 自行结束（连接失败 / 对端断开）后回收线程与设备资源。
+         * 必须**每个节拍都试**，不能只在上面那一拍试一次：worker 是先把
+         * state 置成 ST_ERROR 再去收尾（devio_stop/关套接字），那一拍它
+         * 往往还没真正退出，eng_reap() 的 WaitForSingleObject(0) 会超时返回；
+         * 而此后 g_ui.running 已经是 0，那一拍就再也不会重来 —— g_run 永久
+         * 留在 1，下一次 eng_start() 在首行 `if (g_run) return 0;` 处立刻失败，
+         * 用户看到的是「启动引擎失败」且没有原因。
+         * eng_reap() 幂等，且线程还在跑时直接返回，所以这样反复调用是安全的。 */
+        if (!g_ui.running) eng_reap();
         ui_meter_update(&st, g_ui.running);
 
         /* ---- D-08：历史采样（约 208ms/柱，10 秒 48 柱）---- */
