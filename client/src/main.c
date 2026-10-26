@@ -57,6 +57,24 @@ void ui_toggle_theme(void)
 static int rate_idx_of(int seg) { return seg == 0 ? 2 : seg == 1 ? 1 : 0; }
 static int buf_ms_of(int idx) { return idx == 0 ? 26 : idx == 1 ? 60 : 120; }
 
+/* 读输入框文本，且**不允许读到被截断的内容**（D-01）。
+ * GetWindowTextW 到不了的长度会静默截断，截断后再解析就会出现
+ * 「框里显示 0000000000008125，实际连 812」这种填/连不一致 —— 这正是
+ * 不静默纪律要挡的。所以先用 GetWindowTextLengthW 判长，太长就交给
+ * 调用方按「非法」处理，而不是悄悄用前半段。
+ * 返回值：1 = 正常读到（可能为空串）；0 = 文本过长（buf 已被置空）。 */
+static int read_edit_text(HWND h, wchar_t *buf, int cap)
+{
+    int n;
+    if (!buf || cap <= 0) return 0;
+    buf[0] = 0;
+    if (!h) return 1;                          /* 控件还没建好：当空处理 */
+    n = GetWindowTextLengthW(h);
+    if (n >= cap - 1) return 0;                /* 过长：不读，避免半截数字 */
+    GetWindowTextW(h, buf, cap);
+    return 1;
+}
+
 static void toggle_connection(void)
 {
     if (g_ui.running) {
@@ -68,29 +86,57 @@ static void toggle_connection(void)
         return;
     }
     {
-        wchar_t host[64] = { 0 }, port[16] = { 0 }, mp[16] = { 0 };
+        wchar_t host[64] = { 0 }, port[32] = { 0 }, mp[32] = { 0 };
         char hostA[96];
-        int cp, media = 0;
+        int cp = 8125, pr, media = 0, port_defaulted = 0;
         GetWindowTextW(g_ui.edit_host, host, 64);
-        GetWindowTextW(g_ui.edit_port, port, 16);
         WideCharToMultiByte(CP_UTF8, 0, host, -1, hostA, sizeof(hostA), NULL, NULL);
-        cp = _wtoi(port);
-        if (cp <= 0) cp = 8125;
         if (!hostA[0]) {
             ui_log_add("请先输入手机地址", 1);
             g_dirty = 1;
             return;
         }
-        /* 媒体端口：留空 = 随机（默认）；填了就固定，非法值当场拒绝 */
+        /* 控制端口（D-01）：空 = 默认 8125 但必须明示；非空且非法 = 明确拒绝。
+         * 这里不再有 `_wtoi` + `cp<=0 → 8125` 的静默回退，也不让 engine 里的
+         * htons((u_short)port) 截断兜底 —— 99999 变 34463、65536 变 0 那种
+         * 「填的和连的不是一个端口」正是本缺陷要消灭的。 */
+        if (!read_edit_text(g_ui.edit_port, port, 32)) {
+            ui_log_add("控制端口须为 1-65535 的整数（默认 8125）", 1);
+            g_dirty = 1;
+            return;
+        }
+        pr = cli_parse_port(port, &cp);
+        if (pr == 0) {
+            cp = 8125;
+            port_defaulted = 1;       /* 空=默认可以，但下面的日志必须明示 */
+        } else if (pr < 0) {
+            ui_log_add("控制端口须为 1-65535 的整数（默认 8125）", 1);
+            g_dirty = 1;
+            return;
+        }
+        /* 媒体端口：留空 = 随机（默认）；填了就固定，非法值当场拒绝。
+         * 与控制端口共用同一个解析器（cli_parse_port），两种口径从此不会漂移：
+         *   · 空 → 0（随机分配，与原行为一致）
+         *   · 1..65535 → 固定
+         *   · 其他（0/负数/非数字/超范围/溢出/尾随垃圾/过长）→ 拒绝 */
         if (g_ui.edit_media) {
-            GetWindowTextW(g_ui.edit_media, mp, 16);
-            media = _wtoi(mp);
-            if (mp[0] && (media < 1 || media > 65535)) {
+            int mv = 0, mpr;
+            if (!read_edit_text(g_ui.edit_media, mp, 32)) {
                 ui_log_add("媒体端口须留空或填 1..65535（留空=随机分配）", 1);
                 g_dirty = 1;
                 return;
             }
+            mpr = cli_parse_port(mp, &mv);
+            if (mpr < 0) {
+                ui_log_add("媒体端口须留空或填 1..65535（留空=随机分配）", 1);
+                g_dirty = 1;
+                return;
+            }
+            media = (mpr == 1) ? mv : 0;
         }
+        /* 所有校验都过了才说「用了默认端口」：否则被媒体端口拦下时会留下
+         * 一行让人误以为连接已发起的日志。 */
+        if (port_defaulted) ui_log_add("未填控制端口，使用默认 8125", 0);
         /* 驱动未就绪时 GUI 主按钮已置灰（D-04）；键盘/CLI 路径走到这里时
          * 保留既有的「只做协议与统计、不出声」诊断模式，并把话说清楚。 */
         if (g_ui.drv.state != DRV_READY)

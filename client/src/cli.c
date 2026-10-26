@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 static int g_exit_code = CLI_EXIT_OK;
 static int g_has_console;
@@ -174,6 +175,35 @@ static int parse_int(const wchar_t *s, int *v)
     return 1;
 }
 
+/* 端口取值校验，GUI 与 CLI 共用（D-01）。详见 cli.h 的返回值约定。
+ *
+ * 为什么不直接 _wtoi：
+ *   · _wtoi("abc") == 0、_wtoi("") == 0 —— 两者都拿不到「用户到底填了什么」，
+ *     只能靠 cp<=0 猜，于是非法值被静默替换成默认端口；
+ *   · _wtoi("8125abc") == 8125 —— 尾随垃圾被吞掉；
+ *   · _wtoi("99999999999999999999") 溢出，返回值取决于 CRT 实现。
+ * wcstol + endptr 能同时判「有没有吃到数字」「后面还有没有东西」，
+ * errno==ERANGE 能把溢出单独抓出来。 */
+int cli_parse_port(const wchar_t *s, int *out)
+{
+    const wchar_t *p = s;
+    wchar_t *end = NULL;
+    long n;
+
+    if (!s || !out) return -1;
+    while (*p == L' ' || *p == L'\t') p++;        /* 粘贴常带前后空白，容忍 */
+    if (!*p) return 0;                            /* 空 = 未填，由调用方决定用默认值 */
+    errno = 0;
+    n = wcstol(p, &end, 10);
+    if (end == p) return -1;                      /* 一个十进制数字都没吃到 */
+    if (errno == ERANGE) return -1;               /* 溢出（20 位数字走这里） */
+    while (*end == L' ' || *end == L'\t') end++;
+    if (*end) return -1;                          /* 尾随垃圾：8125abc / 8125.5 / 8 1 2 5 */
+    if (n < 1 || n > 65535) return -1;            /* 0 / 负数 / 超 16 位无符号范围 */
+    *out = (int)n;
+    return 1;
+}
+
 int cli_parse(CliArgs *a, int argc, wchar_t **argv)
 {
     int i, pos = 0;
@@ -183,7 +213,21 @@ int cli_parse(CliArgs *a, int argc, wchar_t **argv)
         const wchar_t *s = argv[i];
         if (s[0] != L'-' && s[0] != L'/') {
             if (pos == 0) { a->host_pos = s; pos = 1; }
-            else if (pos == 1) { if (!parse_int(s, &a->port)) a->port = 8125; pos = 2; }
+            else if (pos == 1) {
+                /* 位置参数简写 <host> <port>：同样走统一校验，
+                 * 不再 parse_int 失败就静默 8125（D-01）。 */
+                int v = 0, r = cli_parse_port(s, &v);
+                if (r == 0) {
+                    g_parse_err = "端口参数为空：请填 1..65535，或省略该参数使用默认 8125";
+                    return 0;
+                }
+                if (r < 0) {
+                    g_parse_err = "控制端口须为 1-65535 的整数（默认 8125）";
+                    return 0;
+                }
+                a->port = v;
+                pos = 2;
+            }
             continue;
         }
         s += 1;                             /* 吃掉一个 '-'/'/' */
@@ -204,8 +248,16 @@ int cli_parse(CliArgs *a, int argc, wchar_t **argv)
             a->host_pos = argv[++i]; continue;
         }
         if (!_wcsicmp(s, L"port")) {
+            int v = 0, r;
             if (!need_value(argc, argv, i)) { g_parse_err = "--port 缺少取值"; return 0; }
-            if (!parse_int(argv[++i], &a->port)) { g_parse_err = "--port 需要十进制端口号"; return 0; }
+            ++i;
+            r = cli_parse_port(argv[i], &v);
+            if (r == 0) { g_parse_err = "--port 取值为空：请填 1..65535（默认 8125）"; return 0; }
+            if (r < 0) {
+                g_parse_err = "--port 取值须为 1..65535（0/负数/非数字/超过 65535 均非法）";
+                return 0;
+            }
+            a->port = v;
             continue;
         }
         if (!_wcsicmp(s, L"media-port") || !_wcsicmp(s, L"mediaport")) {

@@ -15,4 +15,13 @@ void cli_release_console(void);
 /* 把 host/port 写回 GUI 输入框前，供 main 读取 */
 void cli_apply_to_ui(const CliArgs *a);
 
+/* 控制端口取值校验（D-01）：GUI 输入框与 CLI 选项共用这一份实现，
+ * 避免「两处规则各写一遍、迟早漂移」。
+ *   1  = 合法，*out 写入 1..65535
+ *   0  = 未填（空串或纯空白），*out 不变
+ *  -1  = 非法（非数字 / 0 / 负数 / >65535 / 溢出 / 尾随垃圾字符），*out 不变
+ * 内部用 wcstol + endptr + errno(ERANGE)：_wtoi 在 20 位数字上的溢出行为
+ * 依赖 CRT，且会把 "8125abc" 静默读成 8125 —— 这正是不静默纪律要挡的。 */
+int cli_parse_port(const wchar_t *s, int *out);
+
 #endif /* MICLINK_CLI_H */

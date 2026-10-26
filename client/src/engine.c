@@ -333,6 +333,16 @@ static unsigned __stdcall worker(void *arg)
     host[sizeof(host) - 1] = 0;
     colon = strrchr(host, ':');
     if (colon) { *colon = 0; port = atoi(colon + 1); }
+    /* peer 串是唯一的端口来源，取出来后再校验一次：万一有调用点绕过
+     * eng_start() 的参数闸门往 peer 里塞了越界端口，这里也要拒绝而不是
+     * 让下面的 htons((u_short)port) 悄悄改成别的端口（D-01）。 */
+    if (port < 1 || port > 65535) {
+        snprintf(g_st.last_error, sizeof(g_st.last_error),
+                 "控制端口 %d 非法：须为 1-65535 的整数（默认 8125）", port);
+        g_st.state = ST_ERROR;
+        WSACleanup();
+        return 0;
+    }
 
     /* 1) 先建 UDP 并 bind，拿到真实端口
      * g_media_port_req == 0 → 端口 0，由系统随机分配（默认行为，向后兼容）；
@@ -370,7 +380,8 @@ static unsigned __stdcall worker(void *arg)
              g_media_port_req > 0 ? "--media-port 指定" : "系统随机分配");
     }
 
-    /* 2) 再连 TCP */
+    /* 2) 再连 TCP（port 已在上面校验过 1..65535，这里的 u_short 转换是恒等映射，
+     *    不再是截断兜底） */
     memset(&sa, 0, sizeof(sa));
     sa.sin_family = AF_INET;
     sa.sin_port = htons((u_short)port);
@@ -501,6 +512,17 @@ int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, 
     g_st.rate_out = DEV_RATE;
     g_st.buffer_ms = g_buf_ms;
     g_st.gain = g_gain;
+    /* 控制端口最后一道闸门（D-01）：上层（main.c 的输入框、cli.c 的 --port）
+     * 已经先行校验并给出可读错误，走到这里还把非法值带进来，只能是有人新增
+     * 调用点漏了校验 —— 明确拒绝，绝不用 htons((u_short)port) 截断后照连
+     * （99999→34463、65536→0 这种「填的和连的不是一个端口」比连不上更难查）。 */
+    if (ctrl_port < 1 || ctrl_port > 65535) {
+        snprintf(g_st.last_error, sizeof(g_st.last_error),
+                 "控制端口 %d 非法：须为 1-65535 的整数（默认 8125）", ctrl_port);
+        g_st.state = ST_ERROR;
+        elog("%s", g_st.last_error);
+        return 0;
+    }
     snprintf(g_st.peer, sizeof(g_st.peer), "%s:%d", hostport, ctrl_port);
     snprintf(g_st.session, sizeof(g_st.session), "local-%08X", (unsigned)GetTickCount());
     strcpy(g_st.codec, "Opus");
