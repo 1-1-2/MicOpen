@@ -308,9 +308,20 @@ int ui_hit_test(int x, int y)
     if (PtInRect(&g_lo.seg_theme[1], p)) return ID_THEME_DARK;
     /* 左列 */
     if (PtInRect(&g_lo.btn_conn, p))      return ID_CONN;
-    if (PtInRect(&g_lo.btn_openset, p))   return ID_OPENSET;
-    if (PtInRect(&g_lo.btn_install, p))   return ID_INSTALL;
-    if (PtInRect(&g_lo.btn_uninstall, p)) return ID_UNINSTALL;
+    /* 安装驱动 / 打开声音设置 **共用同一格**（ui_layout 里 btn_install = btn_openset）：
+     * 未就绪画「安装驱动」，就绪画「打开声音设置」。命中必须与绘制同源，否则
+     * 未装驱动的机器上点「安装驱动」会返回 ID_OPENSET——打开 Windows 声音设置
+     * （Win11 真机实测踩到，等于装不了驱动）。 */
+    if (g_ui.drv.state == DRV_READY) {
+        if (PtInRect(&g_lo.btn_openset, p)) return ID_OPENSET;
+    } else {
+        if (PtInRect(&g_lo.btn_install, p)) return ID_INSTALL;
+    }
+    if (PtInRect(&g_lo.btn_uninstall, p)) {
+        /* 未安装时该按钮画成禁用（ui_draw 里 enabled = state != NOT_INSTALLED），
+         * 命中也要一致：否则点它会真的去拉起卸载器。 */
+        return (g_ui.drv.state != DRV_NOT_INSTALLED) ? ID_UNINSTALL : ID_NONE;
+    }
     if (PtInRect(&g_lo.btn_help, p))      return ID_HELP;
     if (PtInRect(&g_lo.sw_mute, p))       return ID_MUTE;
     if (PtInRect(&g_lo.sw_mon, p))        return ID_MONITOR;
