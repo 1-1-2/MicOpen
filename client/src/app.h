@@ -157,7 +157,7 @@ typedef struct {
     int      rate;            /* 协商采样率（8k/16k/48k） */
     int      rate_out;        /* 灌给驱动的采样率（恒 48000） */
     int      buffer_ms;       /* 环形缓冲档位 26/60/120 */
-    int      gain;            /* 本地增益 0..200 (%) */
+    int      gain_db10;       /* 本地增益，单位 0.1 dB（-600..+60）；% 只在 UI 反算显示 */
     uint64_t frames;          /* 收到帧数 */
     uint64_t bytes;           /* 收到字节 */
     int      media_port;      /* 102 里上报的 UDP 媒体端口（0 = 尚未绑定） */
@@ -203,8 +203,10 @@ void eng_set_mute(int on);
  * 跨网络/过防火墙时必须固定，否则手机端无从放行。必须在 eng_start 之前调用。 */
 int  eng_set_media_port(int port);
 int  eng_media_port(void);
-/* 本地增益 0..200（%），运行中生效（滑杆拖动即时听到）。返回实际值（已钳制）。 */
-int  eng_set_gain(int gain_pct);
+/* 本地增益：单位 0.1 dB，范围 -600..+60（-60.0..+6.0 dB），运行中生效。
+ * 内部按 dB 存：倍率 = pow(10, dB/20)，-60 dB 仍是 0.001 倍（不是静音）。
+ * 静音只由 eng_set_mute() 表达，不再用"增益 0"表示。返回实际值（已钳制）。 */
+int  eng_set_gain_db(int db10);
 void eng_set_feed_mode(int mode);      /* DEV_FEED_IOCTL（默认）/ DEV_FEED_WRITE */
 
 /* 日志回调：引擎线程调用，UI 通过 PostMessage 转投 */
@@ -242,6 +244,7 @@ typedef struct {
     int         theme_set;
     int         feed_write;   /* --feed write：灌音走 WriteFile 而不是 IOCTL */
     int         console;      /* 输出是否需要走 stdout（已挂上控制台） */
+    int         gain_table;   /* --gain-table：打印增益映射表后退出（CI/回归用） */
     const wchar_t *driver_pack;  /* --driver-pack <dir> */
     int         argc;
     wchar_t   **argv;
@@ -285,7 +288,7 @@ typedef struct {
     int   hover_fade_id;       /* 正在过渡的命中 id */
     int   seg_rate;            /* 0 48k 1 16k 2 8k */
     int   buf_idx;             /* 0 26ms 1 60ms 2 120ms */
-    int   gain;                /* 0..200 % */
+    int   gain_db10;           /* 本地增益，0.1 dB（-600..+60） */
     int   dark;
     int   running;
     int   transport;           /* 0 Wi-Fi（默认且唯一已实现）/1 Wi-Fi 直连 /2 蓝牙 /3 USB */

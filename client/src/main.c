@@ -145,7 +145,7 @@ static void toggle_connection(void)
             ui_log_add("提示：驱动未就绪，将只做协议与统计，不出声", 0);
         eng_set_media_port(media);
         g_ui.running = eng_start(hostA, cp, rate_idx_of(g_ui.seg_rate),
-                                 buf_ms_of(g_ui.buf_idx), g_ui.gain);
+                                 buf_ms_of(g_ui.buf_idx), g_ui.gain_db10);
         if (g_ui.running) {
             /* 新会话：计数 +1，历史与峰值归零（D-08/D-12） */
             g_ui.conn_count++;
@@ -239,8 +239,8 @@ void ui_on_click(int id, int x, int y)
             int pos = (x - g_lo.slider.left) * 1000 / (w ? w : 1);
             if (pos < 0) { pos = 0; }
             if (pos > 1000) { pos = 1000; }
-            g_ui.gain = ui_pos_to_gain(pos);
-            eng_set_gain(g_ui.gain);   /* 实时生效（旧实现要等下次连接） */
+            g_ui.gain_db10 = ui_pos_to_db10(pos);
+            eng_set_gain_db(g_ui.gain_db10);   /* 实时生效 */
         }
     }
     ui_layout_compute();
@@ -296,7 +296,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         g_ui.br_sunken = CreateSolidBrush(g_th.sunken);
         g_ui.seg_rate = 0;
         g_ui.buf_idx = 1;
-        g_ui.gain = 100;
+        g_ui.gain_db10 = 0;      /* R-31：0.0 dB = 100%（内部一律 dB） */
         /* 开发/截图用：把折叠面板全展开，方便一眼看完整布局（正式运行默认收起） */
         if (GetEnvironmentVariableW(L"MICLINK_EXPAND_ALL", NULL, 0) > 0) {
             g_ui.exp_audio = g_ui.exp_stats = g_ui.exp_log = 1;
@@ -478,8 +478,8 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             int pos = (x - g_lo.slider.left) * 1000 / (w ? w : 1);
             if (pos < 0) { pos = 0; }
             if (pos > 1000) { pos = 1000; }
-            g_ui.gain = ui_pos_to_gain(pos);
-            eng_set_gain(g_ui.gain);   /* 实时生效（旧实现要等下次连接） */
+            g_ui.gain_db10 = ui_pos_to_db10(pos);
+            eng_set_gain_db(g_ui.gain_db10);   /* 实时生效 */
             InvalidateRect(hwnd, NULL, FALSE);
         }
         SetCursor(LoadCursorW(NULL, (LPCWSTR)((h == ID_SLIDER) ? IDC_SIZEWE :

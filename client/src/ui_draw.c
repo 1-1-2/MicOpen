@@ -706,36 +706,57 @@ void ui_breath_glow(HDC dc, RECT r)
 }
 
 /* ------------------------------------------------------- 增益 dB 刻度 */
-int ui_gain_pos(int gain)
+/* R-31：内部一律 dB（0.1 dB 精度），不再存百分比。
+ *   pos(0..1000) ↔ dB 线性：dB = -60 + 66 * pos/1000
+ *   倍率 = pow(10, dB/20) —— -60 dB 是 0.001 倍，不是 0（不再是静音）
+ * 旧实现存百分比，并在 pos→gain 里 `if (v <= 1) v = 0`：-38 dB 就掉成静音，
+ * 而且 -60…-36 dB 整段被压进 0.1%…1.6%，半条轨道不可用。 */
+static const int g_snap_db10[6]   = { 0, -120, -240, -360, -480, -600 };
+static const int g_snap_radius[6] = { 15, 8, 8, 8, 8, 8 };   /* 1.5 dB / 0.75 dB */
+
+int ui_pos_to_db10(int pos)
 {
-    /* gain%(0..200) → 位置 0..1000，按 dB 线性：dB = -60 + 66 * p */
-    double g = gain <= 0 ? 1e-4 : gain / 100.0;
-    double db = 20.0 * log10(g);
-    double p = (db + 60.0) / 66.0;
+    int db10, i;
+    if (pos < 0) pos = 0;
+    if (pos > 1000) pos = 1000;
+    db10 = -600 + (660 * pos) / 1000;
+    /* R-32：只对"落点"吸附。每个新 pos 都重新算，所以继续拖就能离开吸附区，
+     * 不会粘死在刻度上（不做累积吸附）。 */
+    for (i = 0; i < 6; i++)
+        if (db10 - g_snap_db10[i] <= g_snap_radius[i] &&
+            g_snap_db10[i] - db10 <= g_snap_radius[i])
+            return g_snap_db10[i];
+    return db10;
+}
+
+int ui_gain_pos(int db10)
+{
+    int p;
+    if (db10 < GAIN_DB10_MIN) db10 = GAIN_DB10_MIN;
+    if (db10 > GAIN_DB10_MAX) db10 = GAIN_DB10_MAX;
+    p = ((db10 + 600) * 1000) / 660;
     if (p < 0) p = 0;
-    if (p > 1) p = 1;
-    return (int)(p * 1000.0 + 0.5);
+    if (p > 1000) p = 1000;
+    return p;
 }
 
-int ui_pos_to_gain(int pos)
+int ui_gain_snap_target(int db10)
 {
-    double p = pos / 1000.0;
-    double db = -60.0 + 66.0 * p;
-    double g = pow(10.0, db / 20.0) * 100.0;
-    int v = (int)(g + 0.5);
-    if (v <= 1) v = 0;
-    if (v > 200) v = 200;
-    return v;
+    int i;
+    for (i = 0; i < 6; i++)
+        if (db10 == g_snap_db10[i]) return g_snap_db10[i];
+    return 1000;                       /* 未吸附（1000 不是合法 dB10） */
 }
 
-void ui_gain_reading(wchar_t *out, int cap, int gain)
+void ui_gain_reading(wchar_t *out, int cap, int db10)
 {
-    /* 读数格式「增益 N% · ±X.X dB」；±0.5 dB 内吸附到 100% / 0.0 dB（D-07） */
-    double db = (gain > 0) ? 20.0 * log10(gain / 100.0) : -96.0;
-    if (gain > 0 && fabs(db) <= 0.5) { gain = 100; db = 0.0; }
-    if (gain <= 0) swprintf(out, cap, L"增益 静音");
-    else if (fabs(db) < 0.05) swprintf(out, cap, L"增益 %d%% · 0.0 dB", gain);
-    else swprintf(out, cap, L"增益 %d%% · %+.1f dB", gain, db);
+    double db = (double)db10 / 10.0;
+    double pct = pow(10.0, db / 20.0) * 100.0;
+    if (!out || cap <= 0) return;
+    /* % 只用于显示：由 dB 反算；小于 10% 时给一位小数，别把 0.1% 显示成 0% */
+    if (pct < 10.0) swprintf(out, cap, L"增益 %.1f%% · %+.1f dB", pct, db);
+    else            swprintf(out, cap, L"增益 %d%% · %+.1f dB", (int)(pct + 0.5), db);
+    if (db10 == 0) swprintf(out, cap, L"增益 100%% · 0.0 dB");
 }
 
 /* ------------------------------------------------------------ 业务卡片 */

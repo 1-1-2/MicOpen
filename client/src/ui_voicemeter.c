@@ -380,7 +380,7 @@ static void draw_gain(HDC dc, RECT card)
     int lw, rw, avail = x1 - x0;
     RECT lr;
 
-    ui_gain_reading(rd, 48, g_ui.gain);
+    ui_gain_reading(rd, 48, g_ui.gain_db10);
     rw = ui_measure_text(rd, ui_font(14, FW_NORMAL, 1));
     lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0));
     if (lw + rw + sd(12) > avail) { lbl = lbl_mid;  lw = ui_measure_text(lbl, ui_font(14, FW_NORMAL, 0)); }
@@ -392,7 +392,16 @@ static void draw_gain(HDC dc, RECT card)
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
     /* 滑杆：轨道 6 胶囊 bg-sunken、填充 accent、拇指 16 白底 Rfull */
-    ui_slider(dc, g_lo.slider, ui_gain_pos(g_ui.gain), ID_SLIDER);
+    ui_slider(dc, g_lo.slider, ui_gain_pos(g_ui.gain_db10), ID_SLIDER);
+    /* R-32：吸附时对应刻度高亮 8px（accent 短竖线，画在滑杆上方） */
+    {
+        int sn = ui_gain_snap_target(g_ui.gain_db10);
+        if (sn != 1000) {
+            int sx = x0 + (x1 - x0) * ui_gain_pos(sn) / 1000;
+            ui_line(dc, sx, g_lo.slider.top - sd(7), sx,
+                    g_lo.slider.top - sd(7) + sd(8), g_th.accent, 2.0, 255);
+        }
+    }
     /* 0 dB 刻度：90.9% 处 1.5×12 accent 竖线（D-07） */
     {
         int zx = x0 + (x1 - x0) * 909 / 1000;

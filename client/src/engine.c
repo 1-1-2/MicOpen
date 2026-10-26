@@ -43,7 +43,7 @@ static LogFn         g_log;
 
 static int           g_rate_idx = 2;      /* 2=48k 1=16k 0=8k */
 static int           g_buf_ms   = 60;
-static volatile LONG g_gain     = 100;     /* UI 线程可随时改（eng_set_gain） */
+static volatile LONG g_gain_db10 = 0;      /* 本地增益，0.1 dB（eng_set_gain_db） */
 static DevFeedMode   g_mode     = DEV_FEED_IOCTL;
 static volatile LONG g_mute;               /* D-06：静音（灌音前零填充） */
 
@@ -135,12 +135,17 @@ static void upsample_int(const int16_t *in, int n, int16_t *out, int factor)
     }
 }
 
-static void apply_gain(int16_t *p, int n, int gain_pct)
+/* 本地增益（R-31）：按 dB 算倍率 pow(10, dB/20)，-60 dB = 0.001 倍（不是 0）。
+ * 旧实现存百分比并在 pos→gain 里做 `v<=1 → 0`，-38 dB 就掉成静音，
+ * 而且 -60…-36 dB 整段被压进 0.1%…1.6% 的窄区间，半条轨道不可用。 */
+static void apply_gain(int16_t *p, int n)
 {
+    double m = pow(10.0, (double)g_gain_db10 / 200.0);
     int i;
-    if (gain_pct == 100) return;
+    if (n <= 0) return;
+    if (g_gain_db10 == 0) return;              /* 0.0 dB = 原样，省一次乘 */
     for (i = 0; i < n; i++) {
-        int v = ((int)p[i] * gain_pct) / 100;
+        int v = (int)((double)p[i] * m + (m >= 0 ? 0.5 : -0.5));
         if (v > 32767) v = 32767;
         if (v < -32768) v = -32768;
         p[i] = (int16_t)v;
@@ -392,7 +397,7 @@ static void on_udp_frame(const unsigned char *buf, int n)
     upsample_int(g_decbuf, samples, g_feedbuf, factor);
     samples *= factor;                       /* 正好 960（20 ms @48k） */
     apply_vol(g_feedbuf, samples, vol);      /* 先协议 vol（含饱和钳制） */
-    apply_gain(g_feedbuf, samples, g_gain);  /* 再本地增益，顺序固定 */
+    apply_gain(g_feedbuf, samples);          /* 再本地增益（dB→倍率），顺序固定 */
 
     /* D-06 静音：灌入驱动前把 PCM 零填充。电平表照常显示输入电平
      * （上面的 rms/level 统计在静音之前就算完了），静音只截输出。 */
@@ -620,10 +625,10 @@ int eng_media_port(void) { return g_media_port_req; }
 
 /* 本地增益：0..200（%），运行中可随时改（滑杆拖动即时生效）。
  * 旧实现只在 eng_start() 里赋一次值，滑杆要等下次连接才起作用。 */
-int eng_set_gain(int gain_pct)
+int eng_set_gain_db(int db10)
 {
-    int g = (gain_pct < 0) ? 0 : (gain_pct > 200) ? 200 : gain_pct;
-    InterlockedExchange(&g_gain, g);
+    int g = (db10 < -600) ? -600 : (db10 > 60) ? 60 : db10;
+    InterlockedExchange(&g_gain_db10, g);
     return g;
 }
 
@@ -641,14 +646,14 @@ static int cap_from_ms(int ms)
     return DEV_CAP_120MS;
 }
 
-int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, int gain)
+int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, int gain_db10)
 {
     if (g_run) return 0;
     if (!g_cs_inited) { InitializeCriticalSection(&g_cs); g_cs_inited = 1; }
 
     g_rate_idx = (rate_idx >= 0 && rate_idx <= 2) ? rate_idx : 2;
     g_buf_ms = (buffer_ms == 26 || buffer_ms == 60 || buffer_ms == 120) ? buffer_ms : 60;
-    eng_set_gain(gain);
+    eng_set_gain_db(gain_db10);
 
     EnterCriticalSection(&g_cs);
     memset(&g_st, 0, sizeof(g_st));
@@ -670,7 +675,7 @@ int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, 
     g_st.rate = g_rate_idx == 0 ? 8000 : g_rate_idx == 1 ? 16000 : 48000;
     g_st.rate_out = DEV_RATE;
     g_st.buffer_ms = g_buf_ms;
-    g_st.gain = g_gain;
+    g_st.gain_db10 = g_gain_db10;
     /* 控制端口最后一道闸门（D-01）：上层（main.c 的输入框、cli.c 的 --port）
      * 已经先行校验并给出可读错误，走到这里还把非法值带进来，只能是有人新增
      * 调用点漏了校验 —— 明确拒绝，绝不用 htons((u_short)port) 截断后照连

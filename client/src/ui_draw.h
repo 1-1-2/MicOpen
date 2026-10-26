@@ -74,10 +74,16 @@ void  ui_panel_hdr(HDC dc, RECT r, const wchar_t *title, const wchar_t *sum,
  * 与 Android infiniteTransition 同参数；只在会话运行/连接中调用。 */
 void  ui_breath_glow(HDC dc, RECT r);
 
-/* 增益 ↔ 滑杆位置：dB 刻度（位置 0 = -60dB/0%，0.909 = 0dB/100%，1 = +6dB/200%） */
-int   ui_gain_pos(int gain);
-int   ui_pos_to_gain(int pos);
-void  ui_gain_reading(wchar_t *out, int cap, int gain);  /* 「增益 N% · ±X.X dB」±0.5dB 吸附 */
+/* 增益（R-31/R-32）：内部一律 0.1 dB（-600..+60），% 只在读数里反算显示。
+ * 轨道 pos(0..1000) ↔ dB 线性：dB = -60 + 66*pos/1000；倍率 = pow(10,dB/20)，
+ * -60 dB 仍是 0.001 倍（不是静音）；静音只由静音开关表达。
+ * 吸附：0 dB ±1.5 dB、-12/-24/-36/-48/-60 各 ±0.75 dB；只吸落点，继续拖即可脱离。 */
+#define GAIN_DB10_MIN  (-600)
+#define GAIN_DB10_MAX  (60)
+int   ui_gain_pos(int db10);                 /* dB → 滑杆位置 0..1000 */
+int   ui_pos_to_db10(int pos);               /* 位置 → dB（含吸附） */
+int   ui_gain_snap_target(int db10);         /* 吸到哪个刻度（dB10）；未吸附返回 1000 */
+void  ui_gain_reading(wchar_t *out, int cap, int db10);   /* 「增益 N% · −12.0 dB」 */
 
 /* 各业务卡片的绘制（放在这里而不是 main.c，是为了让 main.c 保持成薄壳：
  * 事件分发 + 模块装配，不掺绘制细节） */

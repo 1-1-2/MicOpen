@@ -14,11 +14,13 @@
 #include "devio.h"
 #include "opusdec.h"
 #include "singleinst.h"
+#include "ui_draw.h"      /* --gain-table 复用产品的增益映射函数 */
 #include <shellapi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <math.h>
 
 static int g_exit_code = CLI_EXIT_OK;
 static int g_has_console;
@@ -175,6 +177,19 @@ static int parse_int(const wchar_t *s, int *v)
     return 1;
 }
 
+/* R-31：--gain 对外仍按百分比（0..200，向后兼容旧脚本），内部一律 0.1 dB。
+ * 100% = 0.0 dB，50% ≈ -6.0 dB，200% ≈ +6.0 dB；0% 落到 -60 dB（0.001 倍，
+ * 不是静音 —— 静音只由静音开关表达）。 */
+static int pct_to_db10(int pct)
+{
+    double db;
+    if (pct <= 0) return -600;
+    db = 20.0 * log10((double)pct / 100.0);
+    if (db < -60.0) db = -60.0;
+    if (db > 6.0) db = 6.0;
+    return (int)(db * 10.0 + (db >= 0 ? 0.5 : -0.5));
+}
+
 /* 端口取值校验，GUI 与 CLI 共用（D-01）。详见 cli.h 的返回值约定。
  *
  * 为什么不直接 _wtoi：
@@ -293,6 +308,7 @@ int cli_parse(CliArgs *a, int argc, wchar_t **argv)
             a->buffer_ms = v;
             continue;
         }
+        if (!_wcsicmp(s, L"gain-table")) { a->gain_table = 1; continue; }
         if (!_wcsicmp(s, L"gain")) {
             int v;
             if (!need_value(argc, argv, i)) return 0;
@@ -449,6 +465,41 @@ int cli_run(CliArgs *a)
         g_exit_code = CLI_EXIT_OK;
         return 1;
     }
+    if (a->gain_table) {
+        /* R-31 回归用：pos(0..1000) ↔ dB ↔ 倍率。钉住"单调 + -60 dB 不是 0"。
+         * 打印的是**产品同一份**函数（ui_pos_to_db10 / ui_gain_pos / ui_gain_reading）。 */
+        int pos;
+        char line[160];
+        cli_ensure_console(1);
+        out("pos\tdB\t倍率\t读数\n");
+        for (pos = 0; pos <= 1000; pos += 50) {
+            int db10 = ui_pos_to_db10(pos);
+            double m = pow(10.0, db10 / 200.0);
+            wchar_t rd[64];
+            char u8[128];
+            ui_gain_reading(rd, 64, db10);
+            WideCharToMultiByte(CP_UTF8, 0, rd, -1, u8, sizeof(u8), NULL, NULL);
+            _snprintf(line, sizeof(line), "%d\t%.1f\t%.4f\t%s\n",
+                      pos, db10 / 10.0, m, u8);
+            out(line);
+        }
+        {   /* 单调性 + 端点断言 */
+            int prev = -10000, ok = 1, p2;
+            for (p2 = 0; p2 <= 1000; p2++) {
+                int d = ui_pos_to_db10(p2);
+                if (d < prev) ok = 0;
+                prev = d;
+            }
+            _snprintf(line, sizeof(line),
+                      "CHECK monotonic=%s  db(pos=0)=%.1f  mul(pos=0)=%.4f  db(pos=1000)=%.1f\n",
+                      ok ? "YES" : "NO", ui_pos_to_db10(0) / 10.0,
+                      pow(10.0, ui_pos_to_db10(0) / 200.0),
+                      ui_pos_to_db10(1000) / 10.0);
+            out(line);
+        }
+        g_exit_code = CLI_EXIT_OK;
+        return 1;
+    }
     if (a->status) return do_status(a);
     if (a->install || a->uninstall) return do_driver_op(a);
 
@@ -476,7 +527,7 @@ int cli_run(CliArgs *a)
         } else {
             eng_set_media_port(0);
         }
-        if (!eng_start(host, a->port, a->rate_idx, a->buffer_ms, a->gain)) {
+        if (!eng_start(host, a->port, a->rate_idx, a->buffer_ms, pct_to_db10(a->gain))) {
             out("引擎启动失败\n");
             g_exit_code = CLI_EXIT_CONNECT;
             return 1;
@@ -529,5 +580,5 @@ void cli_apply_to_ui(const CliArgs *a)
     if (a->buffer_ms == 26) g_ui.buf_idx = 0;
     else if (a->buffer_ms == 120) g_ui.buf_idx = 2;
     else g_ui.buf_idx = 1;
-    if (a->gain != 100) g_ui.gain = a->gain;
+    if (a->gain != 100) g_ui.gain_db10 = pct_to_db10(a->gain);
 }
