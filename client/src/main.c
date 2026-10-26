@@ -746,8 +746,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
     {
         RECT wr = { 0, 0, g_ui.w, g_ui.h };
         AdjustWindowRectEx(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0);
+        /* R-29：必须带 WS_CLIPCHILDREN —— 否则 30fps 整窗重绘时父窗口会刷掉
+         * EDIT 子控件区域，鼠标一动输入框里的文字就闪（子控件反复重画）。 */
         hwnd = CreateWindowExW(0, L"WomicLinkWnd", L"MicLink",
-                               WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+                               WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                               CW_USEDEFAULT, CW_USEDEFAULT,
                                wr.right - wr.left, wr.bottom - wr.top,
                                NULL, NULL, hInst, NULL);
     }
