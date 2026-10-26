@@ -1310,8 +1310,20 @@ void ui_draw_statusbar(HDC dc)
     ui_fill_round(dc, r, 0, g_th.sunken, 255);
     ui_fill_round(dc, ln, 0, g_th.stroke, 255);
 
+    /* R-28：右段 40% 留给「最新一条事件」，左段（状态徽标 … 时长）夹在 58% 内，
+     * 两段各画各的，互不越界。 */
+    {
+        int sp = g_ui.w * 58 / 100;
+        int saved_l = ui_clip_push(dc, (RECT){ 0, r.top, sp, r.bottom });
+        (void)saved_l;   /* 左段裁剪在函数末尾 pop，见下 */
+
     /* [状态徽标] · 传输方式 · 抖动 XX ms · 丢包 X.X% · 音量 ±dB · 时长 MM:SS（缺项「—」） */
-    if (g_ui.running && s->state == ST_STREAMING) {
+    if (g_ui.autorec && g_ui.rc_armed && g_ui.rc_count > 0) {
+        /* R-27：重连期间徽标直接显示次数，比另起一段更容易看见 */
+        swprintf(item, 128, L"重连中 (第 %d 次)", g_ui.rc_count);
+        badge_txt = item; badge_fg = g_th.warn; badge_bg = g_th.warn_12;
+        badge_txt = item;
+    } else if (g_ui.running && s->state == ST_STREAMING) {
         badge_txt = L"已连接"; badge_fg = g_th.ok; badge_bg = g_th.ok_12;
     } else if (g_ui.running) {
         badge_txt = L"连接中"; badge_fg = g_th.accent; badge_bg = g_th.acc_12;
@@ -1396,6 +1408,36 @@ void ui_draw_statusbar(HDC dc)
     }
     ui_text(dc, (RECT){ x, r.top, x + sd(80), r.bottom }, item, mf, g_th.text,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        ui_clip_pop(dc, saved_l);
+    }
+
+    /* ---- R-28 右段：最新一条事件（HH:MM:SS + 级别 + 消息，单行省略号） ----
+     * 级别色只用于左侧 3px 竖条与级别词；只在被下一条替换时更新（取环形里最新）。 */
+    if (ui_log_count() > 0) {
+        const LogLine *L = ui_log_get(0);
+        int rx = g_ui.w * 60 / 100 + sd(4);
+        int savedr = ui_clip_push(dc, (RECT){ g_ui.w * 60 / 100, r.top, g_ui.w - sd(8), r.bottom });
+        static const wchar_t *lvw[4] = { L"INFO", L"ERROR", L"OK", L"WARN" };
+        wchar_t msg[LOG_LEN];
+        COLORREF lc;
+        int k = (L->kind < 0 || L->kind > 3) ? 0 : L->kind;
+        RECT bar = { rx, r.top + sd(7), rx + sd(3), r.bottom - sd(7) };
+        RECT tr, vr, mr;
+        lc = (k == 1) ? g_th.err : (k == 2) ? g_th.ok : (k == 3) ? g_th.warn : g_th.text_mute;
+        MultiByteToWideChar(CP_UTF8, 0, L->text, -1, msg, LOG_LEN);
+        msg[LOG_LEN - 1] = 0;
+        ui_fill_round(dc, bar, sd(1), lc, 255);
+        SetRect(&tr, rx + sd(9), r.top, rx + sd(9) + sd(84), r.bottom);
+        ui_text(dc, tr, L->ts, ui_font(11, FW_NORMAL, 1), g_th.text_dim,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        SetRect(&vr, rx + sd(97), r.top, rx + sd(97) + sd(48), r.bottom);
+        ui_text(dc, vr, lvw[k], ui_font(11, FW_SEMIBOLD, 1), lc,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        SetRect(&mr, rx + sd(149), r.top, g_ui.w - sd(8), r.bottom);
+        ui_text(dc, mr, msg, ui_font(12, FW_NORMAL, 0), g_th.text,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        ui_clip_pop(dc, savedr);
+    }
 }
 
 /* ------------------------------------------------------- 整窗绘制 */
