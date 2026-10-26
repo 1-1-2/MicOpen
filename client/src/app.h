@@ -321,9 +321,6 @@ typedef struct {
     EngineStats st;            /* 每帧快照（电平/环形/横条用） */
     EngineStats st_disp;       /* 500ms 快照（状态栏与面板摘要用，D-14） */
     DrvStatus drv;
-    wchar_t   setup_path[MAX_PATH];   /* R-42：扫描到的官方安装包（空 = 没有） */
-    wchar_t   setup_name[MAX_PATH];
-    DWORD     import_done_at;         /* 安装器返回 0 的时刻（5 s 内等 READY） */
     int   tick;
 } Ui;
 

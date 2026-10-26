@@ -5,11 +5,13 @@
 #       python3（生成驱动包与图标；驱动产物不入库，干净检出时现场生成，见下）
 #       deps/opus/（首次跑 tools/build_opus.sh；缺失时自动降级为 opus.dll 动态加载）
 #
-# 用法：./build.sh [all|app|drvinst|test]
-#   all     （默认）两个产物都编
-#   app     只编 build/womic.exe（应用本体：GUI/CLI/网络层，**不含第三方二进制**）
-#   drvinst 只编 build/womic-drvinst.exe（驱动安装器：唯一携带驱动包的产物）
-#   test    只编 build/test_drvpkg.exe（驱动包 inflate 字节级自检）
+# 用法：./build.sh [all|app|drvinst|drvinst-dev|test|probe]
+#   all          （默认）两个发布产物都编
+#   app          只编 build/womic.exe（应用本体：GUI/CLI/网络层，**不含第三方二进制**）
+#   drvinst      只编 build/womic-drvinst.exe（驱动安装器：唯一携带驱动包的产物）
+#   drvinst-dev  只编 build/womic-drvinst-dev.exe（**未启用的开发分支**：
+#                 多带一个「从官方安装包解包驱动」的能力，见下）
+#   test         只编 build/test_drvpkg.exe（驱动包 inflate 字节级自检）
 #
 # 为什么要两个 exe：驱动三件套是第三方已签名二进制（Wolicheng，WHCP 签名）。
 # 塞进应用本体 == 每次分发应用都在分发第三方驱动，合规面过大。拆开后：
@@ -24,8 +26,9 @@
 #   两者都只依赖 Windows 自带 DLL，都内嵌 VS_VERSION_INFO / 图标 / manifest。
 #
 # 体积预算分开设（安装器不沿用应用那套）：
-#   SIZE_BUDGET_APP      应用预算，默认 352 KiB（R-42 后实测约 337 KB，与驱动有无无关）
-#   SIZE_BUDGET_DRVINST  安装器预算，默认 256 KiB（内嵌三套驱动时实测约 209 KB）
+#   SIZE_BUDGET_APP          应用预算，默认 352 KiB（R-42 撤出 app 侧后回到约 331 KB）
+#   SIZE_BUDGET_DRVINST      安装器预算，默认 256 KiB（内嵌三套驱动时实测约 209 KB）
+#   SIZE_BUDGET_DRVINST_DEV  开发分支安装器预算，默认 320 KiB（多带解包模块）
 #
 # 自检：每个产物都要过「体积预算 + 导入表只允许系统 DLL + 资源面断言」。
 set -euo pipefail
@@ -38,13 +41,15 @@ MODE=${1:-all}
 
 APP_OUT=build/womic.exe
 DRVINST_OUT=build/womic-drvinst.exe
-SIZE_BUDGET_APP=${SIZE_BUDGET_APP:-360448}      # 352 KiB（R-25/R-24：字体字形探测+电平配色+CLIP+卡片裁剪；R-42：新增 drvimport 模块=安装包扫描 + 7z/NSIS 两条提取路径 + 三件套整理，实测 337 KiB）
+DRVINST_DEV_OUT=build/womic-drvinst-dev.exe
+SIZE_BUDGET_APP=${SIZE_BUDGET_APP:-360448}      # 352 KiB（R-25/R-24：字体字形探测+电平配色+CLIP+卡片裁剪；R-42 撤出 app 侧后体积回落）
 SIZE_BUDGET_DRVINST=${SIZE_BUDGET_DRVINST:-262144}  # 256 KiB
+SIZE_BUDGET_DRVINST_DEV=${SIZE_BUDGET_DRVINST_DEV:-327680}  # 320 KiB
 
 case "$MODE" in
-    all|app|drvinst|test|probe) ;;
+    all|app|drvinst|drvinst-dev|test|probe) ;;
     *)
-        echo "用法: $0 [all|app|drvinst|test|probe]" >&2
+        echo "用法: $0 [all|app|drvinst|drvinst-dev|test|probe]" >&2
         exit 1
         ;;
 esac
@@ -106,7 +111,6 @@ APP_SRC=(
     src/ui_voicemeter.c
     src/ui_help.c
     src/drvbridge.c
-    src/drvimport.c
 )
 APP_LIBS=(
     -lgdi32 -luser32 -lws2_32 -luxtheme -ldwmapi -lshell32 -lole32 -lwinmm
@@ -122,6 +126,16 @@ DRVINST_SRC=(
 )
 DRVINST_LIBS=(
     -lsetupapi -lnewdev -lcrypt32 -ladvapi32 -lole32 -lshell32
+)
+# 开发分支安装器 = 发布版安装器 + 「从官方安装包解包驱动」模块（宏门控）。
+# 源清单与发布版完全一致，只多一个 drvimport_dev.c；产物名也独立，
+# 绝不覆盖 build/womic-drvinst.exe（发布产物保持干净）。
+DRVINST_DEV_SRC=(
+    src/drvinst_main.c
+    src/drvinst.c
+    src/drvpkg.c
+    src/devio.c
+    src/drvimport_dev.c
 )
 
 # ------------------------------------------------------------ 单测模式
@@ -227,6 +241,24 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "drvinst" ]; then
         "${DRVINST_LIBS[@]}"
     check_target "$DRVINST_OUT" "$SIZE_BUDGET_DRVINST" drvinst || {
         echo "!! $DRVINST_OUT 自检未通过" >&2; exit 1; }
+fi
+
+# 开发分支安装器：/import-setup 从官方安装包解包驱动（默认不启用、默认构建里不存在）
+if [ "$MODE" = "drvinst-dev" ]; then
+    echo "==> 编译链接 $DRVINST_DEV_OUT （开发分支，宏门控 MICLINK_DRVIMPORT_DEV）"
+    "$CC" -Os -s -mconsole \
+        -std=c99 -Wall -Wno-unused-function \
+        -D_WIN32_WINNT=0x0A00 \
+        -DMICLINK_DRVIMPORT_DEV=1 \
+        -Wl,--gc-sections \
+        -o "$DRVINST_DEV_OUT" \
+        "${DRVINST_DEV_SRC[@]}" \
+        build/drvinst_res.o \
+        "${DRVINST_LIBS[@]}"
+    check_target "$DRVINST_DEV_OUT" "$SIZE_BUDGET_DRVINST_DEV" drvinst-dev || {
+        echo "!! $DRVINST_DEV_OUT 自检未通过" >&2; exit 1; }
+    echo "提示: 该产物带 /import-setup（从官方安装包解包驱动），仅供开发调试；"
+    echo "      正式分发请用 build/womic-drvinst.exe（不含该能力）。"
 fi
 
 echo "OK    : 体积、导入表与资源面自检全部通过"

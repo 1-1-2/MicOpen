@@ -14,7 +14,6 @@
 #include "cli.h"
 #include "drvinst.h"
 #include "drvbridge.h"
-#include "drvimport.h"   /* R-42：从官方安装包导入驱动 */
 #include "devio.h"
 #include "opusdec.h"
 #include "singleinst.h"
@@ -39,32 +38,6 @@ static void eng_log_cb(const char *line, int kind)
     strncpy(copy, line, LOG_LEN - 1);
     copy[LOG_LEN - 1] = 0;
     if (!PostMessageW(g_ui.hwnd, WM_APP + 1, (WPARAM)copy, (LPARAM)kind)) free(copy);
-}
-
-/* R-42：导入线程的日志也走同一条通道（WM_APP+1 + lParam 带级别），
- * 这样"识别/解包/复制/安装器退出码"每一步都实时滚进事件面板与状态栏。 */
-static void import_log_cb(const char *line, int kind)
-{
-    char *copy = (char *)malloc(LOG_LEN);
-    if (!copy) return;
-    strncpy(copy, line, LOG_LEN - 1);
-    copy[LOG_LEN - 1] = 0;
-    if (!PostMessageW(g_ui.hwnd, WM_APP + 1, (WPARAM)copy, (LPARAM)kind)) free(copy);
-}
-
-/* 扫描官方安装包并把结果缓存进 g_ui（找不到就清空） */
-static void rescan_setup(void)
-{
-    wchar_t path[MAX_PATH * 2], name[MAX_PATH];
-    if (drvimport_scan(path, MAX_PATH * 2, name, MAX_PATH)) {
-        wcsncpy(g_ui.setup_path, path, MAX_PATH - 1);
-        g_ui.setup_path[MAX_PATH - 1] = 0;
-        wcsncpy(g_ui.setup_name, name, MAX_PATH - 1);
-        g_ui.setup_name[MAX_PATH - 1] = 0;
-    } else {
-        g_ui.setup_path[0] = 0;
-        g_ui.setup_name[0] = 0;
-    }
 }
 
 /* ---------------------------------------------------------------- 主题 */
@@ -266,18 +239,6 @@ void ui_on_click(int id, int x, int y)
     case ID_THEME_DARK:  if (!g_ui.dark) ui_toggle_theme(); return;
     case ID_CONN:  toggle_connection(); return;
     case ID_INSTALL:
-        /* R-42：同目录有官方安装包 → 从它导入（后台线程，UI 不阻塞）；
-         * 没有就保持原样（空包提示 + 建议把安装器/驱动包放同目录）。 */
-        if (g_ui.setup_path[0] && !drvimport_busy()) {
-            if (drvimport_begin(g_ui.setup_path, import_log_cb)) {
-                g_ui.import_done_at = 0;
-                ui_log_add("开始从官方安装包导入驱动（后台解包，稍候）", 0);
-            } else {
-                ui_log_add("导入任务已在运行中", 3);
-            }
-            g_dirty = 1;
-            return;
-        }
         request_driver_op(1);
         return;
     case ID_UNINSTALL: request_driver_op(0); return;
@@ -565,41 +526,12 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             g_dirty = 1;
         }
 
-        /* R-42：导入线程的结果跟进。
-         * 成功判定 = 安装器退出码 0 **且** 5 s 内驱动变 READY（drv_detect 每 2 s
-         * 复检一次，所以这里只是等它）；否则 WARN 提示重启，并保留失败现场。 */
-        {
-            int r = drvimport_result();
-            if (r == 1) {
-                if (!g_ui.import_done_at) {
-                    g_ui.import_done_at = now;
-                    if (!g_ui.import_done_at) g_ui.import_done_at = 1;   /* 防 0 语义 */
-                } else if (g_ui.drv.state == DRV_READY) {
-                    ui_log_add("驱动已导入（来源：官方安装包）", 2);
-                    drvimport_cleanup();       /* 成功后删临时目录 */
-                    g_ui.import_done_at = 0;
-                    g_dirty = 1;
-                } else if (now - g_ui.import_done_at > 5000) {
-                    ui_log_add("安装器返回 0，但驱动 5 秒内未就绪：请重启电脑后重试"
-                               "（导入现场保留在临时目录，见事件面板）", 3);
-                    drvimport_ack();           /* 不删现场 */
-                    g_ui.import_done_at = 0;
-                    g_dirty = 1;
-                }
-            } else if (r == 2) {
-                drvimport_ack();               /* 失败：日志已由模块打印，保留现场 */
-                g_ui.import_done_at = 0;
-                g_dirty = 1;
-            }
-        }
-
         g_ui.tick++;
         if (g_ui.tick % 125 == 0) {          /* ~2 s 复检一次驱动状态 */
             DrvStatus d;
             drv_detect(&d, 0);
             if (d.state != g_ui.drv.state) {
                 g_ui.drv = d;
-                rescan_setup();               /* R-42：装完/卸完可能多了或少了安装包 */
                 ui_log_add(d.state == DRV_READY ? "虚拟麦克风已就绪" : "驱动状态变化", 0);
                 g_dirty = 1;
             } else {
@@ -914,7 +846,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
     /* 驱动检测放在窗口创建之后：L1 会打开设备句柄（全进程只开一次），
      * 打开失败不阻塞界面，用户可点“安装驱动”。 */
     drv_detect(&g_ui.drv, 1);
-    rescan_setup();                        /* R-42：同目录有没有官方安装包 */
     if (g_ui.drv.state == DRV_READY)
         ui_log_add("虚拟麦克风驱动已就绪", 2);
     else {

@@ -1048,20 +1048,7 @@ void ui_draw_drv_card(HDC dc)
             : L"未检测到虚拟麦克风驱动。先装驱动，才能把手机麦克风送进 Windows。";
         ui_text(dc, sr, why, ui_font(12, FW_NORMAL, 0), g_th.text_dim,
                 DT_LEFT | DT_TOP | DT_WORDBREAK);
-        /* R-42：同目录扫到官方安装包 → 明示来源，并把主按钮改成导入（仍是 primary）；
-         * 找不到就保持「安装驱动」+ 原有空包提示路径。 */
-        if (g_ui.setup_name[0]) {
-            wchar_t line[300];
-            RECT lr = { r.left + ui_pad(), g_lo.btn_install.top - sd(19),
-                        r.right - ui_pad(), g_lo.btn_install.top - sd(3) };
-            swprintf(line, 300, L"检测到官方安装包：%ls", g_ui.setup_name);
-            ui_text(dc, lr, line, ui_font(12, FW_NORMAL, 0), g_th.text_dim,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            ui_button(dc, g_lo.btn_install, L"从安装包导入驱动", ID_INSTALL,
-                      BTN_PRIMARY, 1);
-        } else {
-            ui_button(dc, g_lo.btn_install, L"安装驱动", ID_INSTALL, BTN_PRIMARY, 1);
-        }
+        ui_button(dc, g_lo.btn_install, L"安装驱动", ID_INSTALL, BTN_PRIMARY, 1);
     }
 }
 

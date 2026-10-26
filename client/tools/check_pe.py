@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
-"""产物资源自检 —— 两个二进制各自的「分发面」断言。
+"""产物资源自检 —— 各二进制的「分发面」断言。
 
 用法：
   python3 tools/check_pe.py <exe> app
   python3 tools/check_pe.py <exe> drvinst
+  python3 tools/check_pe.py <exe> drvinst-dev
 
 判据（读 PE 节表 + 只在 .rsrc 的原始字节范围内找标识，避免把 .rdata 里的
 同名字符串常量算进来）：
 
-  app     · .rsrc 非空、VS_VERSION_INFO 已嵌入、产品名存在
-          · manifest 必须是 asInvoker（应用本体日常不弹 UAC）
-          · **.rsrc 里不许出现 MICLDRV1** —— 应用本体必须一个第三方驱动字节都不带
-  drvinst · .rsrc 非空、VS_VERSION_INFO 已嵌入、产品名存在
-          · manifest 必须是 requireAdministrator（双击自动申请提权）
-          · **.rsrc 里必须有 MICLDRV1**，且头合法（ver=1, count<=8）
-            count=0 是源码树的空包兜底（合法形态，只提示不判失败）
+  app         · .rsrc 非空、VS_VERSION_INFO 已嵌入、产品名存在
+              · manifest 必须是 asInvoker（应用本体日常不弹 UAC）
+              · **.rsrc 里不许出现 MICLDRV1** —— 应用本体必须一个第三方驱动字节都不带
+              · **整份二进制不许出现解包功能的标识串** —— 应用侧不带解包能力（R-42 改道）
+  drvinst     · .rsrc 非空、VS_VERSION_INFO 已嵌入、产品名存在
+              · manifest 必须是 requireAdministrator（双击自动申请提权）
+              · **.rsrc 里必须有 MICLDRV1**，且头合法（ver=1, count<=8）
+                count=0 是源码树的空包兜底（合法形态，只提示不判失败）
+              · **整份二进制不许出现解包功能的标识串** —— 发布版安装器不带该能力
+  drvinst-dev · 与 drvinst 相同的外壳要求
+              · **必须出现解包功能的标识串** —— 开发分支确实带上了这个能力
+                （否则宏没生效，/import-setup 会变成空壳）
 
 退出码：0 = 全部通过；1 = 有判据不通过。
 """
@@ -24,6 +30,13 @@ import struct
 import sys
 
 MAGIC = b"MICLDRV1"
+
+# 解包**实现**的标识串：默认构建里必须**不存在**，开发分支里必须**存在**。
+# 注意：命令名 "import-setup" 不算 —— 发布版安装器也要识别这个参数并给出
+# 明确提示与下一步（不能静默忽略），所以命令名必然出现在发布版里。
+# 这里查的是「解包能力本身」：解包器定位环境变量、7z 的 -aou 参数、
+# 以及开发分支独有的帮助条目（发布版 help 里不列这条命令）。
+DEV_MARKERS = ["MICLINK_7Z", "x -y -aou", "/import-setup <exe>"]
 
 
 def fail(msg: str) -> None:
@@ -52,7 +65,7 @@ def sections(data: bytes) -> list[tuple[str, int, int, int]]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3 or argv[2] not in ("app", "drvinst"):
+    if len(argv) != 3 or argv[2] not in ("app", "drvinst", "drvinst-dev"):
         print(__doc__)
         return 1
     path, kind = argv[1], argv[2]
@@ -88,6 +101,10 @@ def main(argv: list[str]) -> int:
         chk(hit < 0, "应用本体未内置驱动包（.rsrc 内无 MICLDRV1）")
         if hit >= 0:
             print("      ↑ 见 res/app.rc：101 RCDATA drvpkg.bin 不许回去")
+        # 应用侧不得带解包能力（R-42 改道：解包整体搬到 drvinst 的开发分支）
+        for m in DEV_MARKERS:
+            chk(m.encode() not in data and m.encode("utf-16-le") not in data,
+                "应用本体不含解包能力标识（%s）" % m)
     else:
         chk(b"requireAdministrator" in data,
             "manifest 为 requireAdministrator（双击自动提权）")
@@ -109,6 +126,15 @@ def main(argv: list[str]) -> int:
         else:
             fail("内置驱动包头不完整")
             good = False
+        # 解包能力：发布版不得带，开发分支必须带
+        if kind == "drvinst-dev":
+            for m in DEV_MARKERS:
+                chk(m.encode() in data or m.encode("utf-16-le") in data,
+                    "开发分支含解包能力标识（%s）" % m)
+        else:
+            for m in DEV_MARKERS:
+                chk(m.encode() not in data and m.encode("utf-16-le") not in data,
+                    "发布版安装器不含解包能力标识（%s）" % m)
     return 0 if good else 1
 
 

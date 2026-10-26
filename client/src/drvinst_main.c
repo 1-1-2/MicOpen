@@ -24,6 +24,9 @@
 #include "drvinst.h"
 #include "drvpkg.h"
 #include "devio.h"
+#ifdef MICLINK_DRVIMPORT_DEV
+#include "drvimport_dev.h"
+#endif
 #include <shellapi.h>      /* CommandLineToArgvW */
 #include <stdarg.h>
 #include <stdio.h>
@@ -35,6 +38,8 @@
 
 static int g_quiet;            /* /quiet：只保留结果行，不打横幅 */
 static const wchar_t *g_pack;  /* /driver-pack <dir> */
+static const wchar_t *g_setup; /* /import-setup <setup.exe>（仅开发分支） */
+static int g_dryrun;           /* /dry-run：只解包不安装 */
 
 /* --------------------------------------------------------------- 输出 */
 static void print_banner(void)
@@ -73,6 +78,9 @@ static void print_help(void)
     "  womic-drvinst.exe /uninstall [/quiet]\n"
     "  womic-drvinst.exe /status    [/quiet]\n"
     "  womic-drvinst.exe /driver-pack <dir> /install\n"
+#ifdef MICLINK_DRVIMPORT_DEV
+    "  womic-drvinst.exe /import-setup <setup.exe> [/dry-run]\n"
+#endif
     "  womic-drvinst.exe /help\n"
     "\n"
     "选项:\n"
@@ -82,6 +90,11 @@ static void print_help(void)
     "  /driver-pack <dir>    用指定目录里的三件套代替内置包\n"
     "                        （需要 womic.inf / womic.sys / womic.cat，\n"
     "                          或 womic_1.* / womic_2.*）\n"
+#ifdef MICLINK_DRVIMPORT_DEV
+    "  /import-setup <exe>   从官方 NSIS 安装包解包 2022 版驱动并安装\n"
+    "                        （开发调试用；需要 7-Zip）\n"
+    "  /dry-run              配合 /import-setup：只解包不安装\n"
+#endif
     "  /quiet                静默：不打横幅，只输出结果与错误\n"
     "  /help                 显示本帮助\n"
     "\n"
@@ -204,6 +217,85 @@ static int do_uninstall(void)
     return CLI_EXIT_DEVINST;
 }
 
+/* --------------------------------------------- /import-setup（开发分支） */
+/* 从官方 NSIS 安装包解包 2022 版驱动 → 走**唯一那份**安装逻辑装上。
+ * 编译期宏门控：发布版（womic-drvinst.exe）里这个函数根本不存在，
+ * 参数解析处只留一句明确提示与下一步指引，不静默忽略。 */
+#ifdef MICLINK_DRVIMPORT_DEV
+static int do_import_setup(void)
+{
+    wchar_t drvdir[MAX_PATH * 2], tmpdir[MAX_PATH * 2], err[1024];
+    int dry = g_dryrun;
+
+    print_banner();
+    if (!g_setup || !g_setup[0]) {
+        fprintf(stderr, "/import-setup 缺少官方安装包路径\n");
+        return CLI_EXIT_PARAM;
+    }
+    {
+        wchar_t v[8];
+        DWORD n = GetEnvironmentVariableW(L"MICLINK_DRVIMPORT_DRYRUN", v, 8);
+        if (n > 0 && v[0] == L'1') dry = 1;
+    }
+
+    drvdir[0] = 0;
+    tmpdir[0] = 0;
+    err[0] = 0;
+    if (!drvimport_dev_extract(g_setup, drvdir, MAX_PATH * 2, err, 1024,
+                               tmpdir, MAX_PATH * 2)) {
+        char u8err[3072], u8tmp[MAX_PATH * 2];
+        fprintf(stderr, "从官方安装包解包失败：\n%s\n",
+                w2u(err, u8err, sizeof(u8err)));
+        if (tmpdir[0])
+            fprintf(stderr, "现场保留在：%s\n", w2u(tmpdir, u8tmp, sizeof(u8tmp)));
+        return CLI_EXIT_DEVINST;
+    }
+
+    if (dry) {
+        printf("dry-run：只解包不安装。三件套在 %ls\n", drvdir);
+        drvimport_dev_cleanup(tmpdir);
+        return CLI_EXIT_OK;
+    }
+
+    if (!require_admin("install")) {
+        fprintf(stderr, "解包已完成（三件套在 %ls），但安装需要管理员权限。\n", drvdir);
+        drvimport_dev_cleanup(tmpdir);
+        return CLI_EXIT_DEVINST;
+    }
+
+    /* 走同一份安装逻辑：把解包出来的目录当外部驱动包喂给 drv_install */
+    drv_set_external_pack(drvdir);
+    if (!drv_install()) {
+        print_last_error("安装失败：");
+        if (!g_quiet) print_devlog();
+        fprintf(stderr, "解包产物保留在：%ls\n", drvdir);
+        return CLI_EXIT_DEVINST;
+    }
+    print_last_error("");
+    {
+        DrvStatus st;
+        drv_detect(&st, 1);
+        printf("驱动状态：%s\n", state_name(st.state));
+    }
+    drvimport_dev_cleanup(tmpdir);
+    return CLI_EXIT_OK;
+}
+#else
+/* 发布版：识别参数但明确拒绝，不静默忽略 */
+static int do_import_setup_unsupported(void)
+{
+    fprintf(stderr,
+            "本安装器是发布版，不带「从官方安装包解包驱动」的能力。\n"
+            "      该能力目前只存在于未启用的开发分支 womic-drvinst-dev.exe。\n"
+            "      你可以改用：\n"
+            "        1) 直接运行官方安装包安装一次驱动；或\n"
+            "        2) 用 7-Zip 解包官方安装包，取其中的 womic*.inf|womic.sys|womic.cat\n"
+            "           （注意用 7z x -aou，否则同名文件会互相覆盖只剩 2017 版），\n"
+            "           再执行 womic-drvinst.exe /driver-pack <该目录> /install\n");
+    return CLI_EXIT_PARAM;
+}
+#endif
+
 /* --------------------------------------------------------------- 菜单 */
 static void menu_print(void)
 {
@@ -325,6 +417,7 @@ int main(void)
         if (eq(s, L"status", L"query", NULL))       { action = 3; continue; }
         if (eq(s, L"quiet", L"s", NULL))            { g_quiet = 1; continue; }
         if (eq(s, L"help", L"?", L"h", NULL))       { help = 1; continue; }
+        if (eq(s, L"dry-run", L"dryrun", NULL))     { g_dryrun = 1; continue; }
         if (eq(s, L"version", NULL)) {
             LocalFree(argv);
             printf("%s %s\n", DRVINST_TITLE, APP_VERSION);
@@ -339,12 +432,29 @@ int main(void)
             g_pack = argv[++i];
             continue;
         }
+        if (eq(s, L"import-setup", L"importsetup", NULL)) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "/import-setup 缺少官方安装包路径参数\n");
+                LocalFree(argv);
+                return CLI_EXIT_PARAM;
+            }
+            g_setup = argv[++i];
+            action = 4;
+            continue;
+        }
         fprintf(stderr, "未知参数：%ls（用 /help 查看用法）\n", s);
         LocalFree(argv);
         return CLI_EXIT_PARAM;
     }
 
     if (g_pack) drv_set_external_pack(g_pack);
+
+    /* /dry-run 只对 /import-setup 有意义；单独给要说清楚 */
+    if (g_dryrun && !g_setup) {
+        fprintf(stderr, "/dry-run 只能配合 /import-setup 使用\n");
+        LocalFree(argv);
+        return CLI_EXIT_PARAM;
+    }
 
     if (help) {
         print_help();                     /* 首行自带标题，不再打一次横幅 */
@@ -356,6 +466,13 @@ int main(void)
     case 1: rc = do_install();   break;
     case 2: rc = do_uninstall(); break;
     case 3: rc = do_status();    break;
+    case 4:
+#ifdef MICLINK_DRVIMPORT_DEV
+        rc = do_import_setup();
+#else
+        rc = do_import_setup_unsupported();
+#endif
+        break;
     default:
         rc = menu_loop();
         break;
