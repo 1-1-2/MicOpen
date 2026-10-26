@@ -77,16 +77,12 @@ static int read_edit_text(HWND h, wchar_t *buf, int cap)
     return 1;
 }
 
-static void toggle_connection(void)
+/* 发起一次会话。manual=1 是用户点「连接」（成功/失败都会"武装"自动重连）；
+ * manual=0 是 R-27 的自动重试（不重复刷日志、不重置重试计数）。
+ * 返回 1 = 引擎线程已启动。 */
+static int connect_session(int manual)
 {
-    if (g_ui.running) {
-        eng_stop();
-        g_ui.running = 0;
-        g_ui.disc_at = GetTickCount();      /* D-08：断开时刻（10s 后清空历史） */
-        ui_log_add("已断开连接", 0);
-        g_dirty = 1;
-        return;
-    }
+    if (g_ui.running) return 0;
     {
         wchar_t host[64] = { 0 }, port[32] = { 0 }, mp[32] = { 0 };
         char hostA[96];
@@ -96,7 +92,7 @@ static void toggle_connection(void)
         if (!hostA[0]) {
             ui_log_add("请先输入手机地址", 1);
             g_dirty = 1;
-            return;
+            return 0;
         }
         /* 控制端口（D-01）：空 = 默认 8125 但必须明示；非空且非法 = 明确拒绝。
          * 这里不再有 `_wtoi` + `cp<=0 → 8125` 的静默回退，也不让 engine 里的
@@ -105,7 +101,7 @@ static void toggle_connection(void)
         if (!read_edit_text(g_ui.edit_port, port, 32)) {
             ui_log_add("控制端口须为 1-65535 的整数（默认 8125）", 1);
             g_dirty = 1;
-            return;
+            return 0;
         }
         pr = cli_parse_port(port, &cp);
         if (pr == 0) {
@@ -114,7 +110,7 @@ static void toggle_connection(void)
         } else if (pr < 0) {
             ui_log_add("控制端口须为 1-65535 的整数（默认 8125）", 1);
             g_dirty = 1;
-            return;
+            return 0;
         }
         /* 媒体端口：留空 = 随机（默认）；填了就固定，非法值当场拒绝。
          * 与控制端口共用同一个解析器（cli_parse_port），两种口径从此不会漂移：
@@ -126,22 +122,22 @@ static void toggle_connection(void)
             if (!read_edit_text(g_ui.edit_media, mp, 32)) {
                 ui_log_add("媒体端口须留空或填 1..65535（留空=随机分配）", 1);
                 g_dirty = 1;
-                return;
+                return 0;
             }
             mpr = cli_parse_port(mp, &mv);
             if (mpr < 0) {
                 ui_log_add("媒体端口须留空或填 1..65535（留空=随机分配）", 1);
                 g_dirty = 1;
-                return;
+                return 0;
             }
             media = (mpr == 1) ? mv : 0;
         }
         /* 所有校验都过了才说「用了默认端口」：否则被媒体端口拦下时会留下
          * 一行让人误以为连接已发起的日志。 */
-        if (port_defaulted) ui_log_add("未填控制端口，使用默认 8125", 0);
+        if (port_defaulted && manual) ui_log_add("未填控制端口，使用默认 8125", 0);
         /* 驱动未就绪时 GUI 主按钮已置灰（D-04）；键盘/CLI 路径走到这里时
          * 保留既有的「只做协议与统计、不出声」诊断模式，并把话说清楚。 */
-        if (g_ui.drv.state != DRV_READY)
+        if (g_ui.drv.state != DRV_READY && manual)
             ui_log_add("提示：驱动未就绪，将只做协议与统计，不出声", 0);
         eng_set_media_port(media);
         g_ui.running = eng_start(hostA, cp, rate_idx_of(g_ui.seg_rate),
@@ -152,11 +148,36 @@ static void toggle_connection(void)
             g_ui.hist_count = 0;
             g_ui.kbps_peak = g_ui.jit_peak = 0;
             g_ui.lost_peak = 0.0f;
-            ui_log_add("正在建立会话…", 0);
-        } else {
+            g_ui.rc_next = 0;                  /* 计数在真正进入推流时才清零，见 WM_TIMER */
+            if (manual) ui_log_add("正在建立会话…", 0);
+        } else if (manual) {
+            /* 自动重试不进这条：0.5 s 一次会把事件面板刷爆（状态栏有计数） */
             ui_log_add("启动引擎失败", 1);
         }
         g_dirty = 1;
+        return g_ui.running;
+    }
+}
+
+/* 用户点「连接 / 断开连接」：这里负责"用户意图"，自动重连的武装/解除都在这里。 */
+static void toggle_connection(void)
+{
+    if (g_ui.running) {
+        /* 用户主动断开 → 解除自动重连（R-27 明确要求：主动断开不重连） */
+        g_ui.rc_armed = 0;
+        g_ui.rc_count = 0;
+        g_ui.rc_next = 0;
+        eng_stop();
+        g_ui.running = 0;
+        g_ui.disc_at = GetTickCount();      /* D-08：断开时刻（10s 后清空历史） */
+        ui_log_add("已断开连接", 0);
+        g_dirty = 1;
+        return;
+    }
+    if (connect_session(1)) {
+        g_ui.rc_armed = 1;                 /* 从这一刻起，断线可自动重连 */
+        g_ui.rc_count = 0;
+        g_ui.rc_next = 0;
     }
 }
 
@@ -354,6 +375,23 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
          * 用户看到的是「启动引擎失败」且没有原因。
          * eng_reap() 幂等，且线程还在跑时直接返回，所以这样反复调用是安全的。 */
         if (!g_ui.running) eng_reap();
+
+        /* R-27 自动重连：只在「非用户主动断开」后生效（rc_armed 由 toggle_connection
+         * 武装/解除）；固定 0.5 s 间隔，不封顶、不退避；每次重试都走完整
+         * connect_session()（= 完整握手 + 重开驱动流 + eng_reap 已放掉旧线程）。 */
+        if (!g_ui.running && g_ui.autorec && g_ui.rc_armed) {
+            DWORD now2 = GetTickCount();
+            if (!g_ui.rc_next) {
+                g_ui.rc_next = now2 + 500;
+            } else if ((int)(now2 - g_ui.rc_next) >= 0) {
+                g_ui.rc_next = now2 + 500;
+                g_ui.rc_count++;
+                if (g_ui.rc_count <= 3 || (g_ui.rc_count % 20) == 0)
+                    ui_log_add("自动重连中…", 0);   /* 限流：避免 0.5s 刷屏 */
+                connect_session(0);
+                g_dirty = 1;
+            }
+        }
         ui_meter_update(&st, g_ui.running);
 
         /* ---- D-08：历史采样（约 208ms/柱，10 秒 48 柱）---- */
@@ -377,6 +415,14 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             now - g_ui.disc_at > 10000) {
             g_ui.hist_count = 0;
             g_dirty = 1;
+        }
+
+        /* R-27：真正进入推流才算"重连成功"，这时才把计数清零（eng_start 只是
+         * 起了线程，握手还没走完，用它清零会让"重连中 (第 N 次)"永远显示不出来） */
+        if (g_ui.running && st.state == ST_STREAMING && g_ui.rc_count > 0) {
+            ui_log_add("自动重连成功，已恢复推流", 2);
+            g_ui.rc_count = 0;
+            g_ui.rc_next = 0;
         }
 
         /* ---- D-14：500ms 节拍（状态栏/面板摘要快照 + 峰值保持）---- */
@@ -553,6 +599,8 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_DESTROY:
+        g_ui.rc_armed = 0;                    /* R-27：关窗口不重连 */
+        g_ui.autorec = 0;
         KillTimer(hwnd, 1);
         eng_stop();
         devio_close();

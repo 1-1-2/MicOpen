@@ -287,6 +287,11 @@ typedef struct {
     int   content_h;           /* 内容总高（布局后得出） */
     int   hover, pressed;
     int   drag_slider;
+    int   monitor;             /* R-39 监听开关（与静音同形态） */
+    int   autorec;             /* R-27 自动重连开关（默认关） */
+    int   rc_count;            /* 本次断线后已重试次数（成功后归零） */
+    int   rc_armed;            /* 1 = 上次会话非用户主动断开，可以自动重连 */
+    DWORD rc_next;             /* 下一次重试的时刻（GetTickCount） */
     int   hover_fade;          /* D-10：hover 描边过渡 0..1000（T1 120ms） */
     int   hover_fade_id;       /* 正在过渡的命中 id */
     int   seg_rate;            /* 0 48k 1 16k 2 8k */
