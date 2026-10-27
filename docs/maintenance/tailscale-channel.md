@@ -30,4 +30,4 @@ action 会在 runner 安装 Tailscale 并建立 tailnet 连接。节点信息在
 
 双机 workflow 验证的是本仓库 app 与客户端之间的链路。它不替代真实 Android 手机测试、官方 WO Mic Windows Client 互操作，也不证明小时级稳定性。
 
-场景选择、双机暂停和重跑约束见[工作流使用说明](../../.github/workflows/README.md)。
+场景选择、双机暂停、两种 SSH 接入拓扑、UDP 边界与已核对实测证据见[工作流使用说明](../../.github/workflows/README.md#两种-ssh-接入与媒体网络)。Upterm Relay 只替代操作端 SSH 的路径，不承载双机 UDP；GitHub 两个 job 也不应被假定处在可直连的局域网。

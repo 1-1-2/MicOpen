@@ -23,7 +23,7 @@
 1. 打开仓库 **Actions**，选择 **CI** 或 **Lab**，点击 **Run workflow**。
 2. 选择分支，填写下表的参数。新工作流需要先存在于默认分支，GitHub 才显示手动入口。
 3. 查看运行的 **Summary**：先显示执行计划；Lab 就绪后显示连接信息，并生成 `connection-…` 附件。
-4. 默认通过自己的 Tailscale 网络连接接入；无法入网的操作端可在启动时选择 `ssh_transport=relay`。两种方式均使用对应 SSH 私钥。连接附件含本次主机公钥，先核对主机身份；不要全局关闭主机密钥检查。
+4. 默认选择 **Tailscale Tailnet**；无法入网的操作端可选择 **Upterm Relay**。这里是 Tailnet（虚拟私网），不是 Telnet 协议。两种方式均使用对应 SSH 私钥。连接附件含本次主机公钥，先核对主机身份；不要全局关闭主机密钥检查。
 5. 使用下文工具执行或结束；SSH 断开可以重连，断开本身不会结束 Lab。到期则收证并继续后续步骤；通过记录工具仍在执行的命令会终止进程树，超时返回 124，显式结束返回 130。自行后台化的进程由操作者负责收尾。
 
 ## 参数
@@ -37,7 +37,7 @@ CI 的 `task` 为 `verify`（默认）或 `build`；`target` 为 `auto`（默认
 | `artifact_run_id` | `0`（文本） | 0 表示本次构建；指定运行编号可复用符合新清单格式的构建包 |
 | `pause_at` | `ready` | 单端 verify 的 ready 对应测试开始前；还支持下述暂停点 |
 | `session_minutes` | `20` | 环境就绪后的操作时长，整数 1–120 分钟；准备阶段另计 |
-| `ssh_transport` | `tailnet` | `relay` 显式启动 WSS 中继，操作端无需入网；双机媒体仍走 tailnet |
+| `ssh_transport` | `Tailscale Tailnet` | 网页选择 `Tailscale Tailnet` 或 `Upterm Relay`；后者显式启动 WSS 中继，操作端无需入网；双机媒体仍走 tailnet |
 | `stream_logs` | **不勾选** | 开启后，记录工具执行的命令和输出经过脱敏后进入公开 Actions 日志和转录附件 |
 | `request_id` | 空 | Agent 的关联编号；命令行启动工具自动生成 |
 
@@ -63,6 +63,10 @@ python .github/scripts/labctl.py dispatch lab.yml --ref main \
 # 在已有构建基础上双机自动联调，不暂停、不重复编译
 python .github/scripts/labctl.py dispatch lab.yml --ref main \
   --input scenario=dual --input artifact_run_id=RUN_ID --input pause_at=none
+
+# 沙箱不能加入 tailnet：通过 Upterm 接入 Windows 的原生 SSH
+python .github/scripts/labctl.py dispatch lab.yml --ref main \
+  --input scenario=base --input target=windows --input 'ssh_transport=Upterm Relay'
 
 # Agent 明确选择将记录工具的操作公开
 python .github/scripts/labctl.py dispatch lab.yml --ref main \
@@ -90,7 +94,9 @@ python .github/scripts/labctl.py finish --connection-file lab-connection.json \
 
 连接信息只需获取一次；`--connection-file` 让后续命令直接走 SSH，不为每条命令重新查询 GitHub。元数据仍有截止时间，重跑后必须重新获取，不能复用上轮主机身份。
 
-如果使用 `ssh_transport=relay`，操作端先从 [Upterm 官方发行页](https://github.com/owenthereal/upterm/releases/tag/v0.40.0) 安装 0.40.0 并加入 PATH，按同页校验清单核对下载；runner 自动取得固定版本并验证 SHA256。`upterm proxy` 只传输 WSS 字节流，外层 SSH 转发至 runner 的 `127.0.0.1:22`，内层仍是原生 OpenSSH。公钥限制同时用于中继和本机 SSH；CLI 固定官方中继 CA，并独立核对本次 runner 主机公钥。该方式不要求本地 TUN、netlink 或常驻服务。中继地址会公开，不能以地址保密代替公钥认证；仅在显式选择时启动，窗口结束立即停止。
+如果使用 **Upterm Relay**，操作端先从 [Upterm 官方发行页](https://github.com/owenthereal/upterm/releases/tag/v0.40.0) 安装 0.40.0 并加入 PATH，按同页校验清单核对下载；runner 自动取得固定版本并验证 SHA256。`upterm proxy` 只传输 WSS 字节流，外层 SSH 转发至 runner 的 `127.0.0.1:22`，内层仍是原生 OpenSSH。公钥限制同时用于中继和本机 SSH；CLI 固定官方中继 CA，并独立核对本次 runner 主机公钥。该方式不要求本地 TUN、netlink 或常驻服务。中继地址会公开，不能以地址保密代替公钥认证；仅在显式选择时启动，窗口结束立即停止。
+
+直接 REST API 的 `inputs.ssh_transport` 使用网页中的完整名称。`labctl dispatch` 兼容旧简写 `tailnet/relay`，发送前转换；组件及 `labctl exec --transport` 仍使用内部简写，通常由连接缓存自动选择，无需手填。
 
 也可导出相同信任配置给原生 SSH 和 SFTP，私钥只引用本地路径，不复制进配置：
 
@@ -106,6 +112,100 @@ sftp -F lab-ssh.conf miclink-lab
 角色名：单端 `windows/android/linux`；双机 `windows-client/linux-app`。双机操作完成后分别结束两端。`watch` 的观察期限届满返回 75，表示运行仍在继续，不会自动取消。客户端工具可从任意目录通过完整脚本路径调用；已有 userspace Tailscale 客户端可用 `TAILSCALE_SOCKET` 配置 ProxyCommand。
 
 CLI 从连接附件生成本次专用 known_hosts，并严格检查主机公钥。传给远端的路径均来自运行时元数据。记录工具恢复已准备现场的工作目录和 PATH／SDK 等明确允许的变量，不复制 job 的 token、OAuth secret 或整个环境。
+
+## 两种 SSH 接入与媒体网络
+
+`ssh_transport` 只选择**操作者如何进入 runner**，不选择两台 runner 之间如何传音频。无论选哪一项，当前 Lab 都会给 runner 建立 tailnet；双机音频的 TCP 控制与 UDP 媒体继续走 tailnet。
+
+| 能力 | Tailscale Tailnet | Upterm Relay |
+|---|---|---|
+| 操作端前提 | 已加入获授权的 tailnet，可访问 runner TCP 22 | OpenSSH、固定版本 Upterm、可出站访问 WSS 443 |
+| 定位目标 | 本轮连接附件中的 tailnet IP 与 SSH 用户 | 同一附件中的 Upterm 会话路由标识，再转发本机 TCP 22 |
+| 身份验证 | tailnet 准入/访问策略，再做普通 OpenSSH 认证 | 中继身份校验、会话允许公钥检查，再做独立内层 OpenSSH 认证 |
+| SSH 与 SFTP | 支持 | 支持，使用本项目的内层 OpenSSH |
+| 原生 UDP/虚拟 IP 网络 | tailnet 可承载 TCP 与 UDP | 当前 Upterm 方案仅转发 TCP，没有 UDP 隧道或虚拟网卡 |
+| 双机音频 | 由 runner 的 tailnet 通道完成 | 仍由 runner 的 tailnet 通道完成；不经过 Upterm |
+
+### Tailscale Tailnet：先入网，再访问指定节点
+
+runner 通过 OAuth 以 `tag:ci` 临时节点身份入网；操作者使用自己获授权的节点。协调服务分发节点公钥、地址和访问策略，节点之间承载实际数据。应用发出的 TCP/UDP 封装在 WireGuard 网络中，能直连就直连；无法直连时可经 peer relay 或 DERP 传递加密包。DERP 不解密应用流量，应用仍使用自己的 TCP/UDP 接口。[Tailscale 连接类型](https://tailscale.com/docs/reference/connection-types)说明了这些回退路径。
+
+```mermaid
+sequenceDiagram
+    participant A as 获授权的节点 A
+    participant C as Tailscale 协调服务
+    participant B as 目标 Runner
+    participant D as DERP
+    A->>C: 设备入网认证与节点公钥
+    B->>C: OAuth 临时入网与节点公钥
+    C-->>A: 允许访问的节点与路由信息
+    C-->>B: 节点信息与访问策略
+    alt 可建立直连
+        A->>B: WireGuard 加密承载 TCP 或 UDP
+        B-->>A: 加密返回流量
+    else 无法直连且无可用 peer relay
+        A->>D: 加密的 WireGuard 包
+        D->>B: 盲转加密包
+        B-->>D: 加密返回包
+        D-->>A: 盲转返回包
+    end
+    Note over A,B: SSH 还需独立验证主机与操作端身份
+```
+
+图中 A 可代表操作者节点，也可代表双机联调中的另一台 runner。本项目在 tailnet 内使用**普通 OpenSSH**，没有启用 Tailscale SSH 产品；tailnet 准入不能替代 SSH 私钥认证。
+
+### Upterm Relay：会话标识负责找谁，公钥负责谁能进
+
+不是根据相同公钥自动配对。runner 启动 Upterm 后，将**会话路由标识和允许的操作端公钥**注册到中继；同一把公钥可以被多个会话授权。操作者先通过指定 run/attempt/role 的 GitHub connection artifact 得到目标会话标识，客户端把它放在外层 SSH 的用户/路由字段中。中继据此找到具体会话，再检查该会话是否允许这把公钥。持有对应私钥的签名证明身份，不能只复制公开的公钥登录。
+
+```mermaid
+sequenceDiagram
+    participant C as 操作端沙箱
+    participant R as Upterm 中继
+    participant U as Runner 的 Upterm
+    participant S as Runner 的 OpenSSH
+    U->>R: WSS 注册会话路由及允许公钥
+    Note over U,R: Runner 校验中继身份
+    C->>R: WSS 指定目标会话并提交 SSH 身份证明
+    Note over C,R: 沙箱校验中继证书；私钥不离开沙箱
+    R->>R: 查目标会话，再核对允许公钥
+    R->>U: 经反向通道提交中继签名的身份凭证
+    U->>U: 验证凭证并再次核对允许公钥
+    U->>S: 转发 TCP 到 127.0.0.1:22
+    C->>S: 经通道建立独立的内层 SSH
+    Note over C,S: 核对 Runner 主机密钥并再做客户端认证
+    C->>S: 加密命令、输出与 SFTP
+```
+
+操作端公钥、中继 CA、runner 主机公钥用途各不相同。流程按固定客户端版本与[Upterm 对应源码](https://github.com/owenthereal/upterm/tree/v0.40.0)核对，未独立确认公共中继当前部署版本。内层 SSH 身份和命令加密由操作者与 runner 独立掌控。
+
+本项目客户端固定请求 `127.0.0.1:22`；Upterm 服务端开启的 `--allow-local-tcp-forwarding` 没有额外目的端口白名单，不能称为“服务端强制仅允许 22”。[Upterm](https://upterm.dev/)提供的是 TCP 转发，不是 TURN，也没有在本方案中提供原生 UDP。另把 UDP 封装到 TCP/WSS 会引入重传阻塞等行为，不能替代真实 UDP 链路验收。
+
+### 双机音频：SSH 通道与媒体通道分开
+
+```mermaid
+flowchart TD
+    subgraph Linux[Linux runner]
+        A[Android 模拟器]
+        T[TCP 转接]
+        U[UDP 转接]
+    end
+    subgraph Windows[Windows runner]
+        W[Windows 客户端]
+        D[虚拟麦克风驱动]
+    end
+    W -->|tailnet TCP 8125| T
+    T -->|模拟器控制接口| A
+    A -->|模拟器 NAT| U
+    U -->|tailnet UDP 8126| W
+    W -->|解码后的 PCM| D
+```
+
+这里的 `udp-relay.py` 是 Linux runner 上处理模拟器 NAT 的小工具，与公共 **Upterm Relay** 无关。控制连接最终为双向 TCP；箭头表示发起方向。端口是当前 workflow 的默认值。
+
+已复查[正式双机运行 40494338474](https://github.com/1-1-2/WKB_test/actions/runs/40494338474)：完整日志记录 UDP 转接目标为对端 tailnet 地址，转发 **496 包、78373 字节、send_errors=0**；Windows 录音检测到 **440 Hz** 并判定通过。测试音用于自动验收，不代表真实手机麦克风采集已实测。
+
+该记录证明 tailnet 上跨 runner 的 TCP/UDP 链路工作，不证明两台 GitHub 托管 VM 原生内网互通；此前没有独立测过绕开 tailnet 的私网/公网 UDP 直连。[GitHub 托管 runner](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners)按 job 分配独立环境，不能因同一工作流或猜测同机房就假设共享可路由局域网。当前日志也不足以认定这一轮 WireGuard 底层一定是直连或 DERP。UDP 故障先检查 tailnet 对端发现、访问策略、接口防火墙和模拟器转接统计，再检查采集/解码；不要用 Upterm 的 SSH 成功代替媒体验证。
 
 ## 实时输出与隐私
 
@@ -156,4 +256,4 @@ Windows 构建强制 `pack_driver.py --empty`，并检查资源和 EXE 中是否
 | `pwsh`、UTF-8、管道退出码 | 旧编码及 tee 返回码曾掩盖真正失败；不以“日志有成功文字”代替退出码和系统状态 |
 | 原生驱动解压、安装状态、录音与 GUI | 各自验证不同层次，不能互相替代；SYSTEM／标准用户会话矩阵继续保留 |
 
-逐步骤旧位置、新脚本阶段和预算见[迁移对照](../actions/migration-map.json)。公共组件位于 [actions](../actions)，通用工具位于 [scripts](../scripts)。本轮全量回归见[运行 40491670551](https://github.com/1-1-2/WKB_test/actions/runs/40491670551)：Android、Windows 与双机音频联调通过；WSS 原生 SSH、SFTP、日志开关和退出码见[运行 40490290865](https://github.com/1-1-2/WKB_test/actions/runs/40490290865)。G2 仍为 UNSUPPORTED。
+逐步骤旧位置、新脚本阶段和预算见[迁移对照](../actions/migration-map.json)。公共组件见 [Actions 模块说明](../actions/README.md)，通用工具见 [脚本说明](../scripts/README.md)。本轮全量回归见[运行 40491670551](https://github.com/1-1-2/WKB_test/actions/runs/40491670551)：Android、Windows 与双机音频联调通过；WSS 原生 SSH、SFTP、日志开关和退出码见[运行 40490290865](https://github.com/1-1-2/WKB_test/actions/runs/40490290865)。G2 仍为 UNSUPPORTED。

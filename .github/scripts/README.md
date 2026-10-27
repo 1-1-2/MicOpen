@@ -29,4 +29,4 @@ python -m unittest discover -s .github/scripts/tests -p "test_*.py"
 
 `RUNNER_TEMP` 或 `TMPDIR` 可用于临时目录；截图和诊断默认进入仓库根目录 `probe-results/`。各脚本配置以文件头及对应 workflow 为准。网络通道和 SSH 调试见[双机通道](../../docs/maintenance/tailscale-channel.md)与[交互调试](../../docs/maintenance/windows-interactive-debug.md)。
 
-完整选择与操作步骤见[工作流说明](../workflows/README.md)。
+完整选择与操作步骤见[工作流说明](../workflows/README.md)；上层可复用组件及参数约定见 [Actions 模块说明](../actions/README.md)。
