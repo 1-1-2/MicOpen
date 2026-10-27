@@ -17,7 +17,7 @@ python3 android/verify/integration/test_pc_client.py
 python3 android/verify/integration/pc_client.py --hold-seconds 12
 ```
 
-直接连接同网段手机时，使用 `--control-host` 指定手机地址，`--control-port` 指定 app 显示的端口，并选择 `--udp-tap host`。完整参数通过 `--help` 查看。CI 入口为 `.github/workflows/android.yml` 的 `integration-test` 作业。
+直接连接同网段手机时，使用 `--control-host` 指定手机地址，`--control-port` 指定 app 显示的端口，并选择 `--udp-tap host`。完整参数通过 `--help` 查看。CI 入口为 `.github/workflows/ci.yml` 的 `verify-android` 作业。
 
 ## 两种拓扑
 

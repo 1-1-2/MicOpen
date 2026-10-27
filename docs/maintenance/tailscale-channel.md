@@ -1,6 +1,6 @@
 # 双机 CI 网络通道
 
-`tailscale-dual.yml` 用于在隔离的 CI runner 上验证 Android app 与 Windows 客户端之间的真实协议链路。该 workflow 面向自动化验证，不是产品运行时依赖。
+`lab.yml` 的 `dual` 场景 用于在隔离的 CI runner 上验证 Android app 与 Windows 客户端之间的真实协议链路。该 workflow 面向自动化验证，不是产品运行时依赖。
 
 ## 运行模型
 
@@ -8,7 +8,7 @@
 2. runner 发现联调节点后运行 TCP/UDP 探针，执行真实客户端与 Android app 的跨网验证。
 3. 作业完成或超时后，官方 action 的收尾步骤登出并清理临时节点；证据只保存本次验证需要的日志和音频统计。
 
-具体作业步骤以 [`../.github/workflows/tailscale-dual.yml`](../../.github/workflows/tailscale-dual.yml) 为准。不要把 runner 地址或临时节点身份写进长期文档。
+具体作业步骤以 [Lab](../../.github/workflows/lab.yml) 为准。不要把 runner 地址或临时节点身份写进长期文档。
 
 ## 仓库配置
 
@@ -29,3 +29,5 @@ action 会在 runner 安装 Tailscale 并建立 tailnet 连接。节点信息在
 ## 证据边界
 
 双机 workflow 验证的是本仓库 app 与客户端之间的链路。它不替代真实 Android 手机测试、官方 WO Mic Windows Client 互操作，也不证明小时级稳定性。
+
+场景选择、双机暂停和重跑约束见[工作流使用说明](../../.github/workflows/README.md)。

@@ -63,8 +63,10 @@ export WOMIC_DRIVER_DIR="<本机官方驱动目录>"
 | `python3 android/verify/integration/pc_client.py --self-test` | 媒体包解析及协议自测 |
 | `python3 android/verify/integration/test_pc_client.py` | 联调工具的监听、重连与二进制通道 |
 | `cd android && ./gradlew :core:test` | JVM 协议模块 |
-| `android.yml` | APK、模拟器闭环与界面 |
-| `windows-e2e.yml` | Windows 安装、录音和 GUI |
-| `tailscale-dual.yml` | 两台 runner 之间的真实音频链路 |
+| `ci.yml`（Android） | APK、模拟器闭环与界面 |
+| `ci.yml`（Windows） | Windows 安装、录音和 GUI |
+| `lab.yml`（dual） | 两台 runner 之间的真实音频链路 |
 
 已执行的运行链接和限制见[验证报告](verification/windows-e2e-report.md)。工具链、缓存和系统依赖没有变化时，纯文档修改无需重跑整套远端构建。
+
+具体入口和选项见[工作流使用说明](../.github/workflows/README.md)。

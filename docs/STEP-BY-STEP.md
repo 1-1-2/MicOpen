@@ -100,10 +100,12 @@ python3 android/verify/integration/pc_client.py --self-test
 python3 android/verify/integration/pc_client.py --hold-seconds 12
 ```
 
-它会验证 TCP 握手、UDP/Opus 包、心跳、停止和重连。完整的模拟器闭环由 `android.yml` 执行；Windows 驱动安装与录音取证由 `windows-e2e.yml` 执行；跨 runner 的真实双机链路由手动触发的 `tailscale-dual.yml` 执行。双机工作流需要仓库配置 `TS_OAUTH_CLIENT_ID` 和 `TS_OAUTH_SECRET` secrets，并要求 Tailscale OAuth 客户端允许 `tag:ci`。
+它会验证 TCP 握手、UDP/Opus 包、心跳、停止和重连。完整的模拟器闭环由 `ci.yml` 的 Android 任务执行；Windows 驱动安装与录音取证由 `ci.yml` 的 Windows 任务执行；跨 runner 的真实双机链路由手动触发的 `lab.yml`（scenario=dual） 执行。双机工作流需要仓库配置 `TS_OAUTH_CLIENT_ID` 和 `TS_OAUTH_SECRET` secrets，并要求 Tailscale OAuth 客户端允许 `tag:ci`。
 
 ## 7. 输出与清理
 
 脚本默认把截图、诊断和模拟器日志写到仓库根目录 `probe-results/`；Android Gradle 输出在 `android/app/build/`，Windows 产物在 `client/build/`。这些都是本地构建产物，不应提交。脚本临时下载和解析文件使用运行器临时目录或系统提供的临时目录。
 
 构建参数、依赖版本和驱动包的完整说明见 [`BUILD.md`](BUILD.md)；人工互操作限制见 [`android-interop-checklist.md`](verification/android-interop-checklist.md)。
+
+需要选择构建或交互场景时，按[CI／Lab 使用说明](../.github/workflows/README.md)操作。

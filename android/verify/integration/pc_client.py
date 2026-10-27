@@ -4,7 +4,7 @@
 pc_client.py —— WO Mic WiFi 协议联调脚本（扮演官方 Windows 客户端 6.3 的 PC 角色）
 
 纯 Python 标准库，无第三方依赖。设计在 GitHub Actions ubuntu-latest + Android
-模拟器的 CI 作业里闭环运行（见 .github/workflows/android.yml 的 integration-test
+模拟器的 CI 作业里闭环运行（见 .github/workflows/ci.yml 的 verify-android
 作业），也可在本机对真机 / 模拟器手动执行。
 
 角色与拓扑（协议规格 v1 第 1 节，docs/protocol/womic-wifi-protocol-v1.md）：

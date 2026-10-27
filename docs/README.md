@@ -33,3 +33,5 @@
 ## 已知验证边界
 
 双机 CI 的 Android app 与本仓库 Windows 客户端链路已通过；官方 WO Mic Windows Client 互操作、真实手机采集质量和小时级稳定性仍需人工验证。不要把 CI 通过描述成所有真实设备场景都已验证。
+
+CI／Lab 参数、网页与 API 操作、产物边界见[工作流使用说明](../.github/workflows/README.md)。
