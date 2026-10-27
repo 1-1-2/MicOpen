@@ -67,7 +67,7 @@ for i in 1 2 3; do
   echo "===== apt 尝试 $i/3：update ($mirror) ====="
   if timeout -k 10 120 sudo apt-get update; then
     echo "===== apt 尝试 $i/3：install MinGW POSIX toolchain ====="
-    if timeout -k 10 240 sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64; then
+    if timeout -k 10 240 sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64; then
       ok=1; break
     fi
     echo "::warning::apt 第 $i 次 install 失败/超时"
@@ -95,4 +95,5 @@ fi
 
 python3 .github/scripts/ci.py run --seconds 900 -- bash client/tools/build_opus.sh
 (cd client && python3 tools/pack_driver.py --empty && bash build.sh)
+bash client/monitor/build.sh
 python3 .github/scripts/ci.py stage --kind windows

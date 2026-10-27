@@ -25,6 +25,16 @@ runs:
   - name: Fetch official fixture and native inflate self-test
     shell: pwsh
     run: python .github/scripts/ci.py run --seconds 600 -- python .github/actions/windows-runtime/fixture.py
+  - name: Monitor DSP and WASAPI worker tests
+    shell: pwsh
+    run: |
+      New-Item -ItemType Directory -Force probe-results/logs | Out-Null
+      & .\dist\test_monitor_dsp.exe "$PWD/dist/miclink-ringout.dll" "$PWD/dist/miclink-speex.dll" 2>&1 | Tee-Object probe-results/logs/h-monitor-dsp.txt
+      if ($LASTEXITCODE -ne 0) { throw "Monitor DSP test failed" }
+      & .\dist\test_monitor_host.exe 2>&1 | Tee-Object probe-results/logs/h-monitor-host.txt
+      if ($LASTEXITCODE -ne 0) { throw "Monitor worker test failed" }
+      python client/monitor/test_ui.py dist/womic.exe
+      if ($LASTEXITCODE -ne 0) { throw "Monitor GUI test failed" }
   - name: 0. 环境自检（python / 系统信息）
     run: python .github/scripts/ci.py run --seconds 600 -- pwsh -NoProfile -File .github/actions/windows-runtime/steps.ps1 -Stage s2
     shell: pwsh

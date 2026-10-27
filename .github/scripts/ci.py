@@ -52,7 +52,11 @@ def stage(kind):
         # 强制空包的构建门禁，与接收端现场获取的官方夹具完全分离。
         if (ROOT/'client/res/drvpkg.bin').read_bytes()!=b'MICLDRV1'+struct.pack('<II',1,0):raise ValueError('public installer must use --empty')
         files=[ROOT/'client/build/womic.exe',ROOT/'client/build/womic-drvinst.exe']
-        for p in files:safe_exe(p)
+        files += [ROOT/'client/build'/name for name in ['miclink-ringout.dll','miclink-speex.dll','test_monitor_dsp.exe','test_monitor_host.exe','RingOut-GPL-3.0.txt','SpeexDSP-COPYING.txt','monitor-source.tar.gz','speexdsp-1.2.1.tar.gz']]
+        license_files=[ROOT/'client/monitor/README.md',ROOT/'client/monitor/TEST-LICENSE.md']
+        files += license_files
+        for p in files:
+            if p.suffix.lower()=='.exe':safe_exe(p)
     elif kind=='android':files=list((ROOT/'android/app/build/outputs/apk/debug').glob('*.apk'))
     else:
         # 不上传整个 probe-results。人工 Lab 只导出结构化摘要；不会自动打包桌面或音频。
@@ -62,7 +66,7 @@ def stage(kind):
         for pattern in patterns:files.extend(base.glob(pattern))
         files=sorted(set(p for p in files if p.is_file() and not p.is_symlink()))
     if kind in ['windows','android'] and not files:raise ValueError('missing build product')
-    license_names={}
+    license_names={str(ROOT/'client/monitor/README.md'):'监听测试说明.md',str(ROOT/'client/monitor/TEST-LICENSE.md'):'测试组合许可.md'}
     if kind in ['windows','android']:
         opus=ROOT/('client/deps/opus/COPYING' if kind=='windows' else 'android/app/src/main/cpp/opus/COPYING')
         files += [ROOT/'LICENSE',ROOT/'NOTICE.md',opus]
