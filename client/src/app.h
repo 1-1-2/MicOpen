@@ -5,7 +5,7 @@
  *     不引入 Qt/Electron/.NET，任何第三方解码器都做成可选动态加载。
  *  2. 零额外运行库：只用 kernel32/user32/gdi32/ws2_32/shell32/dwmapi/gdiplus
  *     这类每台 Windows 都有的系统组件；不依赖 VC++ Redistributable。
- *  3. 驱动相关的硬约束见 docs/driver-whitepaper.md §9，违反任一条都会「静悄悄失败」。
+ *  3. 驱动相关的硬约束见 docs/protocol/driver-whitepaper.md §9，违反任一条都会「静悄悄失败」。
  */
 #ifndef WOMIC_APP_H
 #define WOMIC_APP_H
@@ -18,7 +18,7 @@
 /* ------------------------------------------------------------------ 版本 */
 /* 产品名统一 MicLink（D-01：截图不得出现任何参照产品名）。
  * 注意：驱动相关字符串（Root\WOMic、\\.\WOMic、WO Mic 字样）不随产品名改动，
- * 那是第三方驱动的既有身份，见 docs/driver-whitepaper.md §9。 */
+ * 那是第三方驱动的既有身份，见 docs/protocol/driver-whitepaper.md §9。 */
 #define APP_NAME        "MicLink"
 #define APP_VERSION     "1.0.0"
 #define APP_VERSION_Q   1, 0, 0, 0
@@ -114,7 +114,7 @@ const char *drv_last_error(void);
 const wchar_t *drv_last_error_w(void);
 
 /* ------------------------------------------------------------- 设备 IO */
-/* 全部 IOCTL 编号来自 docs/driver-whitepaper.md §4（2022 驱动 2.1.0.0）。
+/* 全部 IOCTL 编号来自 docs/protocol/driver-whitepaper.md §4（2022 驱动 2.1.0.0）。
  * 旧的 0x222000 是 2017 驱动的编号，在 2022 驱动上 51/51 失败，已删除。 */
 #define DEV_CAP_MIN     1           /* 0x222014 无下界保护，0 会永久静音 */
 #define DEV_CAP_MAX     0x2D00      /* 11520 B = 120 ms @48k/16/mono */

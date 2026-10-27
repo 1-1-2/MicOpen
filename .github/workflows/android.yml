@@ -40,7 +40,7 @@ on:
 #
 # windows-interactive 保持独立，仅 workflow_dispatch 勾选后运行
 # （WarpBuilds/action-debugger —— mxschmitt/action-tmate 的 Windows 可用分支，
-#  详见 docs/windows-interactive-debug.md）。
+#  详见 docs/maintenance/windows-interactive-debug.md）。
 
 # 同一分支连续 push 时取消上一轮（省 runner 分钟、避免排队）；
 # 注意：这里的 cancelled 是**主动取消旧 run**，不是失败。

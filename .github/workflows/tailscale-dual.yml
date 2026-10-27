@@ -509,7 +509,7 @@ jobs:
       # 发现 B（windows-client）。B 在 build 完成后立即入网，本步骤执行时
       # （APK 构建之后）B 必然已在网内 → 只做确认式轮询，不等长。
       # 用 tailscale status --json 互相发现，不需要 devices API scope
-      # （tailnet-debug action 同款思路，见 docs/tailscale-channel.md）。
+      # （tailnet-debug action 同款思路，见 docs/maintenance/tailscale-channel.md）。
       # ⚠ 必须按 run_id 精确匹配 + 要求 Online：ephemeral 节点退网后不会
       # 秒删，会以 offline 状态滞留设备列表（run 40079093854 实证：B 抓到
       # 上一轮 40075392632 的残留节点 IP，E 步 180s 全 timeout）。前缀

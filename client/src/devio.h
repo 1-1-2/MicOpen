@@ -1,6 +1,6 @@
 /* devio.h — \\.\WOMic 设备句柄与灌音协议（2022 驱动 2.1.0.0）
  *
- * 全部编号来自 docs/driver-whitepaper.md §4（静态反汇编 + 实测）。
+ * 全部编号来自 docs/protocol/driver-whitepaper.md §4（静态反汇编 + 实测）。
  * 旧的 0x222000 是 2017 驱动的编号，在 2022 驱动上 51/51 返回
  * ERROR_INVALID_FUNCTION，已从代码库删除。
  *
