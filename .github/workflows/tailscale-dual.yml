@@ -37,9 +37,9 @@ name: tailscale-dual
 #   android.yml 承担。手动触发 + 输入窗口时长，由主理人按需发起；
 #   concurrency 另行兜底同 ref 排队。
 #
-# 纪律：不引第三方 action（官方件 + 仓库内 .github/actions/tailnet-debug 除外，
-# 本 workflow 甚至不复用该 action——它只支持 Windows 且带 SSH 挂起，联调不需要）；
-# 不改 android.yml / windows-e2e.yml / android / client / driver 任何源码。
+# 纪律：网络接入使用 Tailscale 官方 GitHub Action；保留仓库内
+# .github/actions/tailnet-debug 供 Windows SSH 调试窗口使用；本 workflow
+# 只负责双机联调，不改 Android/Windows 产品源码。
 # =====================================================================
 
 on:
@@ -121,7 +121,7 @@ jobs:
             echo "改写 $f"
           done
           if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo cp /etc/apt/apt-mirrors.txt <local path omitted>
+            sudo cp /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/apt-mirrors.txt.original"
             echo 'http://azure.archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           else
             sudo sed -i \
@@ -464,78 +464,45 @@ jobs:
         run: bash ../.github/scripts/install-app.sh ../apk/app-debug.apk
 
       # ---------------------------------------------------------------
-      # A 端入网。范式同 .github/actions/tailnet-debug（OAuth → ephemeral
-      # key，tags=[tag:ci]、expiry 3600 → tailscale up --accept-dns=false
-      # → 轮询 IP），去掉 SSH 挂起部分；Bash + jq 版（action 只支持 Windows）。
+      # 官方 action 负责安装、OAuth 入网与 ephemeral 节点清理；后续步骤
+      # 仍按本次 run 的固定 hostname 检查 IP/在线状态，避免命中旧节点。
       # ACL 已放行 tag:ci → tag:ci 的 8125/8126（任务书给定）。
       # ---------------------------------------------------------------
       - name: A. Tailscale 入网（linux-app）
-        timeout-minutes: 8
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: womic-dual-linux-${{ github.run_id }}
+          version: latest
+          args: --accept-dns=false
+
+      - name: A. 记录 Tailscale 状态（linux-app）
+        timeout-minutes: 3
         shell: bash
-        env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
         run: |
           set -uo pipefail
           WS="$GITHUB_WORKSPACE"
           mkdir -p "$WS/probe-results/logs"
           if ! command -v tailscale >/dev/null 2>&1; then
-            echo "[ts] 安装 Tailscale（官方 install.sh）"
-            curl -fsSL https://tailscale.com/install.sh | sudo bash \
-              || echo "::warning::install.sh 返回非 0，下面验证是否可用"
-          fi
-          if ! command -v tailscale >/dev/null 2>&1; then
-            echo "[ts] install.sh 未落地，尝试 apt universe 包兜底"
-            for i in 1 2 3; do
-              if timeout -k 10 120 sudo apt-get update -qq; then
-                if timeout -k 10 300 sudo apt-get install -y tailscale; then break; fi
-              fi
-              echo "::warning::apt tailscale 第 $i 次失败"; sleep 10
-            done
-          fi
-          if ! command -v tailscale >/dev/null 2>&1; then
-            echo "::error::Tailscale 不可用（install.sh 与 apt 均失败）"
+            echo "::error::官方 action 已完成但 tailscale CLI 不在 PATH"
             exit 1
           fi
           tailscale version | tee "$WS/probe-results/logs/tailscale-version.txt"
-          if [ -z "${TS_OAUTH_CLIENT_ID:-}" ] || [ -z "${TS_OAUTH_SECRET:-}" ]; then
-            echo "::error::secrets.TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET 为空"
-            exit 1
-          fi
-          # OAuth 现签 ephemeral 单次 key（tags 精确集合 = 签发凭据配置）
-          TOK=$(curl -sS -X POST 'https://api.tailscale.com/api/v2/oauth/token' \
-            -d "client_id=$TS_OAUTH_CLIENT_ID" \
-            -d "client_secret=$TS_OAUTH_SECRET" | jq -r '.access_token')
-          if [ -z "$TOK" ] || [ "$TOK" = "null" ]; then
-            echo "::error::OAuth access_token 换取失败"
-            exit 1
-          fi
-          DESC="womic-dual-linux-${{ github.run_id }}"
-          KEY_JSON=$(jq -n --arg d "$DESC" \
-            '{capabilities:{devices:{create:{reusable:false,ephemeral:true,tags:["tag:ci"]}}},expirySeconds:3600,description:$d}')
-          KEY=$(curl -sS -X POST 'https://api.tailscale.com/api/v2/tailnet/-/keys' \
-            -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-            -d "$KEY_JSON" | jq -r '.key')
-          if [ -z "$KEY" ] || [ "$KEY" = "null" ]; then
-            echo "::error::ephemeral key 签发失败"
-            exit 1
-          fi
-          # up 只等后端启动、不等地址分配（run 39934585851 实证）→ 轮询最多 60s
-          sudo tailscale up --authkey="$KEY" --hostname="$DESC" --accept-dns=false \
-            || { echo "::error::tailscale up 失败"; sudo tailscale status; exit 1; }
           A_IP=""
           for i in $(seq 1 30); do
-            A_IP=$(sudo tailscale ip -4 2>/dev/null | head -1 || true)
+          A_IP=$(tailscale ip -4 2>/dev/null | head -1 || true)
             [ -n "$A_IP" ] && break
             sleep 2
           done
           if [ -z "$A_IP" ]; then
             echo "::error::60s 内未取得 tailnet IPv4"
-            sudo tailscale status
+            tailscale status
             exit 1
           fi
-          echo "[ts] linux-app 已入网：hostname=$DESC ip=$A_IP"
-          sudo tailscale status | tee "$WS/probe-results/logs/tailscale-status.txt"
+          echo "[ts] linux-app 已入网：hostname=womic-dual-linux-${{ github.run_id }} ip=$A_IP"
+          tailscale status | tee "$WS/probe-results/logs/tailscale-status.txt"
           echo "A_IP=$A_IP" >> "$GITHUB_ENV"
 
       # ---------------------------------------------------------------
@@ -555,7 +522,7 @@ jobs:
           set -uo pipefail
           B_IP=""
           for i in $(seq 1 24); do
-            B_IP=$(sudo tailscale status --json 2>/dev/null \
+            B_IP=$(tailscale status --json 2>/dev/null \
               | jq -r --arg host "womic-dual-win-${{ github.run_id }}" \
                 '.Peer[] | select(.HostName == $host and .Online) | .TailscaleIPs[0]' \
               2>/dev/null | head -1 || true)
@@ -565,7 +532,7 @@ jobs:
           done
           if [ -z "$B_IP" ] || [ "$B_IP" = "null" ]; then
             echo "::error::120s 内未在 tailnet 发现 windows-client（B 应已先入网）"
-            sudo tailscale status
+            tailscale status
             exit 1
           fi
           echo "[discover] windows-client → $B_IP"
@@ -773,7 +740,7 @@ jobs:
           # 5) 链路状态快照（主理人进门即看）
           echo "[dbg] ===== 链路状态快照 ====="
           echo "--- tailscale status ---"
-          sudo tailscale status || true
+          tailscale status || true
           echo "--- socat / udp-relay / adb 进程 ---"
           ps -eo pid,ppid,cmd | grep -E '[s]ocat|[u]dp-relay|[a]db' || echo "(未见相关进程)"
           echo "--- app 进程（adb shell pidof com.miclink.open）---"
@@ -916,7 +883,7 @@ jobs:
           mkdir -p probe-results/logs
           cp -f relay.log probe-results/ 2>/dev/null || true
           cp -f socat.log probe-results/ 2>/dev/null || true
-          sudo tailscale status --json > probe-results/logs/tailscale-status-final.json 2>/dev/null || true
+          tailscale status --json > probe-results/logs/tailscale-status-final.json 2>/dev/null || true
           timeout 20 adb devices > probe-results/logs/adb-devices.txt 2>&1 || true
           timeout 20 adb logcat -d -t 60 > probe-results/logs/app-logcat.txt 2>&1 || true
           timeout 20 adb shell "cat /proc/net/tcp | awk 'NR>1 {print \$2}' | grep -i ':1FBD' || echo '(8125 未监听)'" \
@@ -934,9 +901,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # 收尾：先杀后台中继（PID 文件，不用 pkill 模式串），再退网
-      # （ephemeral 节点随后由控制面自动删除，不残留长期 auth key）。
-      - name: A. 收尾（停中继 + 退网）
+      # 收尾：杀后台中继（PID 文件，不用 pkill 模式串）；Tailscale 官方
+      # action 的 post 步骤负责登出并清理 ephemeral 节点。
+      - name: A. 收尾（停中继）
         if: always()
         timeout-minutes: 3
         shell: bash
@@ -949,7 +916,6 @@ jobs:
               kill "$PID" 2>/dev/null && echo "[cleanup] 已停 $name (pid=$PID)" || true
             fi
           done
-          sudo tailscale down 2>/dev/null || true
           echo "[cleanup] A 侧收尾完成"
           exit 0
 
@@ -968,8 +934,7 @@ jobs:
     runs-on: windows-latest
     # 预算：环境+入网 ~4min；等 A 出现 deadline 45min（覆盖 A 的 APK 最慢
     # 成功构建 + 模拟器 + 入网）；驱动最坏 ~25min（d1/d2/d3 各自超时）+
-    # 测试 ~8min。65min 硬上限。ephemeral key expiry 3600s 自入网起算，
-    # 本 job 必先于到期结束（节点已加入后 key 过期不影响在线，双保险）。
+    # 测试 ~8min。65min 硬上限。官方 action 在 job 收尾阶段登出并清理 ephemeral 节点。
     timeout-minutes: 65
     defaults:
       run:
@@ -1007,63 +972,35 @@ jobs:
           exit 0
 
       # ---------------------------------------------------------------
-      # B. Tailscale 安装 + 入网 + 媒体面防火墙。
-      #    安装范式同 tailnet-debug action（winget → 静默安装包兜底）；
-      #    入网参数同款（OAuth → ephemeral key tags=[tag:ci] expiry 3600
-      #    → up --accept-dns=false → 轮询 IP 60s）。
+      # B. Tailscale 官方 action 负责安装、OAuth 入网与 ephemeral 节点清理。
+      #    入网后仅保留媒体面的 Windows 防火墙规则；
       #    防火墙只放行入站 UDP 8126 于 tailscale 适配器（womic.exe 的
       #    媒体口；主防线仍是 tailnet ACL）。TCP 8125 是 B 出站，不需入站规则。
       # ---------------------------------------------------------------
-      - name: B. Tailscale 入网（windows-client）+ UDP 8126 入站放行
+      - name: B. Tailscale 入网（windows-client）
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: womic-dual-win-${{ github.run_id }}
+          version: latest
+          args: --accept-dns=false
+
+      - name: B. 记录状态 + UDP 8126 入站放行
         timeout-minutes: 10
-        env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
         run: |
           $ErrorActionPreference = 'Stop'
           $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
           if (-not (Test-Path $ts)) {
-            winget install --id tailscale.tailscale --accept-source-agreements --accept-package-agreements
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ts)) {
-              Write-Host "::warning::winget 未成功（exit=$LASTEXITCODE），转静默安装包"
-              $exe = "$env:RUNNER_TEMP\tailscale-setup-latest.exe"
-              Invoke-WebRequest -Uri 'https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe' `
-                -OutFile $exe -ErrorAction Stop
-              Start-Process -FilePath $exe -ArgumentList '/S' -Wait
-            }
+            $cmd = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $ts = $cmd.Source }
           }
           if (-not (Test-Path $ts)) {
-            Write-Host "::error::tailscale.exe 未就位: $ts"
+            Write-Host "::error::官方 action 已完成但 tailscale.exe 未就位"
             exit 1
           }
           & $ts version | Tee-Object probe-results/logs/tailscale-version.txt
-          if ([string]::IsNullOrWhiteSpace($env:TS_OAUTH_CLIENT_ID) -or `
-              [string]::IsNullOrWhiteSpace($env:TS_OAUTH_SECRET)) {
-            Write-Host "::error::OAuth 凭据为空（secrets.TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET）"
-            exit 1
-          }
-          $tok = (Invoke-RestMethod -Method Post -Uri 'https://api.tailscale.com/api/v2/oauth/token' `
-            -Body @{ client_id = $env:TS_OAUTH_CLIENT_ID; client_secret = $env:TS_OAUTH_SECRET }).access_token
-          if ([string]::IsNullOrWhiteSpace($tok)) {
-            Write-Host "::error::access_token 为空"; exit 1
-          }
-          $hostname = "womic-dual-win-$env:GITHUB_RUN_ID"
-          $kb = @{
-            capabilities = @{ devices = @{ create = @{ reusable = $false; ephemeral = $true; tags = @('tag:ci') } } }
-            expirySeconds = 3600
-            description = $hostname
-          } | ConvertTo-Json -Depth 8
-          $key = (Invoke-RestMethod -Method Post -Uri 'https://api.tailscale.com/api/v2/tailnet/-/keys' `
-            -Headers @{ Authorization = "Bearer $tok" } -ContentType 'application/json' -Body $kb).key
-          if ([string]::IsNullOrWhiteSpace($key)) {
-            Write-Host "::error::auth key 为空"; exit 1
-          }
-          & $ts up --authkey=$key --hostname=$hostname --accept-dns=false
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::tailscale up 失败（exit=$LASTEXITCODE）"
-            & $ts status
-            exit 1
-          }
           $ip = ''
           for ($i = 0; $i -lt 30 -and [string]::IsNullOrWhiteSpace($ip); $i++) {
             Start-Sleep -Seconds 2
@@ -1075,7 +1012,7 @@ jobs:
             & $ts status
             exit 1
           }
-          Write-Host "windows-client 已入网：hostname=$hostname ip=$ip"
+          Write-Host "windows-client 已入网：hostname=womic-dual-win-$env:GITHUB_RUN_ID ip=$ip"
           # 入站 UDP 8126（中继 → womic.exe 媒体口）：优先只放行 tailscale 适配器
           $ruleName = 'womic-dual media udp'
           Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule | Out-Null
@@ -1110,7 +1047,7 @@ jobs:
         timeout-minutes: 50
         run: |
           $ErrorActionPreference = 'Continue'
-          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          $ts = (Get-Command tailscale.exe -ErrorAction Stop).Source
           $A_IP = ''
           $deadline = (Get-Date).AddMinutes(45)
           while ((Get-Date) -lt $deadline -and [string]::IsNullOrWhiteSpace($A_IP)) {
@@ -1321,7 +1258,7 @@ jobs:
           $listen = (Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue) -ne $null
           if (-not $listen) { Write-Host "::error::22 端口未监听"; exit 1 }
           # ---- 连接信息 + B 侧状态快照（Step Summary + 日志）----
-          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          $ts = (Get-Command tailscale.exe -ErrorAction Stop).Source
           $hostname = "womic-dual-win-$env:GITHUB_RUN_ID"
           $cand = (& $ts ip -4 2>$null | Select-Object -First 1)
           $ip = if ($cand) { "$cand".Trim() } else { '<未取得>' }
@@ -1645,14 +1582,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # 收尾：退网（ephemeral 节点由控制面自动删除，不残留长期 auth key）
-      - name: 收尾（退网）
+      # 收尾：移除媒体防火墙规则；Tailscale 官方 action 的 post 步骤
+      # 负责登出并清理 ephemeral 节点。
+      - name: 收尾（移除媒体防火墙规则）
         if: always()
         timeout-minutes: 3
         run: |
-          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
-          if (Test-Path $ts) {
-            & $ts down 2>&1 | Out-Null
-            Write-Host "windows-client 已退网（ephemeral 节点由控制面清理）"
-          }
+          Get-NetFirewallRule -Name 'womic-dual media udp' -ErrorAction SilentlyContinue |
+            Remove-NetFirewallRule -ErrorAction SilentlyContinue | Out-Null
+          Write-Host "媒体 UDP 防火墙规则已清理"
           exit 0
