@@ -57,6 +57,44 @@ static unsigned char *slurp(const wchar_t *path, unsigned long *len)
     return buf;
 }
 
+/* 外置目录与内嵌包是两条路径。空包 CI 改走外置安装时，曾因窄字符串
+ * kinds 被宽 printf 的 %s 解释而复制不存在的路径；逐字节验证两种文件名。 */
+static int external_copy_test(const wchar_t *src, const wchar_t *base, int arch, int renamed)
+{
+    wchar_t out[MAX_PATH];
+    int i, fail = 0;
+    _snwprintf(out, MAX_PATH, L"%s\\external-\u6d4b\u8bd5-%d-%d", base, arch, renamed);
+    if (renamed) {
+        const char *prefix = drvpkg_prefix(drvpkg_detect_arch());
+        for (i = 0; i < DRVPKG_EXPECT_N; i++) {
+            wchar_t from[MAX_PATH], to[MAX_PATH];
+            if (drvpkg_expect[i].arch != arch) continue;
+            _snwprintf(from, MAX_PATH, L"%s\\womic.%hs", src, drvpkg_expect[i].kind);
+            _snwprintf(to, MAX_PATH, L"%s\\%hs.%hs", src, prefix, drvpkg_expect[i].kind);
+            if (!MoveFileW(from, to)) { printf("FAIL: external rename gle=%lu\n", GetLastError()); return 1; }
+        }
+    }
+    if (!drvpkg_extract_dir(src, out, 1)) {
+        printf("FAIL: external copy arch=%d renamed=%d: %s\n", arch, renamed, drvpkg_last_error());
+        return 1;
+    }
+    for (i = 0; i < DRVPKG_EXPECT_N; i++) {
+        wchar_t path[MAX_PATH];
+        unsigned long len = 0;
+        unsigned char *buf;
+        if (drvpkg_expect[i].arch != arch) continue;
+        _snwprintf(path, MAX_PATH, L"%s\\womic.%hs", out, drvpkg_expect[i].kind);
+        buf = slurp(path, &len);
+        if (!buf || len != drvpkg_expect[i].raw_len || fnv1a64(buf, len) != drvpkg_expect[i].fnv) {
+            printf("FAIL: external bytes arch=%d kind=%s renamed=%d\n", arch, drvpkg_expect[i].kind, renamed); fail++;
+        }
+        free(buf);
+    }
+    drvpkg_cleanup(out);
+    if (!fail) printf("external copy: arch=%d renamed=%d PASS (3/3)\n", arch, renamed);
+    return fail;
+}
+
 int main(void)
 {
     wchar_t base[MAX_PATH], arch_dir[MAX_PATH];
@@ -112,6 +150,8 @@ int main(void)
             }
             free(buf);
         }
+        fail += external_copy_test(arch_dir, base, a, 0);
+        fail += external_copy_test(arch_dir, base, a, 1);
         if (!drvpkg_cleanup(arch_dir)) { printf("warn: 清理失败 %ls\n", arch_dir); }
     }
     drvpkg_cleanup(base);

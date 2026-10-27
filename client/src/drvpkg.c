@@ -474,8 +474,8 @@ static int copy_three(const wchar_t *src_dir, const char *prefix, const wchar_t 
     int i;
     for (i = 0; i < 3; i++) {
         wchar_t src[MAX_PATH], dst[MAX_PATH];
-        _snwprintf(src, MAX_PATH, L"%s\\%hs.%s", src_dir, prefix, kinds[i]);
-        _snwprintf(dst, MAX_PATH, L"%s\\womic.%s", out_dir, kinds[i]);
+        _snwprintf(src, MAX_PATH, L"%s\\%hs.%hs", src_dir, prefix, kinds[i]);
+        _snwprintf(dst, MAX_PATH, L"%s\\womic.%hs", out_dir, kinds[i]);
         if (!CopyFileW(src, dst, FALSE)) {
             set_err("复制失败 %ls → %ls (gle=%lu)", src, dst, GetLastError());
             return 0;
