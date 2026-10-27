@@ -22,6 +22,7 @@ CRITICAL_SECTION cs;
 HANDLE wake, thread;
 std::atomic<bool> quit{false}, want{false};
 std::atomic<int> vol{70}, fx{0}, choice{0}, delayMs{100}, generation{0}, clearEpoch{0};
+std::atomic<unsigned> resetSeq[2]{};
 int16_t queue[Q];
 int readAt = 0, used = 0;
 wchar_t requested[MON_DEVICE_ID] = {};
@@ -161,6 +162,7 @@ DWORD WINAPI worker(void *) {
     Output slots[2];
     Output *output = nullptr;
     int seen = -1, epoch = -1, fadeIn = 0;
+    unsigned seenReset[2] = {resetSeq[0].load(), resetSeq[1].load()};
     DWORD poll = 0, retry = 0;
     int16_t history[H] = {}, in[B], reference[B], processed[2][B];
     int histAt = 0;
@@ -195,6 +197,19 @@ DWORD WINAPI worker(void *) {
                     output->close();
                 output = nullptr;
                 message(L"系统默认输出不可用，监听已暂停");
+            }
+        }
+        // DSP learning resets never stop the output device or discard its queue.
+        for (int p = 0; p < 2; ++p) {
+            unsigned revision = resetSeq[p].load();
+            if (revision != seenReset[p]) {
+                seenReset[p] = revision;
+                plugins[p].reset();
+                if (p == 0) {
+                    EnterCriticalSection(&cs);
+                    state.filters = available[0] ? plugins[0].api->status(plugins[0].ctx) : 0;
+                    LeaveCriticalSection(&cs);
+                }
             }
         }
         if (!want.load()) {
@@ -406,13 +421,15 @@ void monitor_effect(int enabled, int module) {
     fx = enabled != 0;
 }
 void monitor_delay(int ms) {
-    delayMs = std::max(10, std::min(400, ms));
-    ++clearEpoch;
+    int value = std::max(10, std::min(400, ms));
+    if (delayMs.exchange(value) != value) {
+        ++resetSeq[1]; // the old AEC filter was fitted to a different reference delay
+        if (wake) SetEvent(wake);
+    }
 }
 void monitor_reset(void) {
-    ++clearEpoch;
-    if (wake)
-        SetEvent(wake);
+    ++resetSeq[choice.load() == 1 ? 1 : 0];
+    if (wake) SetEvent(wake);
 }
 void monitor_snapshot(MonitorStatus *out) {
     memset(out, 0, sizeof(*out));

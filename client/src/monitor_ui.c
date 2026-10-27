@@ -51,7 +51,7 @@ static void sync(void) {
              !s.aec_available ? L"不可用" : s.suppression && s.module == 1 && s.active ? L"已启用" : L"可用（未启用）",
              !s.active ? L"等待播放" : s.switching ? L"效果切换中" : s.suppression && (s.module == 0 ? s.ring_available : s.aec_available) ? L"处理音频" : L"原声旁路", s.dropped_frames);
     if ((int)(reset_notice_until - GetTickCount()) > 0)
-        wcscat(text, L"\r\n学习状态已重置；延迟保持不变。");
+        wcscat(text, L"\r\n已请求重置当前算法；延迟保持不变。");
     SetWindowTextW(status, text);
 }
 static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
@@ -89,8 +89,8 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             SendMessageW(delay, CB_ADDSTRING, 0, (LPARAM)b);
         }
         SendMessageW(delay, CB_SETCURSEL, s.delay_ms / 10 - 1, 0);
-        control(w, L"BUTTON", L"重置学习状态", BS_PUSHBUTTON | WS_TABSTOP, 20, 302, 160, 32, C_RESET);
-        control(w, L"STATIC", L"重置会清空两种算法的学习状态；延迟数值不会改变。AEC 需要重新收敛。",
+        control(w, L"BUTTON", L"重置当前算法", BS_PUSHBUTTON | WS_TABSTOP, 20, 302, 160, 32, C_RESET);
+        control(w, L"STATIC", L"重置当前算法的学习状态：清空陷波或重新收敛 AEC；延迟数值不会改变。",
                 0, 20, 344, 554, 40, 0);
         control(w, L"STATIC", L"AEC 只使用本监听的播放参考，不含其他应用的声音。",
                 0, 20, 388, 554, 24, 0);
