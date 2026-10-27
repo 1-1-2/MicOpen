@@ -25,9 +25,9 @@ run-name: Lab · ${{ inputs.scenario }} · ${{ inputs.target }} · ${{ inputs.re
         - both
         default: windows
       artifact_run_id:
-        description: 0=本次构建；其他=指定现有运行的公开产物
-        type: number
-        default: 0
+        description: 运行编号；0=本次构建，其他=现有运行的公开产物
+        type: string
+        default: '0'
       pause_at:
         description: verify 的暂停点；dual 用 ready/after-test/on-failure/none
         type: choice

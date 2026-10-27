@@ -18,6 +18,20 @@ import lab_session
 class RelayTests(unittest.TestCase):
     def connection(self):
         return dict(host='100.64.1.2',user='runneradmin',port=22,host_keys=['ssh-ed25519 AAAA test'],relay=dict(kind='upterm',version=lab_relay.VERSION,host='uptermd.upterm.dev',port=443,user='session:Ym9i=',ca=lab_relay.CA))
+    def test_integer_inputs_accept_api_strings(self):
+        self.assertEqual(labctl.integer_input('40491670551','run',0,2**63-1),40491670551)
+        self.assertEqual(labctl.integer_input('5','minutes',1,120),5)
+        self.assertEqual(labctl.integer_input(20,'minutes',1,120),20)
+    def test_integer_inputs_reject_noninteger_and_out_of_range(self):
+        for value in ['1.5','-1','nan','5;echo bad',121,True]:
+            with self.assertRaises(ValueError):labctl.integer_input(value,'minutes',1,120)
+    def test_dispatch_transmits_form_values_as_strings(self):
+        with patch.object(labctl,'api',return_value={'workflow_run_id':123}) as api:
+            labctl.dispatch('lab.yml','main',['artifact_run_id=40491670551','session_minutes=5','stream_logs=false'])
+        inputs=api.call_args.args[2]['inputs']
+        self.assertEqual(inputs['artifact_run_id'],'40491670551')
+        self.assertEqual(inputs['session_minutes'],'5')
+        self.assertEqual(inputs['stream_logs'],'false')
     def test_wss_scheme_is_not_part_of_ssh_user(self):
         self.assertEqual(lab_relay.relay_user("ssh -o 'ProxyCommand=upterm proxy wss://session:Ym9i=@uptermd.upterm.dev' session:Ym9i=@uptermd.upterm.dev:443"),'session:Ym9i=')
         with self.assertRaises(ValueError):lab_relay.relay_user('wss://session@untrusted.example')

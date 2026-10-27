@@ -42,7 +42,10 @@ def api(path,method='GET',data=None,raw=False):
     try:
         with urllib.request.build_opener(NoRedirect()).open(request,timeout=30) as response:body=response.read()
     except urllib.error.HTTPError as e:
-        if e.code not in [301,302,303,307,308]:raise ValueError(f'GitHub HTTP {e.code}: {method} {path}') from None
+        if e.code not in [301,302,303,307,308]:
+            try:detail=str(json.loads(e.read(8192)).get('message','')).replace(token,'[REDACTED]')
+            except (ValueError,UnicodeError):detail=''
+            raise ValueError(f'GitHub HTTP {e.code}: {method} {path}: {detail[:2000]}') from None
         # 下载签名地址时不把 GitHub token 转发给另一台主机。
         with urllib.request.urlopen(e.headers['Location'],timeout=30) as response:body=response.read()
     return body if raw else json.loads(body) if body else {}
@@ -55,11 +58,20 @@ def output(values):
     print(json.dumps(values,ensure_ascii=False))
 
 
+def integer_input(value,name,minimum,maximum):
+    if isinstance(value,bool):raise ValueError(name+' must be an integer')
+    if isinstance(value,str):
+        if not re.fullmatch(r'[0-9]+',value):raise ValueError(name+' must contain decimal digits only')
+        value=int(value)
+    if not isinstance(value,(int,float)) or value!=int(value) or not minimum<=value<=maximum:raise ValueError(name+' outside allowed integer range')
+    return int(value)
+
+
 def plan():
     a=json.loads(os.environ['LAB_INPUTS']);scenario=a['scenario'];target=a['target'];minutes=a['session_minutes'];source=a['artifact_run_id'];pause=a['pause_at']
     if scenario not in ['base','toolchain','built','installed','verify','dual'] or target not in ['windows','linux','android','both']:raise ValueError('invalid scenario/target')
-    if not isinstance(minutes,(int,float)) or int(minutes)!=minutes or not 1<=minutes<=120:raise ValueError('session_minutes must be an integer 1–120')
-    if not isinstance(source,(int,float)) or int(source)!=source or source<0:raise ValueError('artifact_run_id must be a nonnegative integer')
+    minutes=integer_input(minutes,'session_minutes',1,120)
+    source=integer_input(source,'artifact_run_id',0,2**63-1)
     if scenario=='dual':
         target='both'
         if pause not in ['ready','after-test','on-failure','none']:raise ValueError('dual pause_at: ready/after-test/on-failure/none')
@@ -168,8 +180,7 @@ def dispatch(workflow,ref,items):
     inputs={}
     for item in items:
         k,v=item.split('=',1)
-        try:v=json.loads(v)
-        except json.JSONDecodeError:pass
+        # REST dispatch 的 inputs 走字符串；workflow 的类型声明负责还原布尔/数字。
         inputs[k]=v
     inputs.setdefault('request_id',uuid.uuid4().hex[:12])
     try:result=api('/actions/workflows/'+workflow+'/dispatches','POST',{'ref':ref,'inputs':inputs})

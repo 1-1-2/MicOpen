@@ -34,7 +34,7 @@ CI 的 `task` 为 `verify`（默认）或 `build`；`target` 为 `auto`（默认
 |---|---|---|
 | `scenario` | `base` | `base/toolchain/built/installed/verify/dual`，见上表 |
 | `target` | `windows` | `windows/android/linux/both`；`linux` 仅基础与工具场景，`dual` 自动选择两端 |
-| `artifact_run_id` | `0` | 0 表示本次构建；指定运行编号可复用符合新清单格式的构建包 |
+| `artifact_run_id` | `0`（文本） | 0 表示本次构建；指定运行编号可复用符合新清单格式的构建包 |
 | `pause_at` | `ready` | 单端 verify 的 ready 对应测试开始前；还支持下述暂停点 |
 | `session_minutes` | `20` | 环境就绪后的操作时长，整数 1–120 分钟；准备阶段另计 |
 | `ssh_transport` | `tailnet` | `relay` 显式启动 WSS 中继，操作端无需入网；双机媒体仍走 tailnet |
@@ -49,7 +49,7 @@ Windows verify 支持 `before-install`（装驱动前）、`before-permissions`�
 
 ## 从 Agent／终端运行
 
-先通过凭据管理器设置 `GH_TOKEN`，需要 Actions 读写权限；不把 token 作为命令参数。工具默认从 Git origin 推导仓库，也可设置 `GH_REPO=owner/repo`。启动工具固定使用 GitHub REST API `2026-03-10`，直接返回本次运行编号；响应不确定时按 `request_id` 核对，不能盲目重复提交。
+先通过凭据管理器设置 `GH_TOKEN`，需要 Actions 读写权限；不把 token 作为命令参数。工具默认从 Git origin 推导仓库，也可设置 `GH_REPO=owner/repo`。启动工具固定使用 GitHub REST API `2026-03-10`，直接返回本次运行编号；响应不确定时按 `request_id` 核对，不能盲目重复提交。REST 请求中的输入值按字符串提交；工作流 plan 再校验并转换数字，运行编号按文本传输。
 
 ```bash
 # 只编译 Windows
