@@ -878,6 +878,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
     if (g_args.connect && g_args.host_pos) PostMessageW(hwnd, WM_APP + 2, 0, 0);
 
     while (GetMessageW(&m, NULL, 0, 0) > 0) {
+        if (monitor_handle_message(&m)) continue;
         TranslateMessage(&m);
         DispatchMessageW(&m);
     }

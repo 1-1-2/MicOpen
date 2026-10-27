@@ -769,6 +769,7 @@ public class W32 {
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr wp, IntPtr lp);
 }
 "@
 [W32]::SetForegroundWindow($hwnd) | Out-Null
@@ -791,6 +792,11 @@ if ($w -gt 0 -and $h -gt 0) {
   "printwindow=$ok" | Out-File -Append "$dir/h2-gui-info.txt"
   $shotOk = Test-Path "$dir/gui-main.png"
 }
+# Explicit messages target the running GUI even if environment flags were not
+# inherited by an existing single-instance process.
+[W32]::PostMessage($hwnd, 0x8003, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+[W32]::PostMessage($hwnd, 0x8004, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+Start-Sleep -Milliseconds 800
 # 监听和命令行说明子窗口：真实渲染，供视觉核对与文档更新。
 foreach ($item in @(@('MicLinkMonitorTest','gui-monitor.png'), @('MicLinkHelpClass','gui-help.png'))) {
   $child = [W32]::FindWindow($item[0], $null)

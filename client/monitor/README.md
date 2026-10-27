@@ -30,7 +30,9 @@
 
 **SpeexDSP AEC（实验）**：48 kHz、10 ms 帧、200 ms 自适应滤波尾长。参考取自本监听分支实际提交给播放设备的 PCM，包含监听音量和切换混合。它没有采集其他软件的系统回环声音，也没有自动补偿手机与电脑时钟漂移；渲染失败、积压或会话重置会清理参考与学习状态。这是评估当前反馈路径是否适合 AEC 的实验模块，无法保证它比陷波更好，也不能把合成测试结果当作真实房间效果。两种算法均不增加 AGC。
 
-不提供一个无法实际作用于网络 PCM 的「Windows 系统 AEC」选项。安卓系统 AEC/AGC 也没有改动。未来模块可以复用窄 C ABI；当前只加载两个固定文件名，不执行对任意第三方插件目录的自动扫描。
+**为什么没有 Windows 11 原生 AEC 选项？** 当前没有根据系统版本隐藏选项，也没有调用该接口。微软的 [IAcousticEchoCancellationControl](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nn-audioclient-iacousticechocancellationcontrol) 用于控制录音端点已有的 AEC 所使用的播放参考端点，并不提供把任意 PCM 输入算法的接口。本项目处理的是网络接收的手机音频，因此不能直接用它替代这里的监听处理模块。`E_NOINTERFACE` 只表明该端点不提供参考端点控制，不能推断该端点完全没有 AEC。其他 Windows 语音处理接口可另行研究；当前没有实现或验证。
+
+安卓系统 AEC/AGC 也没有改动。未来模块可以复用窄 C ABI；当前只加载两个固定文件名，不执行对任意第三方插件目录的自动扫描。
 
 ## 构建和复核
 

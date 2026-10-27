@@ -477,8 +477,8 @@ int cli_run(CliArgs *a)
         char line[160];
         cli_ensure_console(1);
         g_ui.gain_ext = a->gain_ext;   /* 映射函数读这个标志，切量程 */
-        out(a->gain_ext ? "pos\tdB\t倍率\t读数（扩展量程 0–501%）\n"
-                        : "pos\tdB\t倍率\t读数（常态量程 0–200%）\n");
+        out(a->gain_ext ? "pos\tdB\t倍率\t读数（扩展量程 0.1–501%）\n"
+                        : "pos\tdB\t倍率\t读数（常态量程 0.1–200%）\n");
         for (pos = 0; pos <= 1000; pos += 50) {
             int db10 = ui_pos_to_db10(pos);
             double m = pow(10.0, db10 / 200.0);

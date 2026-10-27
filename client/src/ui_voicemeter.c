@@ -373,13 +373,13 @@ static void draw_gain(HDC dc, RECT card)
     wchar_t rd[48];
     RECT rr = { x1 - sd(220), gy, x1, gy + sd(18) };
     /* R-24：读数右对齐；窄窗（900×560）放不下全称时逐级缩短，绝不与读数重叠。
-     * R-47：量程随「扩展增益」开关变化（0–200% ↔ 0–501%），标题跟着读数走 ——
+     * R-47：量程随「扩展增益」开关变化（0.1–200% ↔ 0.1–501%），标题跟着读数走 ——
      * 不然标题写死 200%、读数却是 501%，两者互相打架。 */
-    static const wchar_t *const lbl_full_n   = L"电脑端本地增益（0–200%）";
-    static const wchar_t *const lbl_mid_n    = L"本地增益（0–200%）";
+    static const wchar_t *const lbl_full_n   = L"电脑端本地增益（0.1–200%）";
+    static const wchar_t *const lbl_mid_n    = L"本地增益（0.1–200%）";
     static const wchar_t *const lbl_short    = L"本地增益";
-    static const wchar_t *const lbl_full_e   = L"电脑端本地增益（0–501%）";
-    static const wchar_t *const lbl_mid_e    = L"本地增益（0–501%）";
+    static const wchar_t *const lbl_full_e   = L"电脑端本地增益（0.1–501%）";
+    static const wchar_t *const lbl_mid_e    = L"本地增益（0.1–501%）";
     const wchar_t *lbl;
     int lw, rw, avail = x1 - x0;
     RECT lr;
@@ -442,7 +442,7 @@ static void draw_gain(HDC dc, RECT card)
 /* 三个开关同形态（52×32），标签画在各自开关左侧（右对齐贴开关 6px）。
  * 静音 = 输出截断（D-06）；监听设置按钮打开独立监听面板；
  * 扩展增益（R-47）= 把增益上限从 +6 dB（200%）抬到 +14 dB（501%），
- * 超过 100% 就会削波 —— 这是刻意留的"炸麦"档位。
+ * 较高输入电平叠加增益可能削波。
  * R-44：自动重连开关已移出电平卡，挪到左侧连接卡（连接行为归连接卡）。
  *
  * 标签文案由布局决定（ui_lbl_gainext()），绘制只负责画——和顶栏

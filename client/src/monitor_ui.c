@@ -124,6 +124,7 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_COMMAND: {
         int id = LOWORD(wp), event = HIWORD(wp);
+        if (id == IDCANCEL && event == BN_CLICKED) { ShowWindow(w, SW_HIDE); return 0; }
         if (id == C_ENABLE && event == BN_CLICKED)
             monitor_enable(SendMessageW(enabled, BM_GETCHECK, 0, 0) == BST_CHECKED);
         if (id == C_DEVICE && event == CBN_SELCHANGE) {
@@ -181,3 +182,7 @@ void monitor_show(HWND owner) {
 }
 
 void monitor_theme_changed(void) { if (panel) SendMessageW(panel, WM_APP + 20, 0, 0); }
+
+int monitor_handle_message(MSG *msg) {
+    return panel && IsWindowVisible(panel) && (msg->hwnd == panel || IsChild(panel, msg->hwnd)) && IsDialogMessageW(panel, msg);
+}

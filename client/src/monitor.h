@@ -31,6 +31,7 @@ void monitor_reset(void);
 void monitor_snapshot(MonitorStatus *out);
 void monitor_show(HWND owner);
 void monitor_theme_changed(void);
+int monitor_handle_message(MSG *msg);
 #ifdef __cplusplus
 }
 #endif

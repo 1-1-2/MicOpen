@@ -34,6 +34,13 @@ int main() {
         failures++;
     } else
         puts("PASS missing explicit endpoint stays paused");
+    monitor_effect(1, 1);
+    monitor_delay(170);
+    for (int i = 0; i < 3; ++i) monitor_reset();
+    Sleep(50);
+    monitor_snapshot(&s);
+    if (s.delay_ms != 170) { puts("FAIL reset changed AEC delay"); failures++; }
+    else puts("PASS reset preserves AEC delay");
     for (int j = 0; j < 20; j++) {
         monitor_volume(j * 5);
         monitor_effect(j % 2, j % 2);

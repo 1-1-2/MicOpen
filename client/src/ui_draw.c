@@ -794,7 +794,7 @@ void ui_gain_reading(wchar_t *out, int cap, int db10)
     else            swprintf(out, cap, L"增益 %d%% · %+.1f dB", (int)(pct + 0.5), db);
     if (db10 == 0) swprintf(out, cap, L"增益 100%% · 0.0 dB");
     /* 刻意不再追加「（过载）」之类后缀：读数区宽度固定，加后缀会把数字挤出框。
-     * 「超过 100% 会削波」这件事在打开「扩展增益」开关时用一条日志说清楚
+     * 「输入电平较高时可能削波」这件事在打开「扩展增益」开关时用一条日志说清楚
      * （事件面板），而不是每次刷新读数都重复一遍。 */
 }
 
@@ -1485,7 +1485,7 @@ void ui_draw_statusbar(HDC dc)
 
     /* ---- R-28 右段：最新一条事件（HH:MM:SS + 级别 + 消息，单行省略号） ----
      * 级别色只用于左侧 3px 竖条与级别词；只在被下一条替换时更新（取环形里最新）。 */
-    if (ui_log_count() > 0 && x + sd(160) < g_ui.w - sd(8)) {
+    if (ui_log_count() > 0 && x + sd(12) < g_ui.w - sd(8)) {
         const LogLine *L = ui_log_get(0);
         int rx = x;
         int savedr = ui_clip_push(dc, (RECT){ rx, r.top, g_ui.w - sd(8), r.bottom });
@@ -1499,13 +1499,17 @@ void ui_draw_statusbar(HDC dc)
         MultiByteToWideChar(CP_UTF8, 0, L->text, -1, msg, LOG_LEN);
         msg[LOG_LEN - 1] = 0;
         ui_fill_round(dc, bar, sd(1), lc, 255);
-        SetRect(&tr, rx + sd(9), r.top, rx + sd(9) + sd(84), r.bottom);
-        ui_text(dc, tr, L->ts, ui_font(11, FW_NORMAL, 1), g_th.text_dim,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        SetRect(&vr, rx + sd(97), r.top, rx + sd(97) + sd(48), r.bottom);
-        ui_text(dc, vr, lvw[k], ui_font(11, FW_SEMIBOLD, 1), lc,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        SetRect(&mr, rx + sd(149), r.top, g_ui.w - sd(8), r.bottom);
+        if (g_ui.w - sd(8) - rx >= sd(200)) {
+            SetRect(&tr, rx + sd(9), r.top, rx + sd(9) + sd(84), r.bottom);
+            ui_text(dc, tr, L->ts, ui_font(11, FW_NORMAL, 1), g_th.text_dim,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            SetRect(&vr, rx + sd(97), r.top, rx + sd(97) + sd(48), r.bottom);
+            ui_text(dc, vr, lvw[k], ui_font(11, FW_SEMIBOLD, 1), lc,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            SetRect(&mr, rx + sd(149), r.top, g_ui.w - sd(8), r.bottom);
+        } else {
+            SetRect(&mr, rx + sd(9), r.top, g_ui.w - sd(8), r.bottom);
+        }
         ui_text(dc, mr, msg, ui_font(12, FW_NORMAL, 0), g_th.text,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         ui_clip_pop(dc, savedr);
