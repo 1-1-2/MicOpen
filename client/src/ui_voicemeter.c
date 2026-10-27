@@ -439,7 +439,7 @@ static void draw_gain(HDC dc, RECT card)
 
 /* ------------------------------------- 底行：静音 / 监听 / 扩展增益 */
 /* 三个开关同形态（52×32），标签画在各自开关左侧（右对齐贴开关 6px）。
- * 静音 = 输出截断（D-06）；监听 = 同一份处理后样本再送系统默认输出（R-39）；
+ * 静音 = 输出截断（D-06）；监听设置按钮打开独立监听面板；
  * 扩展增益（R-47）= 把增益上限从 +6 dB（200%）抬到 +14 dB（501%），
  * 超过 100% 就会削波 —— 这是刻意留的"炸麦"档位。
  * R-44：自动重连开关已移出电平卡，挪到左侧连接卡（连接行为归连接卡）。
@@ -466,7 +466,8 @@ static void draw_switch_row(HDC dc)
         ui_text(dc, lr, it[i].lbl, f,
                 it[i].on ? g_th.text : g_th.text_dim,
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        ui_switch(dc, it[i].r, it[i].on, ui_switch_anim_pos(it[i].which));
+        if (i == 1) ui_button(dc, it[i].r, L"设置", ID_MONITOR, BTN_SECONDARY, 1);
+        else ui_switch(dc, it[i].r, it[i].on, ui_switch_anim_pos(it[i].which));
     }
 }
 

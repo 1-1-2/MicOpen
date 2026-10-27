@@ -32,7 +32,7 @@ cd "$WORK_DIR"
 
 echo "==> 下载 opus-${VER}"
 curl -sSL -o opus.tar.gz "https://downloads.xiph.org/releases/opus/opus-${VER}.tar.gz"
-tar xzf opus.tar.gz
+tar --no-same-owner -xzf opus.tar.gz
 cd "opus-${VER}"
 
 echo "==> configure"

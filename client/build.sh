@@ -98,6 +98,7 @@ echo "==> windres"
 APP_SRC=(
     src/main.c
     src/engine.c
+    src/monitor_ui.c
     src/devio.c
     src/opusdec.c
     src/drvpkg.c
@@ -114,7 +115,7 @@ APP_SRC=(
 )
 APP_LIBS=(
     -lgdi32 -luser32 -lws2_32 -luxtheme -ldwmapi -lshell32 -lole32 -lwinmm
-    -lsetupapi -lcrypt32 -lnewdev -ladvapi32
+    -lsetupapi -lcrypt32 -lnewdev -ladvapi32 -lcomctl32 -luuid
 )
 # 安装器：菜单/参数解析 + 安装逻辑 + 驱动包解压 + 设备句柄探测（L1 判据）。
 # 刻意不编 UI/网络/Opus —— 它只做驱动装/卸/查。
@@ -215,6 +216,7 @@ check_target() {
 #   此结论基于实测五种参数组合，勿轻易推翻。
 if [ "$MODE" = "all" ] || [ "$MODE" = "app" ]; then
     echo "==> 编译链接 $APP_OUT"
+    "${CXX:-x86_64-w64-mingw32-g++}" -std=c++17 -Os -fno-exceptions -fno-rtti -D_WIN32_WINNT=0x0A00 -Wall -c src/monitor.cpp -o build/monitor.o
     "$CC" -Os -s -mwindows \
         -std=c99 -Wall -Wno-unused-function \
         -D_WIN32_WINNT=0x0A00 \
@@ -222,7 +224,7 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "app" ]; then
         -Wl,--gc-sections \
         -o "$APP_OUT" \
         "${APP_SRC[@]}" \
-        build/app_res.o \
+        build/app_res.o build/monitor.o \
         "${OPUS_LIBS[@]}" \
         "${APP_LIBS[@]}"
     check_target "$APP_OUT" "$SIZE_BUDGET_APP" app || {

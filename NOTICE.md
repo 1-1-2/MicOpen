@@ -39,3 +39,7 @@ Copyright (c) Microsoft Corporation.
 > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
+
+## 可选监听测试模块
+
+Windows 监听测试组合使用 Dusk Audio Ring Out（GPL-3.0-or-later）与 Xiph SpeexDSP 1.2.1（BSD 类许可）。完整来源、固定版本与对应源码分发方式见 [监听模块说明](client/monitor/README.md) 和 [测试组合许可](client/monitor/TEST-LICENSE.md)。原有自有源码保留 MIT；含 Ring Out 的二进制测试组合按 GPL-3.0-or-later 分发。

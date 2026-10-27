@@ -1,5 +1,7 @@
 # Windows 接收端
 
+监听增强的设备选择、效果切换和测试步骤见 [监听测试版](monitor/README.md)。
+
 `womic.exe` 接收 Android 端发送的音频，解码后写入电脑上已有的 WO Mic 虚拟麦克风驱动。界面提供输入增益、本地监听、自动重连和会话状态。驱动管理工具 `womic-drvinst.exe` 与应用分别构建。
 
 ## 构建

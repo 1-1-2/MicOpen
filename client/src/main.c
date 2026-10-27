@@ -7,6 +7,7 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include "app.h"
+#include "monitor.h"
 #include "ui_draw.h"
 #include "ui_layout.h"
 #include "ui_voicemeter.h"
@@ -253,22 +254,8 @@ void ui_on_click(int id, int x, int y)
                              : "已取消静音", 0);
         break;
     case ID_MONITOR:
-        /* R-39：监听 = 同一份处理后 PCM 再送系统默认输出。开不起来就回弹 + WARN */
-        if (!g_ui.monitor) {
-            if (eng_set_monitor(1)) {
-                g_ui.monitor = 1;
-                ui_log_add("已开启监听（系统默认输出设备）", 2);
-            } else {
-                g_ui.monitor = 0;
-                ui_log_add("监听开启失败：没有可用的输出设备（开关已回弹）", 3);
-            }
-        } else {
-            eng_set_monitor(0);
-            g_ui.monitor = 0;
-            ui_log_add("已关闭监听", 0);
-        }
-        ui_switch_anim_set(SWI_MON, g_ui.monitor);
-        break;
+        monitor_show(g_ui.hwnd);
+        return;
     case ID_GAINEXT:
         /* R-47 扩展增益范围：量程上限 +6 dB(200%) ↔ +14 dB(501%)。
          * 打开 = 把轨道上半段让给过载区（炸麦效果）；关闭时引擎会把当前增益
@@ -425,6 +412,8 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             SendMessageW(g_ui.edit_port, WM_SETFONT, (WPARAM)f, TRUE);
             SendMessageW(g_ui.edit_media, WM_SETFONT, (WPARAM)f, TRUE);
         }
+        monitor_init();
+        if (GetEnvironmentVariableW(L"MICLINK_SHOW_MONITOR", NULL, 0) > 0) PostMessageW(hwnd, WM_APP + 4, 0, 0);
         eng_set_logger(eng_log_cb);
         ui_log_add("客户端已启动，等待连接", 0);
         SetTimer(hwnd, 1, 16, NULL);
@@ -444,6 +433,8 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         int was = g_ui.running;
         DWORD now = GetTickCount();
         eng_snapshot(&st);
+        { MonitorStatus m; monitor_snapshot(&m);
+          if(g_ui.monitor!=m.wanted){g_ui.monitor=m.wanted;ui_switch_anim_set(SWI_MON,m.wanted);g_dirty=1;} }
         g_ui.st = st;
         if (g_ui.running && (st.state == ST_IDLE || st.state == ST_ERROR)) {
             g_ui.running = 0;
@@ -576,6 +567,9 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_APP + 2:                          /* 延迟执行的自动连接 */
         if (!g_ui.running) toggle_connection();
         return 0;
+    case WM_APP + 4:
+        monitor_show(hwnd);
+        return 0;
     case WM_APP + 3:                          /* 开发用：打开说明书窗口 */
         ui_show_help(GetModuleHandleW(NULL), g_ui.hwnd);
         return 0;
@@ -694,6 +688,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         g_ui.autorec = 0;
         KillTimer(hwnd, 1);
         eng_stop();
+        monitor_shutdown();
         devio_close();
         singleinst_shutdown();
         PostQuitMessage(0);

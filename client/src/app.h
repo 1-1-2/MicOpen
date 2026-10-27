@@ -234,9 +234,8 @@ int  eng_set_gain_db(int db10);
  * 缩回时会把当前增益钳到新上限，返回钳后的实际值。 */
 int  eng_set_gain_ext(int on);
 int  eng_gain_ext(void);
-/* 监听（R-39）：把灌给驱动的同一份处理后 PCM 再送系统默认输出（waveOut）。
- * 返回 1 = 已开启，0 = 打开失败（无输出设备等，UI 应回弹开关并记 WARN）。 */
-int  eng_set_monitor(int on);
+/* 异步请求监听启停；实际设备状态见 monitor_snapshot。 */
+int eng_set_monitor(int on);
 void eng_set_feed_mode(int mode);      /* DEV_FEED_IOCTL（默认）/ DEV_FEED_WRITE */
 
 /* 日志回调：引擎线程调用，UI 通过 PostMessage 转投 */
