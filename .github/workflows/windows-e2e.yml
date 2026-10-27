@@ -105,9 +105,9 @@ jobs:
             echo "改写 $f"
           done
           if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo cp /etc/apt/apt-mirrors.txt <local path omitted>
+            sudo cp /etc/apt/apt-mirrors.txt "$RUNNER_TEMP/apt-mirrors.txt.original"
             echo 'http://azure.archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-            echo "===== apt-mirrors.txt（已收敛，原始备份 <local path omitted>）====="
+            echo "===== apt-mirrors.txt（已收敛，原始备份位于 RUNNER_TEMP）====="
             cat /etc/apt/apt-mirrors.txt
           else
             sudo sed -i \

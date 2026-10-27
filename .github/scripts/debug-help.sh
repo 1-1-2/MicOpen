@@ -8,6 +8,8 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
+PROBE_DIR="$REPO_ROOT/probe-results"
+INTEROP_DIR="$PROBE_DIR/interop"
 
 echo "==================== 交互式调试状态 ===================="
 echo "repo: $REPO_ROOT"
@@ -36,24 +38,25 @@ echo "--- 最近异常（10 条）---"
 timeout 15 adb logcat -d 2>/dev/null | grep -iE "FATAL|AndroidRuntime|Force finishing" | tail -10 || echo "（无）"
 
 echo
-echo "--- <local path omitted> 尾部（10 行）---"
-tail -10 <local path omitted> 2>/dev/null || echo "（无）"
+echo "--- 模拟器日志尾部（10 行）---"
+tail -10 "$PROBE_DIR/emulator.log" 2>/dev/null || echo "（无）"
 
 echo
 echo "--- 最近一次联调输出（若有）---"
-[ -f <local path omitted> ] && tail -20 <local path omitted> || echo "（还没跑过 pc_client.py）"
+[ -f "$INTEROP_DIR/interop.out" ] && tail -20 "$INTEROP_DIR/interop.out" || echo "（还没跑过 pc_client.py）"
 
 echo
 echo "==================== 常用命令 ===================="
 cat <<'TIPS'
   重跑协议闭环：
-    cd android && python3 verify/integration/pc_client.py --hold-seconds 12 2>&1 | tee <local path omitted>
+    mkdir -p probe-results/interop
+    cd android && python3 verify/integration/pc_client.py --hold-seconds 12 2>&1 | tee ../probe-results/interop/attempt-interactive.out
 
   同步最新的脚本改动（不需要重新触发流水线）：
-    git fetch origin && git checkout origin/dev/wifi-client -- .github/scripts
+    git status --short && git log -1 --oneline
 
   实时看日志：
-    tail -f <local path omitted>
+    tail -f probe-results/emulator.log
     adb logcat | grep -iE 'miclink|womic|UdpSender'
 
   手动启动服务（调试音模式）：
@@ -61,6 +64,6 @@ cat <<'TIPS'
       -a com.miclink.open.action.START \
       --ei extra.control_port 8125 --ei extra.volume 5 --ez extra.debug_tone true
 
-  收集诊断到 <local path omitted>：
-    cd android && bash ../.github/scripts/collect-diagnostics.sh
+  收集诊断到 probe-results/diagnostics：
+    bash .github/scripts/collect-diagnostics.sh
 TIPS

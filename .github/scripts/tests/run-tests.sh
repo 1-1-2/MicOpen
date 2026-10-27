@@ -30,6 +30,7 @@ assert_lt()      { [ "$1" -lt "$2" ] && ok "$3" || bad "$3" "$1 不小于 $2"; }
 # ---------------------------------------------------------------------------
 STUB="$TMP/bin"
 mkdir -p "$STUB"
+export TEST_TMP_DIR="$TMP"
 
 cat > "$STUB/adb" <<'STUB_EOF'
 #!/usr/bin/env bash
@@ -97,7 +98,7 @@ echo "Available Android Virtual Devices:"
 if [ -n "${FAKE_AVD_EXISTS:-}" ]; then
   echo "    Name: ${FAKE_AVD_EXISTS}"
   echo "  Device: pixel_6 (Google)"
-  echo "    Path: /home/runner/.config/.android/avd/${FAKE_AVD_EXISTS}.avd"
+  echo "    Path: ${ANDROID_AVD_HOME:-$HOME/.android/avd}/${FAKE_AVD_EXISTS}.avd"
 fi
 exit 0
 STUB_EOF
@@ -275,7 +276,7 @@ cat > "$TAP_STUB" <<'STUB_EOF'
 #   unreadable（cat 报 Permission denied 并非零退出——模拟权限收紧的
 #   ROM/SELinux，验证 pc_client 的降级兜底）| no-port（输出形态逼真但始终
 #   没有媒体端口行——验证"读得到但没 bind 上"不得误降级）。
-state_file="${FAKE_ADB_NC_STATE:-<local path omitted>}"
+state_file="${FAKE_ADB_NC_STATE:-$TEST_TMP_DIR/miclink-fake-adb-state}"
 
 # 记录每次调用的子命令与参数（T20：tap 必须走 exec-out，nc 绝不走 shell）
 if [ "${FAKE_ADB_ARGV_LOG:-}" ]; then
@@ -310,7 +311,7 @@ esac
   case "$*" in
     *"nc -u -l"*|*"nc -ulp"*)
       if [ "${FAKE_ADB_NC_FAILS_ON:-}" ]; then
-        cnt_file="${FAKE_ADB_NC_COUNT:-<local path omitted>}"
+        cnt_file="${FAKE_ADB_NC_COUNT:-$TEST_TMP_DIR/miclink-fake-adb-count}"
         n=$(( $(cat "$cnt_file" 2>/dev/null || echo 0) + 1 ))
         echo "$n" > "$cnt_file"
         for bad in $FAKE_ADB_NC_FAILS_ON; do
@@ -574,12 +575,12 @@ echo "== T23 ui-capture.sh：stub adb 下五屏取证 + 可点击优先 + 复原
 T23="$TMP/t23"; mkdir -p "$T23/bin" "$T23/fx"
 cat > "$T23/bin/adb" <<STUB_EOF
 #!/usr/bin/env bash
-S="$T23/state"; F="$T23/fx"; ST=\$(cat "\$S")
+S="$T23/state"; F="$T23/fx"; UXML="$T23/ui-capture.xml"; ST=\$(cat "\$S")
 case "\$1" in
   shell)
     case "\$2" in
       am) exit 0 ;;
-      uiautomator) cp "\$F/\$ST.xml" <local path omitted>; exit 0 ;;
+      uiautomator) cp "\$F/\$ST.xml" "\$UXML"; exit 0 ;;
       input)
         if [ "\$3" = "tap" ]; then
           echo "tap \$4 \$5" >> "$T23/taps"
@@ -599,7 +600,7 @@ case "\$1" in
     exit 0 ;;
   exec-out)
     case "\$2" in
-      cat) cat <local path omitted> ;;
+      cat) cat "\$UXML" ;;
       screencap) printf '\x89PNG\r\n\x1a\nFAKEPNG' ;;
     esac
     exit 0 ;;

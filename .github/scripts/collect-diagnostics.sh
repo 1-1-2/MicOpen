@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 收集诊断信息到 $DIAG_DIR（默认 <local path omitted>），调用方用 if: always() 上传。
+# 收集诊断信息到 $DIAG_DIR（默认仓库根目录 probe-results/diagnostics），调用方用 if: always() 上传。
 #
 # 【重要】每条 adb 命令都套 timeout：上一轮事故（run 39453084847）里该脚本在
 # "没有模拟器"的状态下把作业挂住 25 分钟，连 `gh run cancel` 都要等它退出——
@@ -9,7 +9,11 @@
 
 set -uo pipefail
 
-DIAG_DIR="${DIAG_DIR:-<local path omitted>}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DIAG_DIR="${DIAG_DIR:-$REPO_ROOT/probe-results/diagnostics}"
+EMULATOR_LOG="${EMULATOR_LOG:-$REPO_ROOT/probe-results/emulator.log}"
+INTEROP_DIR="${INTEROP_DIR:-$REPO_ROOT/probe-results/interop}"
 ADB="${ADB_BIN:-adb}"
 ADB_TIMEOUT="${ADB_TIMEOUT:-15}"
 
@@ -41,11 +45,11 @@ echo "=== 收集诊断到 $DIAG_DIR（adb=$ADB，单条上限 ${ADB_TIMEOUT}s）
 
 adbd "$DIAG_DIR/adb-devices.txt" devices -l
 
-if [ -f <local path omitted> ]; then
-    cp <local path omitted> "$DIAG_DIR/emulator.log"
-    tail -200 <local path omitted> > "$DIAG_DIR/emulator-tail.txt"
+if [ -f "$EMULATOR_LOG" ]; then
+    cp "$EMULATOR_LOG" "$DIAG_DIR/emulator.log"
+    tail -200 "$EMULATOR_LOG" > "$DIAG_DIR/emulator-tail.txt"
 else
-    echo "没有 <local path omitted>（模拟器未启动到该步骤）" > "$DIAG_DIR/emulator.log"
+    echo "没有 $EMULATOR_LOG（模拟器未启动到该步骤）" > "$DIAG_DIR/emulator.log"
 fi
 
 adbd "$DIAG_DIR/logcat.txt" logcat -d
@@ -56,11 +60,11 @@ adbd "$DIAG_DIR/props.txt" shell getprop
 adbd "$DIAG_DIR/ps.txt" shell "ps -A"
 adbd "$DIAG_DIR/net-tcp.txt" shell "cat /proc/net/tcp"
 
-# 联调输出：<local path omitted> 是"最近一次 attempt"的完整输出；
-# <local path omitted>*.out 是每一次 attempt 的完整输出（workflow 的
+# 联调输出：interop.out 是"最近一次 attempt"的完整输出；
+# attempt-*.out 是每一次 attempt 的完整输出（workflow 的
 # interop 步骤带失败重试，首次失败的现场必须保留，不能只留最后一次）。
-[ -f <local path omitted> ] && cp <local path omitted> "$DIAG_DIR/interop.out"
-for f in <local path omitted>*.out; do
+[ -f "$INTEROP_DIR/interop.out" ] && cp "$INTEROP_DIR/interop.out" "$DIAG_DIR/interop.out"
+for f in "$INTEROP_DIR"/attempt-*.out; do
     [ -f "$f" ] && cp "$f" "$DIAG_DIR/$(basename "$f")"
 done
 

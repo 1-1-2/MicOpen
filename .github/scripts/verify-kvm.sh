@@ -19,7 +19,20 @@
 set -uo pipefail
 
 KVM_PATH="${KVM_PATH:-/dev/kvm}"
-SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+if [ -z "$SDK" ]; then
+    SDKMANAGER="$(command -v sdkmanager || true)"
+    if [ -n "$SDKMANAGER" ]; then
+        TOOLS_DIR="$(cd "$(dirname "$SDKMANAGER")" && pwd)"
+        SDK="$(cd "$TOOLS_DIR/../../.." && pwd)"
+    fi
+fi
+if [ -z "$SDK" ]; then
+    for cand in "$HOME/Android/Sdk" "$HOME/Library/Android/sdk"; do
+        if [ -d "$cand" ]; then SDK="$cand"; break; fi
+    done
+fi
+SDK="${SDK:-}"
 EMU="${EMU_BIN:-$SDK/emulator/emulator}"
 [ -x "$EMU" ] || EMU="$(command -v emulator || echo "")"
 AVDMANAGER="${AVDMANAGER_BIN:-avdmanager}"
@@ -54,8 +67,8 @@ echo "[kvm] CPU 虚拟化标志: $(grep -cE 'vmx|svm' /proc/cpuinfo 2>/dev/null 
 
 echo "=== emulator 二进制 ==="
 if [ -z "$EMU" ] || [ ! -x "$EMU" ]; then
-    echo "::error::找不到 emulator 可执行文件（SDK=$SDK）"
-    ls "$SDK" 2>&1 || true
+    echo "::error::找不到 emulator 可执行文件（SDK=${SDK:-未定位}）；请设置 ANDROID_HOME 或 EMU_BIN"
+    [ -n "$SDK" ] && ls "$SDK" 2>&1 || true
     exit 1
 fi
 echo "[emu] $EMU"

@@ -14,7 +14,6 @@ ANDROID_DIR="${ANDROID_DIR:-$REPO_ROOT/android}"
 cd "$ANDROID_DIR"
 
 DEST="app/src/main/cpp/opus"
-ARCHIVE=<local path omitted>
 
 # 幂等：本地已有完整源码就不重下（CI 的 checkout 里没有，因为 .gitignore 排除了）
 if [ -f "$DEST/CMakeLists.txt" ] && [ -f "$DEST/include/opus.h" ] && [ "${OPUS_FORCE:-0}" != "1" ]; then
@@ -22,8 +21,14 @@ if [ -f "$DEST/CMakeLists.txt" ] && [ -f "$DEST/include/opus.h" ] && [ "${OPUS_F
     exit 0
 fi
 
+TMP_ROOT="${RUNNER_TEMP:-${TMPDIR:-}}"
+if [ -n "$TMP_ROOT" ]; then mkdir -p "$TMP_ROOT"; fi
+WORK_DIR="$(if [ -n "$TMP_ROOT" ]; then mktemp -d "$TMP_ROOT/miclink-opus.XXXXXX"; else mktemp -d; fi)"
+ARCHIVE="$WORK_DIR/opus.tar.gz"
+EXTRACT_DIR="$WORK_DIR/extracted"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
 mkdir -p app/src/main/cpp
-rm -rf "$DEST" "$ARCHIVE"
 
 URLS=(
     "https://downloads.xiph.org/releases/opus/opus-1.6.1.tar.gz"
@@ -49,10 +54,15 @@ if [ "$ok" != "1" ]; then
     exit 1
 fi
 
-rm -rf <local path omitted> && mkdir -p <local path omitted>
-tar -xzf "$ARCHIVE" -C <local path omitted>
-SRC="$(ls -d <local path omitted>*/ | head -1)"
+mkdir -p "$EXTRACT_DIR"
+tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR"
+SRC="$(find "$EXTRACT_DIR" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+if [ -z "$SRC" ]; then
+    echo "::error::opus 压缩包未生成顶层源码目录"
+    exit 1
+fi
 SRC_NAME="$(basename "$SRC")"
+rm -rf "$DEST"
 mv "$SRC" "$DEST"
 
 # 结构校验：路径 A（opus 自带 CMakeLists，1.4+）与路径 B（源码通配）都需要这些

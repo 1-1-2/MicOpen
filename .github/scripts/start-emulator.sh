@@ -19,17 +19,34 @@ AVD_NAME="${1:-womic_interop}"
 API_LEVEL="${2:-android-34}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-480}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
-LOG="${EMULATOR_LOG:-<local path omitted>}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+LOG="${EMULATOR_LOG:-$REPO_ROOT/probe-results/emulator.log}"
+mkdir -p "$(dirname "$LOG")"
 
-SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-ADB="${ADB_BIN:-$(command -v adb || echo "$SDK/platform-tools/adb")}"
-EMU="${EMU_BIN:-$SDK/emulator/emulator}"
-[ -x "$EMU" ] || EMU="$(command -v emulator || echo "")"
+SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+if [ -z "$SDK" ]; then
+    SDKMANAGER="$(command -v sdkmanager || true)"
+    if [ -n "$SDKMANAGER" ]; then
+        TOOLS_DIR="$(cd "$(dirname "$SDKMANAGER")" && pwd)"
+        SDK="$(cd "$TOOLS_DIR/../../.." && pwd)"
+    fi
+fi
+if [ -z "$SDK" ]; then
+    for cand in "$HOME/Android/Sdk" "$HOME/Library/Android/sdk"; do
+        if [ -d "$cand" ]; then SDK="$cand"; break; fi
+    done
+fi
+ADB="${ADB_BIN:-$(command -v adb || true)}"
+if [ -z "$ADB" ] && [ -n "$SDK" ]; then ADB="$SDK/platform-tools/adb"; fi
+EMU="${EMU_BIN:-}"
+if [ -z "$EMU" ] && [ -n "$SDK" ]; then EMU="$SDK/emulator/emulator"; fi
+[ -x "$EMU" ] || EMU="$(command -v emulator || true)"
 AVDMANAGER="${AVDMANAGER_BIN:-avdmanager}"
 
 # ---- AVD 目录统一（run 39462796356 实证的坑）----
 # ubuntu-24.04 上 avdmanager 会把 AVD 建到 $XDG_CONFIG_HOME/.android/avd
-# （实测 /home/runner/.config/.android/avd），而 emulator 只查
+# （XDG 用户配置目录），而 emulator 只查
 # $ANDROID_AVD_HOME → $ANDROID_SDK_HOME/avd → $HOME/.android/avd，
 # 于是报 "Unknown AVD name / HOME is defined but there is no file <avd>.ini"。
 # 显式把两个工具的 AVD 根目录钉死到同一处。
@@ -39,7 +56,11 @@ mkdir -p "$ANDROID_AVD_HOME"
 echo "[emu] ANDROID_AVD_HOME=$ANDROID_AVD_HOME"
 
 if [ -z "$EMU" ] || [ ! -x "$EMU" ]; then
-    echo "::error::找不到 emulator 可执行文件（SDK=$SDK）"
+    echo "::error::找不到 emulator 可执行文件（SDK=${SDK:-未定位}）；请设置 ANDROID_HOME 或 EMU_BIN"
+    exit 1
+fi
+if [ -z "$ADB" ]; then
+    echo "::error::找不到 adb 可执行文件；请设置 ANDROID_HOME 或 ADB_BIN"
     exit 1
 fi
 echo "[emu] binary : $EMU"

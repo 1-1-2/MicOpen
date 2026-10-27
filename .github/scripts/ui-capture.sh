@@ -15,10 +15,12 @@
 # 外观（👕，content-desc="外观"）。因此本脚本不再有「打开抽屉」这一步；外观 /
 # 关于是独立目的地，用返回键回退到三段外壳。
 #
-# 用法：bash ui-capture.sh [输出目录]   （默认 <local path omitted>）
+# 用法：bash ui-capture.sh [输出目录]   （默认写入仓库根目录 probe-results/ui-screenshots）
 set -uo pipefail
 
-OUT="${1:-<local path omitted>}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+OUT="${1:-$REPO_ROOT/probe-results/ui-screenshots}"
 PKG=com.miclink.open
 mkdir -p "$OUT"
 

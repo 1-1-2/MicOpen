@@ -25,7 +25,7 @@
 
 用法：
     python3 udp-relay.py --listen-port 8126 --target 100.x.y.z --target-port 8126 \
-        [--stats <local path omitted>] [--duration 600] [--bind 0.0.0.0]
+        [--stats relay-stats.json] [--duration 600] [--bind 0.0.0.0]
 
 行为契约（workflow 依赖这些输出做断言与取证）：
     - 每 5s 向 stdout 打一行进度（累计包数/字节数/转发失败数/最近源地址）；

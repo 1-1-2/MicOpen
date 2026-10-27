@@ -40,7 +40,7 @@ on:
 #
 # windows-interactive 保持独立，仅 workflow_dispatch 勾选后运行
 # （WarpBuilds/action-debugger —— mxschmitt/action-tmate 的 Windows 可用分支，
-#  详见 docs/devops/windows-interactive-debug.md）。
+#  详见 docs/windows-interactive-debug.md）。
 
 # 同一分支连续 push 时取消上一轮（省 runner 分钟、避免排队）；
 # 注意：这里的 cancelled 是**主动取消旧 run**，不是失败。
@@ -118,7 +118,7 @@ jobs:
 
       # compileSdk 37（platforms;android-37.0，次版本命名）/ build-tools 36 需显式补齐；
       # CMake 版本由 app/build.gradle.kts 的 externalNativeBuild.cmake.version 固定为 3.22.1；
-      # NDK 用 AGP 9.1 默认的 28.2.13676358（本地实测值，见 docs/VERIFICATION.md）
+      # NDK 用 AGP 9.1 默认的 28.2.13676358（版本依据见 docs/BUILD.md）
       - name: Install Android SDK components
         timeout-minutes: 20
         run: |
@@ -215,12 +215,12 @@ jobs:
         timeout-minutes: 10
         run: bash ../.github/scripts/install-app.sh ../apk/app-debug.apk
 
-      # 界面取证：主页/抽屉/外观/采集设置四屏截图 + uiautomator 控件断言。
+      # 界面取证：连接/音源/高级/外观与复原五屏截图 + uiautomator 控件断言。
       # 此前 CI 只验协议闭环（能收流），界面长什么样没有任何证据。
       # 脚本内断言失败只 WARN（截图与 dump 全量上传供人工复核），不卡 interop。
-      - name: UI screenshots (4 screens + control asserts)
+      - name: UI screenshots (5 screens + control asserts)
         timeout-minutes: 5
-        run: bash ../.github/scripts/ui-capture.sh <local path omitted>
+        run: bash ../.github/scripts/ui-capture.sh "$GITHUB_WORKSPACE/probe-results/ui-screenshots"
 
       - name: Upload UI screenshots
         if: always()
@@ -228,7 +228,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ui-screenshots
-          path: <local path omitted>
+          path: probe-results/ui-screenshots/
           if-no-files-found: warn
           retention-days: 7
 
@@ -237,8 +237,8 @@ jobs:
       # 失败自动重试一次（QA 2026-10-24 定性报告 §3.1）：C05"首包 10s 未到达"的
       # 根因是模拟器采集线程饥饿 / adb UDP tap 链路抖动（同代码一次红一次绿，
       # 非代码缺陷），单次通过率约 50%。用脚本层 for 循环重试 pc_client.py：
-      #   - 每次 attempt 的完整输出都落盘（<local path omitted>），并复制
-      #     一份到 <local path omitted> 供 collect-diagnostics.sh 收集——首次失败的
+      #   - 每次 attempt 的完整输出都落盘（probe-results/interop/attempt-*.out），并复制
+      #     最近一次到 probe-results/interop/interop.out 供 collect-diagnostics.sh 收集——首次失败的
       #     现场不丢，不会只留最后一次；
       #   - 失败后退避 5s 再试，给 app 回稳的时间；
       #   - 两次都失败时以最后一次的退出码结束（exit $rc），不吞真实失败；
@@ -256,14 +256,16 @@ jobs:
         run: |
           set +e
           set -o pipefail
+          INTEROP_DIR="$GITHUB_WORKSPACE/probe-results/interop"
+          mkdir -p "$INTEROP_DIR"
           rc=1
           for attempt in 1 2; do
             echo "===== interop attempt $attempt/2 ====="
-            timeout 120 python3 verify/integration/pc_client.py --hold-seconds 12 2>&1 | tee "<local path omitted>$attempt.out"
+            timeout 120 python3 verify/integration/pc_client.py --hold-seconds 12 2>&1 | tee "$INTEROP_DIR/attempt-$attempt.out"
             rc=$?
             # 保留一份"最近一次"的完整输出（含 C05 失败现场抓取），
             # collect-diagnostics.sh 会把 attempt-1/2 两份都收进 artifact
-            cp "<local path omitted>$attempt.out" <local path omitted>
+            cp "$INTEROP_DIR/attempt-$attempt.out" "$INTEROP_DIR/interop.out"
             echo "attempt $attempt: pc_client exit=$rc（0=全绿，1=有断言失败，2=环境错误，124=超时）"
             [ "$rc" -eq 0 ] && exit 0
             if [ "$attempt" -eq 1 ]; then
@@ -280,6 +282,10 @@ jobs:
         if: always()
         timeout-minutes: 4
         continue-on-error: true
+        env:
+          DIAG_DIR: ${{ github.workspace }}/probe-results/diagnostics
+          EMULATOR_LOG: ${{ github.workspace }}/probe-results/emulator.log
+          INTEROP_DIR: ${{ github.workspace }}/probe-results/interop
         run: bash ../.github/scripts/collect-diagnostics.sh
 
       - name: Upload diagnostics
@@ -288,7 +294,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: interop-diagnostics
-          path: <local path omitted>
+          path: probe-results/
           if-no-files-found: warn
           retention-days: 7
 
@@ -364,10 +370,10 @@ jobs:
             echo "| 想做什么 | 命令 |"
             echo "|---|---|"
             echo "| 看当前状态 | \`bash .github/scripts/debug-help.sh\` |"
-            echo "| 重跑协议闭环 | \`python3 verify/integration/pc_client.py --hold-seconds 12 2>&1 \\| tee <local path omitted>\` |"
-            echo "| 实时看模拟器日志 | \`tail -f <local path omitted>\` |"
+            echo "| 重跑协议闭环 | \`python3 verify/integration/pc_client.py --hold-seconds 12 2>&1 \\| tee ../probe-results/interop/attempt-interactive.out\` |"
+            echo "| 实时看模拟器日志 | \`tail -f ../probe-results/emulator.log\` |"
             echo "| 实时看 logcat | \`adb logcat \\| grep -iE 'miclink\\|womic\\|UdpSender'\` |"
-            echo "| 同步最新的脚本改动 | \`git fetch origin && git checkout origin/dev/wifi-client -- .github/scripts\` |"
+            echo "| 查看当前代码版本 | \`git status --short && git log -1 --oneline\` |"
             echo "| 收集诊断 | \`bash ../.github/scripts/collect-diagnostics.sh\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 

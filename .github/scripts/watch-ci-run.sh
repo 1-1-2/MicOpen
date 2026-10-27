@@ -8,8 +8,8 @@
 # 判断，明显不合理就直接取消并打印证据。
 #
 # 用法：
-#   GH_TOKEN=... bash tools/watch_ci_run.sh              # 分支最新 run
-#   GH_TOKEN=... bash tools/watch_ci_run.sh 39453084847  # 指定 run
+#   GH_TOKEN=... bash .github/scripts/watch-ci-run.sh              # 当前分支最新 run
+#   GH_TOKEN=... bash .github/scripts/watch-ci-run.sh 39453084847  # 指定 run
 #
 # 环境变量：REPO / BRANCH / POLL（轮询秒）/ GRACE（预算放大系数）/ MAX_WAIT（整体上限秒）
 # 退出码：0 run 成功；1 run 失败/取消；2 看门狗主动取消或自身超时。
@@ -20,11 +20,20 @@
 
 set -uo pipefail
 
-REPO="${REPO:-1-1-2/WKB_test}"
-BRANCH="${BRANCH:-dev/wifi-client}"
+REPO="${REPO:-}"
+if [ -z "$REPO" ]; then
+  REMOTE_URL="$(git remote get-url "${GIT_REMOTE:-origin}" 2>/dev/null || true)"
+  REPO="$(printf '%s' "$REMOTE_URL" | sed -E 's#.*github\.com[:/]##; s#\.git$##')"
+fi
+BRANCH="${BRANCH:-$(git branch --show-current 2>/dev/null || true)}"
 POLL="${POLL:-30}"
 GRACE="${GRACE:-1.6}"
 MAX_WAIT="${MAX_WAIT:-3600}"
+
+if [ -z "$REPO" ] || [ -z "$BRANCH" ]; then
+  echo "::error::无法从当前 Git 检出推导 GitHub 仓库或分支；请设置 REPO 与 BRANCH"
+  exit 2
+fi
 
 api() { gh api "$@"; }
 
@@ -34,13 +43,18 @@ if [ -z "$RUN_ID" ]; then
   echo "[watch] 分支 $BRANCH 最新 run：$RUN_ID"
 fi
 
-PARSE=<local path omitted>$$.py
+TMP_ROOT="${RUNNER_TEMP:-${TMPDIR:-}}"
+if [ -n "$TMP_ROOT" ]; then mkdir -p "$TMP_ROOT"; fi
+WORK_DIR="$(if [ -n "$TMP_ROOT" ]; then mktemp -d "$TMP_ROOT/miclink-watch.XXXXXX"; else mktemp -d; fi)"
+PARSE="$WORK_DIR/parse.py"
+REPORT="$WORK_DIR/steps.tsv"
+trap 'rm -rf "$WORK_DIR"' EXIT
 cat > "$PARSE" <<'PY'
 import json, sys, datetime
 
 # 每一步的正常耗时预算（分钟）；未列出的用 DEFAULT
 BUDGET = {
-    "Set up job": 3, "Run actions/checkout@v4": 2, "Set up JDK 17": 2,
+    "Set up job": 3, "Run actions/checkout@v7": 2, "Set up JDK 17": 2,
     "Set up Android SDK tools": 3, "Install Android SDK components": 12,
     "Install emulator components": 12, "Fetch Opus source": 6,
     "Assemble debug APK": 20, "Create AVD": 3, "Start emulator": 12,
@@ -88,13 +102,13 @@ while true; do
   fi
 
   JOBS=$(api "/repos/$REPO/actions/runs/$RUN_ID/jobs" 2>/dev/null) || { sleep "$POLL"; continue; }
-  printf '%s' "$JOBS" | python3 "$PARSE" "$GRACE" > <local path omitted>$$ 2>/dev/null || true
+  printf '%s' "$JOBS" | python3 "$PARSE" "$GRACE" > "$REPORT" 2>/dev/null || true
 
   echo "--- $(date -u +%H:%M:%SZ) run=$RUN_ID status=$STATUS"
-  awk -F'\t' '$1=="JOB" {printf "  [job] %s => %s/%s\n", $2, $3, $4}' <local path omitted>$$
-  awk -F'\t' '$1=="STEP" {printf "     ▶ %s  %ss / 预算 %ss%s\n", $3, $4, $5, ($6=="OVER"?"  ← 超预算":"")}' <local path omitted>$$
+  awk -F'\t' '$1=="JOB" {printf "  [job] %s => %s/%s\n", $2, $3, $4}' "$REPORT"
+  awk -F'\t' '$1=="STEP" {printf "     ▶ %s  %ss / 预算 %ss%s\n", $3, $4, $5, ($6=="OVER"?"  ← 超预算":"")}' "$REPORT"
 
-  OVER=$(awk -F'\t' '$1=="STEP" && $6=="OVER"' <local path omitted>$$)
+  OVER=$(awk -F'\t' '$1=="STEP" && $6=="OVER"' "$REPORT")
   if [ -n "$OVER" ]; then
     echo
     echo "[watch] 步骤耗时明显超出预期，主动取消 run $RUN_ID："
