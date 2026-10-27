@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import struct
+import zlib
 
 u = c.windll.user32
 u.FindWindowW.argtypes = [w.LPCWSTR, w.LPCWSTR]
@@ -32,6 +34,69 @@ u.GetWindowTextW.restype = c.c_int
 u.SetWindowTextW.argtypes = [w.HWND, w.LPCWSTR]
 u.SetWindowTextW.restype = w.BOOL
 
+class BitmapInfoHeader(c.Structure):
+    _fields_ = [('size', w.DWORD), ('width', w.LONG), ('height', w.LONG),
+                ('planes', w.WORD), ('bits', w.WORD), ('compression', w.DWORD),
+                ('image_size', w.DWORD), ('xppm', w.LONG), ('yppm', w.LONG),
+                ('used', w.DWORD), ('important', w.DWORD)]
+
+class BitmapInfo(c.Structure):
+    _fields_ = [('header', BitmapInfoHeader), ('colors', w.DWORD * 3)]
+
+g = c.windll.gdi32
+u.GetDC.argtypes = [w.HWND]; u.GetDC.restype = w.HDC
+u.ReleaseDC.argtypes = [w.HWND, w.HDC]
+u.PrintWindow.argtypes = [w.HWND, w.HDC, w.UINT]; u.PrintWindow.restype = w.BOOL
+g.CreateCompatibleDC.argtypes = [w.HDC]; g.CreateCompatibleDC.restype = w.HDC
+g.CreateCompatibleBitmap.argtypes = [w.HDC, c.c_int, c.c_int]; g.CreateCompatibleBitmap.restype = w.HBITMAP
+g.SelectObject.argtypes = [w.HDC, w.HGDIOBJ]; g.SelectObject.restype = w.HGDIOBJ
+g.DeleteObject.argtypes = [w.HGDIOBJ]
+g.DeleteDC.argtypes = [w.HDC]
+g.GetDIBits.argtypes = [w.HDC, w.HBITMAP, w.UINT, w.UINT, c.c_void_p, c.POINTER(BitmapInfo), w.UINT]
+g.GetDIBits.restype = c.c_int
+
+def capture_window(hwnd, name):
+    rect = w.RECT()
+    if not u.GetWindowRect(hwnd, c.byref(rect)):
+        raise RuntimeError('GetWindowRect failed: ' + name)
+    width, height = rect.right - rect.left, rect.bottom - rect.top
+    if width <= 0 or height <= 0 or width * height > 16000000:
+        raise RuntimeError('invalid screenshot dimensions: ' + name)
+    screen = u.GetDC(None)
+    dc = g.CreateCompatibleDC(screen)
+    bmp = g.CreateCompatibleBitmap(screen, width, height)
+    if not screen or not dc or not bmp:
+        raise RuntimeError('cannot allocate screenshot bitmap: ' + name)
+    old = g.SelectObject(dc, bmp)
+    try:
+        if not u.PrintWindow(hwnd, dc, 2):
+            raise RuntimeError('PrintWindow failed: ' + name)
+        g.SelectObject(dc, old)
+        info = BitmapInfo()
+        info.header.size = c.sizeof(BitmapInfoHeader)
+        info.header.width, info.header.height = width, -height
+        info.header.planes, info.header.bits = 1, 32
+        pixels = (c.c_ubyte * (width * height * 4))()
+        if g.GetDIBits(dc, bmp, 0, height, pixels, c.byref(info), 0) != height:
+            raise RuntimeError('GetDIBits failed: ' + name)
+        bgra = bytes(pixels)
+        if len(set(bgra[::max(4, len(bgra) // 4096)])) < 2:
+            raise RuntimeError('screenshot appears blank: ' + name)
+        rgba = bytearray(len(bgra))
+        rgba[0::4], rgba[1::4], rgba[2::4] = bgra[2::4], bgra[1::4], bgra[0::4]
+        rgba[3::4] = b'\xff' * (width * height)
+        stride = width * 4
+        scanlines = b''.join(b'\x00' + rgba[y * stride:(y + 1) * stride] for y in range(height))
+        def chunk(kind, data):
+            return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+        png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)) +
+               chunk(b'IDAT', zlib.compress(scanlines, 6)) + chunk(b'IEND', b''))
+        out = Path('probe-results/screenshots'); out.mkdir(parents=True, exist_ok=True)
+        (out / name).write_bytes(png)
+        print(f'PASS screenshot {name}: {width}x{height}')
+    finally:
+        g.DeleteObject(bmp); g.DeleteDC(dc); u.ReleaseDC(None, screen)
+
 exe = Path(sys.argv[1]).resolve()
 env = dict(os.environ, MICLINK_SHOW_MONITOR='1')
 p = subprocess.Popen([str(exe)], cwd=exe.parent, env=env)
@@ -45,6 +110,8 @@ try:
             raise RuntimeError('GUI exited before monitor panel appeared')
         time.sleep(.1)
     assert panel and u.IsWindowVisible(panel), 'monitor panel missing'
+    time.sleep(.8)
+    capture_window(panel, 'gui-monitor.png')
     assert u.SendMessageW(u.GetDlgItem(panel, 702), 0x146, 0, 0) >= 1, 'default device option'
     assert u.SendMessageW(u.GetDlgItem(panel, 703), 0x146, 0, 0) == 2, 'two processing modules'
     assert u.SendMessageW(u.GetDlgItem(panel, 706), 0x146, 0, 0) == 40, 'delay options'
@@ -99,6 +166,8 @@ try:
             break
         time.sleep(.1)
     assert help_window, 'help window missing'
+    time.sleep(.5)
+    capture_window(help_window, 'gui-help.png')
     assert u.GetWindowLongW(help_window, -16) & 0x00C00000 == 0, 'native title bar still enabled'
     u.SendMessageW(help_window, 0x10, 0, 0)
     print('PASS monitor reset hit target, delay stability, choices, controls and frameless help')
