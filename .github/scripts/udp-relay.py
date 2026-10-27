@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """udp-relay —— 单向 UDP 中继（tailscale-dual 双机联调，job A：Linux/模拟器侧）。
 
-在跨网真链路中的位置（拓扑全貌与选型理由见 .github/workflows/tailscale-dual.yml
+在跨网真链路中的位置（拓扑全貌与选型理由见 .github/actions/dual-linux/steps.sh
 顶部注释）：
 
     模拟器内真 app ──UDP 格式 C──► 10.0.2.2:8126

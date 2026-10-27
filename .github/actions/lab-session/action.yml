@@ -1,0 +1,91 @@
+name: Lab SSH session
+description: 使用已有 tailnet 连接交付原现场，显式结束或到期后续跑；正文默认不公开。
+inputs:
+  minutes:
+    default: '20'
+    description: 就绪后操作时长（分钟）
+  stream_logs:
+    default: 'false'
+    description: 显式公开 SSH 命令和输出，默认关闭
+  public_key:
+    required: true
+    description: 仓库 Variable 中的 SSH 公钥
+  ssh_transport:
+    default: tailnet
+    description: tailnet 或显式启用 relay 中继
+  paired:
+    default: 'false'
+    description: 等待双机对端就绪和结束
+runs:
+  using: composite
+  steps:
+  - name: Initialize Lab session
+    shell: bash
+    env:
+      SESSION_MINUTES: ${{ inputs.minutes }}
+      SESSION_STREAM: ${{ inputs.stream_logs }}
+    run: python .github/scripts/lab_session.py init --minutes "$SESSION_MINUTES" --stream "$SESSION_STREAM"
+  - name: Configure Linux SSH
+    if: runner.os == 'Linux'
+    shell: bash
+    env:
+      DEBUG_PUBKEY: ${{ inputs.public_key }}
+    run: python .github/scripts/ci.py run --seconds 600 -- bash .github/scripts/setup-lab-ssh.sh
+  - name: Configure Windows SSH
+    if: runner.os == 'Windows'
+    shell: pwsh
+    env:
+      DEBUG_PUBKEY: ${{ inputs.public_key }}
+    run: python .github/scripts/ci.py run --seconds 600 -- pwsh -NoProfile -File .github/scripts/setup-lab-ssh.ps1
+  - name: Start optional WSS relay
+    if: ${{ inputs.ssh_transport == 'relay' }}
+    shell: bash
+    env:
+      DEBUG_PUBKEY: ${{ inputs.public_key }}
+    run: python .github/scripts/lab_relay.py start
+  - name: Publish Lab readiness
+    shell: bash
+    run: python .github/scripts/lab_session.py ready --host "$(tailscale ip -4)"
+  # 先只交换就绪信号；统一截止时间后再发布正式连接附件，避免客户端误判过期。
+  - uses: actions/upload-artifact@v7
+    if: ${{ inputs.paired == 'true' }}
+    with:
+      name: readiness-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.LAB_ROLE }}
+      path: ${{ env.LAB_ROOT }}/readiness/
+      retention-days: 1
+      if-no-files-found: error
+  - name: Synchronize dual readiness and deadline
+    if: ${{ inputs.paired == 'true' }}
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+    run: python .github/scripts/labctl.py barrier --phase ready
+  - uses: actions/upload-artifact@v7
+    with:
+      name: connection-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.LAB_ROLE }}
+      path: ${{ env.LAB_ROOT }}/connection/
+      retention-days: 1
+      if-no-files-found: error
+  - name: Wait for operator and stream opted-in output
+    shell: bash
+    run: python -u .github/scripts/lab_session.py serve
+  - name: Stop optional WSS relay
+    if: ${{ always() && inputs.ssh_transport == 'relay' && env.LAB_ROOT != '' }}
+    shell: bash
+    run: python .github/scripts/lab_relay.py stop
+  - name: Export Lab report
+    if: always() && env.LAB_ROOT != ''
+    shell: bash
+    run: python .github/scripts/lab_session.py export
+  - uses: actions/upload-artifact@v7
+    if: always() && env.LAB_ROOT != ''
+    with:
+      name: session-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.LAB_ROLE }}
+      path: ${{ env.LAB_ROOT }}/public-report/
+      retention-days: 7
+  - name: Wait for peer session report before resuming
+    if: ${{ success() && inputs.paired == 'true' }}
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+    run: python .github/scripts/labctl.py barrier --phase closed

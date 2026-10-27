@@ -1,0 +1,24 @@
+name: Build Android artifacts
+description: SDK、Opus 与全 ABI APK 构建的唯一实现。
+runs:
+  using: composite
+  steps:
+  - uses: ./.github/actions/android-tools
+    with:
+      purpose: build
+  - name: Fetch Opus
+    shell: bash
+    run: python3 .github/scripts/ci.py run --seconds 480 -- bash .github/scripts/fetch-opus.sh
+  - name: Assemble APK
+    shell: bash
+    working-directory: android
+    run: python3 ../.github/scripts/ci.py run --seconds 1500 -- ./gradlew :app:assembleDebug --no-daemon
+  - name: Stage Android artifacts
+    shell: bash
+    run: python3 .github/scripts/ci.py stage --kind android
+  - uses: actions/upload-artifact@v7
+    with:
+      name: build-android-${{ github.run_id }}-${{ github.run_attempt }}
+      path: _public/android/
+      if-no-files-found: error
+      retention-days: 3

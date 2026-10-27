@@ -1,0 +1,14 @@
+name: Build Windows artifacts
+description: Linux 交叉构建；只上传无内嵌第三方驱动的应用和空包安装器。
+runs:
+  using: composite
+  steps:
+  - name: Build Windows (bounded toolchain and Opus)
+    shell: bash
+    run: bash "$GITHUB_ACTION_PATH/build.sh"
+  - uses: actions/upload-artifact@v7
+    with:
+      name: build-windows-${{ github.run_id }}-${{ github.run_attempt }}
+      path: _public/windows/
+      if-no-files-found: error
+      retention-days: 3

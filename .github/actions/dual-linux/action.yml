@@ -1,0 +1,103 @@
+name: Dual Android peer
+description: 真实 app 与 TCP/UDP 中继；保留 ready 探测、首错证据与对端精确发现。
+inputs:
+  oauth_client_id:
+    required: true
+    description: CI 入网 OAuth 客户端 ID
+  oauth_secret:
+    required: true
+    description: CI 入网 OAuth secret
+  pause:
+    default: 'false'
+    description: 在双机就绪处开放操作窗口
+  minutes:
+    default: '20'
+    description: 就绪后操作时长（分钟）
+  stream_logs:
+    default: 'false'
+    description: 显式公开 SSH 命令和输出，默认关闭
+  ssh_transport:
+    default: tailnet
+    description: 操作端接入方式
+  public_key:
+    default: ''
+    description: 仓库 Variable 中的 SSH 公钥
+  test_window_seconds:
+    default: '1200'
+    description: 等待对端完成的上限（秒）
+  pause_at:
+    default: none
+    description: 暂停插点
+runs:
+  using: composite
+  steps:
+  - uses: ./.github/actions/android-runtime
+    with:
+      mode: prepare
+  - name: Install socat
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 180 -- sudo apt-get install -y -qq socat
+  - uses: tailscale/github-action@v4
+    with:
+      oauth-client-id: ${{ inputs.oauth_client_id }}
+      oauth-secret: ${{ inputs.oauth_secret }}
+      tags: tag:ci
+      hostname: womic-dual-linux-${{ github.run_id }}-${{ github.run_attempt }}
+  - name: Ensure wine (diagnostic only) + record version
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 720 -- bash .github/actions/dual-linux/steps.sh s7
+  - name: A. 记录 Tailscale 状态（linux-app）
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 180 -- bash .github/actions/dual-linux/steps.sh s12
+  - name: A. 发现 windows-client 的 tailnet IP
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 240 -- bash .github/actions/dual-linux/steps.sh s13
+  - name: A. 选择 TCP 通路（slirp 直连优先，redir 兜底）
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 240 -- bash .github/actions/dual-linux/steps.sh s14
+  - name: A. wine 预检（真 app 本地诊断档，continue-on-error）
+    continue-on-error: true
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 300 -- bash .github/actions/dual-linux/steps.sh s15
+  - name: A. 启动 UDP 中继（app → windows-client）
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 120 -- bash .github/actions/dual-linux/steps.sh s16
+  - name: A. 启动 socat TCP 中继（tailnet:8125 → app）
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 120 -- bash .github/actions/dual-linux/steps.sh s17
+  - name: Optional dual Linux scene
+    if: ${{ inputs.pause == 'true' }}
+    uses: ./.github/actions/lab-session
+    with:
+      minutes: ${{ inputs.minutes }}
+      stream_logs: ${{ inputs.stream_logs }}
+      public_key: ${{ inputs.public_key }}
+      ssh_transport: ${{ inputs.ssh_transport }}
+      paired: 'true'
+  - name: A. 等待 windows-client 完成（gh 轮询 + 窗口兜底）
+    shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.run_id }}
+      WINDOW_SECONDS: ${{ inputs.test_window_seconds }}
+    run: python .github/scripts/ci.py run --seconds 1500 -- bash .github/actions/dual-linux/steps.sh s19
+  - name: A. 汇总判定
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 180 -- bash .github/actions/dual-linux/steps.sh s20
+  - name: A. 收集证据
+    if: always()
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 240 -- bash .github/actions/dual-linux/steps.sh s21
+  - name: A. 收尾（停中继）
+    if: always()
+    shell: bash
+    run: python .github/scripts/ci.py run --seconds 180 -- bash .github/actions/dual-linux/steps.sh s23
+  - name: Lab dual final scene
+    if: ${{ (success() && inputs.pause_at == 'after-test') || (failure() && inputs.pause_at == 'on-failure') }}
+    uses: ./.github/actions/lab-session
+    with:
+      minutes: ${{ inputs.minutes }}
+      stream_logs: ${{ inputs.stream_logs }}
+      public_key: ${{ inputs.public_key }}
+      ssh_transport: ${{ inputs.ssh_transport }}

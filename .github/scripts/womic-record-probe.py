@@ -10,7 +10,7 @@ womic.exe，若探针也喂音，录音里就是 1kHz+440Hz 的混合音，无�
 来自 app。因此判据是：录到的能量集中在 **440Hz**（app 调试音频率，
 MicCaptureService.kt TONE_FREQUENCY_HZ=440.0）附近。
 
-为什么必须由 SYSTEM 计划任务跑（会话隔离，已实证，见 windows-e2e.yml f 步）：
+为什么必须由 SYSTEM 计划任务跑（会话隔离，已实证，见 .github/actions/windows-runtime/steps.ps1 的 SYSTEM 录音阶段）：
 waveInOpen 在交互会话（runneradmin）下 rc=1（MMSYSERR_ERROR），SYSTEM/
 Session 0 下从未复现；与提权与否无关。workflow 用 schtasks 部署本探针。
 

@@ -1,0 +1,30 @@
+name: Android toolchain
+description: 按用途准备编译 SDK 或模拟器组件。
+inputs:
+  purpose:
+    default: build
+    description: SDK 用途
+runs:
+  using: composite
+  steps:
+  - uses: actions/setup-java@v6
+    with:
+      distribution: temurin
+      java-version: '17'
+  - name: Android SDK tools
+    shell: bash
+    run: bash .github/scripts/setup-android-sdk.sh
+  - name: Android SDK components
+    shell: bash
+    run: 'sdkmanager --licenses >/dev/null 2>&1 || true
+
+      python3 .github/scripts/ci.py run --seconds 1200 -- sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "cmake;3.22.1" "ndk;28.2.13676358"
+
+      '
+    if: ${{ inputs.purpose == 'build' }}
+  - name: Emulator SDK components
+    if: ${{ inputs.purpose == 'emulator' }}
+    shell: bash
+    run: 'sdkmanager --licenses >/dev/null 2>&1 || true
+
+      python .github/scripts/ci.py run --seconds 900 -- sdkmanager platform-tools emulator "system-images;android-34;default;x86_64"'

@@ -60,6 +60,9 @@ mkdir -p "$DEST/include/opus" "$DEST/lib"
 cp include/opus*.h "$DEST/include/"
 cp include/opus*.h "$DEST/include/opus/"
 cp .libs/libopus.a "$DEST/lib/"
+# 公开二进制随包保留所链接版本的原始许可，不能只给一个上游链接。
+cp COPYING "$DEST/COPYING"
+printf '%s\n' "$VER" > "$DEST/VERSION"
 
 echo "完成："
 ls -l "$DEST/lib/libopus.a"

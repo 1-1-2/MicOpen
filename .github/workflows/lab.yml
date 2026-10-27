@@ -1,0 +1,327 @@
+# 编排只保留任务、依赖和组件调用；历史原因随对应组件迁移。
+name: Lab
+run-name: Lab · ${{ inputs.scenario }} · ${{ inputs.target }} · ${{ inputs.request_id }}
+'on':
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 准备场景
+        type: choice
+        options:
+        - base
+        - toolchain
+        - built
+        - installed
+        - verify
+        - dual
+        default: base
+      target:
+        description: 目标：windows / android(模拟器) / linux(基础环境) / both
+        type: choice
+        options:
+        - windows
+        - android
+        - linux
+        - both
+        default: windows
+      artifact_run_id:
+        description: 0=本次构建；其他=指定现有运行的公开产物
+        type: number
+        default: 0
+      pause_at:
+        description: verify 的暂停点；dual 用 ready/after-test/on-failure/none
+        type: choice
+        options:
+        - ready
+        - before-install
+        - before-permissions
+        - after-permissions
+        - after-test
+        - on-failure
+        - none
+        default: ready
+      session_minutes:
+        description: 环境就绪后的操作时长，1–120 分钟
+        type: number
+        default: 20
+      ssh_transport:
+        description: SSH 接入方式；relay 仅用于无法入网的操作端
+        type: choice
+        options:
+        - tailnet
+        - relay
+        default: tailnet
+      stream_logs:
+        description: 公开转发并归档记录工具执行的命令及输出（默认关闭）
+        type: boolean
+        default: false
+      request_id:
+        description: Agent 关联编号（可留空）
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lab
+  queue: max
+  cancel-in-progress: false
+env:
+  PYTHONUTF8: '1'
+  CONTROL_PORT: '8125'
+  MEDIA_PORT: '8126'
+  REDIR_PORT: '18125'
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.plan.outputs.android }}
+      windows: ${{ steps.plan.outputs.windows }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      dual: ${{ steps.plan.outputs.dual }}
+      artifact_android: ${{ steps.plan.outputs.artifact_android }}
+      artifact_windows: ${{ steps.plan.outputs.artifact_windows }}
+    steps:
+    - &id001
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - id: plan
+      env:
+        LAB_INPUTS: ${{ toJSON(inputs) }}
+        GH_TOKEN: ${{ github.token }}
+      run: python .github/scripts/labctl.py plan
+  build-android:
+    needs: plan
+    if: needs.plan.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - *id001
+    - uses: ./.github/actions/build-android
+  build-windows:
+    needs: plan
+    if: needs.plan.outputs.windows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - *id001
+    - uses: ./.github/actions/build-windows
+  scene:
+    needs:
+    - plan
+    - build-android
+    - build-windows
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dual != 'true' && !contains(needs.*.result,
+      'failure') }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    env:
+      LAB_ROLE: ${{ matrix.role }}
+    steps:
+    - *id001
+    - uses: tailscale/github-action@v4
+      with:
+        oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+        tags: tag:ci
+        hostname: miclink-lab-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.role }}
+    - name: Download android artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ needs.plan.outputs.artifact_android }}
+        path: apk
+        run-id: ${{ inputs.artifact_run_id != 0 && inputs.artifact_run_id || github.run_id }}
+        github-token: ${{ github.token }}
+      if: matrix.role == 'android' && (inputs.scenario == 'built' || inputs.scenario == 'installed' || inputs.scenario == 'verify')
+    - name: Verify android artifact provenance
+      shell: bash
+      run: python .github/scripts/ci.py verify apk
+      if: matrix.role == 'android' && (inputs.scenario == 'built' || inputs.scenario == 'installed' || inputs.scenario == 'verify')
+    - name: Download windows artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ needs.plan.outputs.artifact_windows }}
+        path: dist
+        run-id: ${{ inputs.artifact_run_id != 0 && inputs.artifact_run_id || github.run_id }}
+        github-token: ${{ github.token }}
+      if: matrix.role == 'windows' && (inputs.scenario == 'built' || inputs.scenario == 'installed' || inputs.scenario == 'verify')
+    - name: Verify windows artifact provenance
+      shell: bash
+      run: python .github/scripts/ci.py verify dist
+      if: matrix.role == 'windows' && (inputs.scenario == 'built' || inputs.scenario == 'installed' || inputs.scenario == 'verify')
+    - name: Android toolchain
+      if: inputs.scenario == 'toolchain' && matrix.role == 'android'
+      uses: ./.github/actions/android-tools
+      with:
+        purpose: build
+    - name: Windows toolchain
+      if: inputs.scenario == 'toolchain' && matrix.role == 'windows'
+      shell: pwsh
+      run: |-
+        choco install mingw -y --no-progress --execution-timeout=240
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Linux toolchain
+      if: inputs.scenario == 'toolchain' && matrix.role == 'linux'
+      shell: bash
+      run: python .github/scripts/ci.py run --seconds 240 -- sudo apt-get install -y -qq build-essential cmake ninja-build
+    - name: Deliver prepared environment
+      if: inputs.scenario == 'base' || inputs.scenario == 'toolchain' || inputs.scenario == 'built'
+      uses: ./.github/actions/lab-session
+      with:
+        minutes: ${{ inputs.session_minutes }}
+        stream_logs: ${{ inputs.stream_logs }}
+        public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
+        ssh_transport: ${{ inputs.ssh_transport }}
+    - name: android installation/verification scene
+      if: matrix.role == 'android' && (inputs.scenario == 'installed' || inputs.scenario == 'verify')
+      uses: ./.github/actions/android-runtime
+      with:
+        mode: ${{ inputs.scenario }}
+        pause_at: ${{ inputs.pause_at == 'ready' && 'before-test' || inputs.pause_at }}
+        minutes: ${{ inputs.session_minutes }}
+        stream_logs: ${{ inputs.stream_logs }}
+        public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
+        ssh_transport: ${{ inputs.ssh_transport }}
+    - name: windows installation/verification scene
+      if: matrix.role == 'windows' && (inputs.scenario == 'installed' || inputs.scenario == 'verify')
+      uses: ./.github/actions/windows-runtime
+      with:
+        mode: ${{ inputs.scenario }}
+        pause_at: ${{ inputs.pause_at == 'ready' && 'before-test' || inputs.pause_at }}
+        minutes: ${{ inputs.session_minutes }}
+        stream_logs: ${{ inputs.stream_logs }}
+        public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
+        ssh_transport: ${{ inputs.ssh_transport }}
+    - name: Stage public report
+      if: ${{ always() }}
+      shell: bash
+      run: python .github/scripts/ci.py stage --kind lab-report
+    - uses: actions/upload-artifact@v7
+      if: ${{ always() }}
+      with:
+        name: report-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+        path: _public/lab-report/
+        retention-days: 7
+        if-no-files-found: error
+  linux-app:
+    name: linux-app
+    needs:
+    - plan
+    - build-android
+    - build-windows
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dual == 'true' && !contains(needs.*.result,
+      'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      LAB_ROLE: linux-app
+    steps:
+    - *id001
+    - name: Download android artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ needs.plan.outputs.artifact_android }}
+        path: apk
+        run-id: ${{ inputs.artifact_run_id != 0 && inputs.artifact_run_id || github.run_id }}
+        github-token: ${{ github.token }}
+    - name: Verify android artifact provenance
+      shell: bash
+      run: python .github/scripts/ci.py verify apk
+    - name: Download windows artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ needs.plan.outputs.artifact_windows }}
+        path: dist
+        run-id: ${{ inputs.artifact_run_id != 0 && inputs.artifact_run_id || github.run_id }}
+        github-token: ${{ github.token }}
+    - name: Verify windows artifact provenance
+      shell: bash
+      run: python .github/scripts/ci.py verify dist
+    - uses: ./.github/actions/dual-linux
+      with:
+        oauth_client_id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        oauth_secret: ${{ secrets.TS_OAUTH_SECRET }}
+        pause: ${{ inputs.pause_at == 'ready' }}
+        pause_at: ${{ inputs.pause_at }}
+        minutes: ${{ inputs.session_minutes }}
+        stream_logs: ${{ inputs.stream_logs }}
+        public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
+        ssh_transport: ${{ inputs.ssh_transport }}
+    - name: Stage public report
+      if: ${{ always() }}
+      shell: bash
+      run: python .github/scripts/ci.py stage --kind lab-report
+    - uses: actions/upload-artifact@v7
+      if: ${{ always() }}
+      with:
+        name: report-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+        path: _public/lab-report/
+        retention-days: 7
+        if-no-files-found: error
+  windows-client:
+    name: windows-client
+    needs:
+    - plan
+    - build-android
+    - build-windows
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dual == 'true' && !contains(needs.*.result,
+      'failure') }}
+    runs-on: windows-latest
+    timeout-minutes: 240
+    env:
+      LAB_ROLE: windows-client
+    steps:
+    - *id001
+    - name: Download windows artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ needs.plan.outputs.artifact_windows }}
+        path: dist
+        run-id: ${{ inputs.artifact_run_id != 0 && inputs.artifact_run_id || github.run_id }}
+        github-token: ${{ github.token }}
+    - name: Verify windows artifact provenance
+      shell: bash
+      run: python .github/scripts/ci.py verify dist
+    - uses: ./.github/actions/dual-windows
+      with:
+        oauth_client_id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        oauth_secret: ${{ secrets.TS_OAUTH_SECRET }}
+        pause: ${{ inputs.pause_at == 'ready' }}
+        pause_at: ${{ inputs.pause_at }}
+        minutes: ${{ inputs.session_minutes }}
+        stream_logs: ${{ inputs.stream_logs }}
+        public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
+        ssh_transport: ${{ inputs.ssh_transport }}
+    - name: Stage public report
+      if: ${{ always() }}
+      shell: bash
+      run: python .github/scripts/ci.py stage --kind lab-report
+    - uses: actions/upload-artifact@v7
+      if: ${{ always() }}
+      with:
+        name: report-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+        path: _public/lab-report/
+        retention-days: 7
+        if-no-files-found: error
+  result:
+    name: Lab result
+    if: ${{ always() }}
+    needs:
+    - plan
+    - build-android
+    - build-windows
+    - scene
+    - linux-app
+    - windows-client
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - *id001
+    - env:
+        NEEDS_JSON: ${{ toJSON(needs) }}
+      run: python .github/scripts/ci.py summary

@@ -1,0 +1,370 @@
+[
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "0. 环境自检（python / 系统信息）",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s2",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "a. test_drvpkg.exe 驱动包解压自检（须 9/9）",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s4",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "b. womic.exe --help CLI 说明书完整性",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s5",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "c. 未装驱动 --status 退出码 3 + 架构信息",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s6",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "d1. 驱动安装器自助安装驱动（记录 UAC/非交互行为）",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s8",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "d2. 验证驱动系统状态（SYS 落盘 + 注册表 InfPath）",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s9",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "d3. pnputil 兜底安装（仅 d2 未通过时）",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s10",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "e. 安装后 --status 退出码 0 + 驱动就绪",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s11",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "f. 端到端灌音验证（SYSTEM 计划任务跑 e2e_probe，须 RESULT=PASS）",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s12",
+    "budget_seconds": 480
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "g. R3 权限裁决：标准用户 2×2 矩阵（会话0 + 交互会话）",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s14",
+    "budget_seconds": 900
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "h. GUI 冒烟：无参启动 6 秒进程存活",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s16",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "h2. GUI 界面截图（标题断言 + 窗口截图）",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s17",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "windows-e2e.yml",
+    "job": "verify",
+    "step": "i. 汇总验证结论",
+    "new_script": ".github/actions/windows-runtime/steps.ps1",
+    "stage": "s18",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "Set up Android SDK tools",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s2",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "Install emulator components",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s3",
+    "budget_seconds": 900
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "Install emulator system dependencies",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s5",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "Verify KVM and AVD prerequisites",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s6",
+    "budget_seconds": 180
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "Start emulator (with timeout and progress logs)",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s7",
+    "budget_seconds": 720
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "Install and launch app",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s8",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "UI screenshots (5 screens + control asserts)",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s9",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "Interop closed loop (pc_client.py, retry once)",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s11",
+    "budget_seconds": 360
+  },
+  {
+    "old_workflow": "android.yml",
+    "job": "integration-test",
+    "step": "Collect diagnostics",
+    "new_script": ".github/actions/android-runtime/steps.sh",
+    "stage": "s12",
+    "budget_seconds": 240
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "Ensure wine (diagnostic only) + record version",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s7",
+    "budget_seconds": 720
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 记录 Tailscale 状态（linux-app）",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s12",
+    "budget_seconds": 180
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 发现 windows-client 的 tailnet IP",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s13",
+    "budget_seconds": 240
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 选择 TCP 通路（slirp 直连优先，redir 兜底）",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s14",
+    "budget_seconds": 240
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. wine 预检（真 app 本地诊断档，continue-on-error）",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s15",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 启动 UDP 中继（app → windows-client）",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s16",
+    "budget_seconds": 120
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 启动 socat TCP 中继（tailnet:8125 → app）",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s17",
+    "budget_seconds": 120
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 等待 windows-client 完成（gh 轮询 + 窗口兜底）",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s19",
+    "budget_seconds": 1500
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 汇总判定",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s20",
+    "budget_seconds": 180
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 收集证据",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s21",
+    "budget_seconds": 240
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "linux-app",
+    "step": "A. 收尾（停中继）",
+    "new_script": ".github/actions/dual-linux/steps.sh",
+    "stage": "s23",
+    "budget_seconds": 180
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "0. 环境自检（python / 系统信息 / 解锁产物）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s2",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "B. 记录状态 + UDP 8126 入站放行",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s4",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "B. 发现 linux-app 的 tailnet IP（长轮询）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s5",
+    "budget_seconds": 3000
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "C1. 驱动安装器自助安装驱动（记录 UAC/非交互行为）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s6",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "C2. 验证驱动系统状态（SYS 落盘 + 注册表 InfPath）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s7",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "C3. pnputil 兜底安装（仅 C2 未通过时）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s8",
+    "budget_seconds": 600
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "D. 安装后 --status 退出码 0 + 驱动就绪（硬门禁）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s9",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "E. 跨网 TCP 通路就绪探活（hello）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s11",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "F. 启动 SYSTEM 录音计划任务（440Hz 取证，30s）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s12",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "G. 启动真 womic.exe（跨网 + 固定媒体端口 8126）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s13",
+    "budget_seconds": 300
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "H. 读取录音取证判据（waveIn 440Hz）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s14",
+    "budget_seconds": 360
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "I. 汇总判定（双证据链）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s15",
+    "budget_seconds": 180
+  },
+  {
+    "old_workflow": "tailscale-dual.yml",
+    "job": "windows-client",
+    "step": "收尾（移除媒体防火墙规则）",
+    "new_script": ".github/actions/dual-windows/steps.ps1",
+    "stage": "s17",
+    "budget_seconds": 180
+  }
+]

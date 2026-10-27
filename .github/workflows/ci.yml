@@ -1,0 +1,184 @@
+# 编排只保留任务、依赖和组件调用；历史原因随对应组件迁移。
+name: CI
+run-name: CI · ${{ inputs.task || 'verify' }} · ${{ github.ref_name }}
+'on':
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 任务
+        type: choice
+        options:
+        - verify
+        - build
+        default: verify
+      target:
+        description: 目标；auto 按改动选择
+        type: choice
+        options:
+        - auto
+        - android
+        - windows
+        - both
+        default: auto
+      request_id:
+        description: Agent 关联编号（可留空）
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch'
+    && github.run_id || 'auto' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+env:
+  PYTHONUTF8: '1'
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.plan.outputs.android }}
+      windows: ${{ steps.plan.outputs.windows }}
+      verify: ${{ steps.plan.outputs.verify }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - id: plan
+      env:
+        TASK: ${{ inputs.task || 'verify' }}
+        TARGET: ${{ inputs.target || 'auto' }}
+      run: python .github/scripts/ci.py plan --task "$TASK" --target "$TARGET"
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - &id001
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: Shell regression tests
+      run: bash .github/scripts/tests/run-tests.sh
+    - name: Control, logs and artifact tests
+      run: python -m unittest discover -s .github/scripts/tests -p "test_*.py" -v
+  protocol-tests:
+    needs: plan
+    if: needs.plan.outputs.android == 'true' && needs.plan.outputs.verify == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - *id001
+    - uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Android protocol conformance
+      working-directory: android
+      run: ./gradlew :core:test --no-daemon --configure-on-demand
+  build-android:
+    needs:
+    - plan
+    - checks
+    if: needs.plan.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - *id001
+    - uses: ./.github/actions/build-android
+  verify-android:
+    needs:
+    - plan
+    - build-android
+    if: needs.plan.outputs.verify == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - *id001
+    - name: Download android artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: build-android-${{ github.run_id }}-${{ github.run_attempt }}
+        path: apk
+    - name: Verify android artifact provenance
+      shell: bash
+      run: python .github/scripts/ci.py verify apk --sha "$GITHUB_SHA"
+    - uses: ./.github/actions/android-runtime
+      with:
+        mode: verify
+    - name: Stage public report
+      if: ${{ always() }}
+      shell: bash
+      run: python .github/scripts/ci.py stage --kind report
+    - uses: actions/upload-artifact@v7
+      if: ${{ always() }}
+      with:
+        name: report-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+        path: _public/report/
+        retention-days: 7
+        if-no-files-found: error
+  build-windows:
+    needs:
+    - plan
+    - checks
+    if: needs.plan.outputs.windows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - *id001
+    - uses: ./.github/actions/build-windows
+  verify-windows:
+    needs:
+    - plan
+    - build-windows
+    if: needs.plan.outputs.verify == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+    - *id001
+    - name: Download windows artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: build-windows-${{ github.run_id }}-${{ github.run_attempt }}
+        path: dist
+    - name: Verify windows artifact provenance
+      shell: bash
+      run: python .github/scripts/ci.py verify dist --sha "$GITHUB_SHA"
+    - uses: ./.github/actions/windows-runtime
+      with:
+        mode: verify
+    - name: Stage public report
+      if: ${{ always() }}
+      shell: bash
+      run: python .github/scripts/ci.py stage --kind report
+    - uses: actions/upload-artifact@v7
+      if: ${{ always() }}
+      with:
+        name: report-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+        path: _public/report/
+        retention-days: 7
+        if-no-files-found: error
+  result:
+    name: CI result
+    if: ${{ always() }}
+    needs:
+    - plan
+    - checks
+    - protocol-tests
+    - build-android
+    - verify-android
+    - build-windows
+    - verify-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - *id001
+    - env:
+        NEEDS_JSON: ${{ toJSON(needs) }}
+      run: python .github/scripts/ci.py summary
