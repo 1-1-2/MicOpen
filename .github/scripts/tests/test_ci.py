@@ -33,6 +33,13 @@ class ArtifactTests(unittest.TestCase):
     def test_required_skipped_job_does_not_pass(self):
         needs={'plan':{'result':'success','outputs':{'android':'false','windows':'true','verify':'true'}},'checks':{'result':'success'},'build-windows':{'result':'success'},'verify-windows':{'result':'skipped'}}
         with patch.dict(os.environ,{'NEEDS_JSON':json.dumps(needs)}):self.assertTrue(ci.summary())
+    def test_selected_lab_scene_cannot_be_skipped(self):
+        needs={'plan':{'result':'success','outputs':{'dual':'false'}},'scene':{'result':'skipped'},'linux-app':{'result':'skipped'},'windows-client':{'result':'skipped'}}
+        with patch.dict(os.environ,{'NEEDS_JSON':json.dumps(needs)}):self.assertTrue(ci.summary())
+        needs['plan']['outputs']['dual']='true';needs['linux-app']['result']='success'
+        with patch.dict(os.environ,{'NEEDS_JSON':json.dumps(needs)}):self.assertTrue(ci.summary())
+        needs['windows-client']['result']='success'
+        with patch.dict(os.environ,{'NEEDS_JSON':json.dumps(needs)}):self.assertFalse(ci.summary())
     def test_deadline_kills_process(self):
         self.assertEqual(ci.run(.05,[sys.executable,'-c','import time;time.sleep(10)']),124)
     def test_invalid_lab_combinations_fail_before_runner_allocation(self):

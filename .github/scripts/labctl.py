@@ -77,6 +77,7 @@ def plan():
         if pause not in ['ready','after-test','on-failure','none']:raise ValueError('dual pause_at: ready/after-test/on-failure/none')
     elif target=='linux' and scenario not in ['base','toolchain']:raise ValueError('linux only supports base/toolchain; choose android for the emulator')
     elif target in ['android','both'] and pause in ['before-permissions','after-permissions']:raise ValueError('permission matrix pause points are Windows-only')
+    if scenario not in ['verify','dual'] and pause not in ['ready','none']:raise ValueError('pause_at applies to verify/dual; preparation scenes use ready/none')
     products=['android','windows'] if target=='both' else [target]
     needs_product=scenario in ['built','installed','verify','dual']
     flags={p:str(needs_product and p in products and source==0).lower() for p in ['android','windows']}
@@ -258,7 +259,10 @@ def main():
     if a.cmd=='connection':
         if a.output:
             p=Path(a.output);p.write_text(json.dumps(c,ensure_ascii=False,indent=2));p.chmod(0o600);print('Connection metadata saved: '+str(p))
-        else:print(json.dumps(c,ensure_ascii=False,indent=2))
+        else:
+            visible={k:c[k] for k in ['run_id','attempt','role','sha','host','user','port','deadline_epoch','stream_logs']}
+            visible.update(transport='relay' if 'relay' in c else 'tailnet',hint='Use --output to save complete metadata without displaying relay connection material')
+            print(json.dumps(visible,ensure_ascii=False,indent=2))
         return 0
     if a.cmd=='ssh-config':
         if not a.output:raise ValueError('ssh-config requires --output')

@@ -1,6 +1,6 @@
 # 编排只保留任务、依赖和组件调用；历史原因随对应组件迁移。
 name: Lab
-run-name: Lab · ${{ inputs.scenario }} · ${{ inputs.target }} · ${{ inputs.request_id }}
+run-name: Lab · ${{ inputs.scenario }} · ${{ inputs.scenario == 'dual' && 'both' || inputs.target }} · ${{ inputs.request_id }}
 'on':
   workflow_dispatch:
     inputs:

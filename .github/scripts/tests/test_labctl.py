@@ -18,6 +18,11 @@ import lab_session
 class RelayTests(unittest.TestCase):
     def connection(self):
         return dict(host='100.64.1.2',user='runneradmin',port=22,host_keys=['ssh-ed25519 AAAA test'],relay=dict(kind='upterm',version=lab_relay.VERSION,host='uptermd.upterm.dev',port=443,user='session:Ym9i=',ca=lab_relay.CA))
+    def test_preparation_scenes_reject_test_phase_pause(self):
+        for scenario in ['base','toolchain','built','installed']:
+            data=dict(scenario=scenario,target='windows',session_minutes='5',artifact_run_id='0',pause_at='after-test',stream_logs=False)
+            with patch.dict(os.environ,{'LAB_INPUTS':json.dumps(data)}):
+                with self.assertRaisesRegex(ValueError,'pause_at applies'):labctl.plan()
     def test_integer_inputs_accept_api_strings(self):
         self.assertEqual(labctl.integer_input('40491670551','run',0,2**63-1),40491670551)
         self.assertEqual(labctl.integer_input('5','minutes',1,120),5)

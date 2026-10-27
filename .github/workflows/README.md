@@ -41,7 +41,7 @@ CI 的 `task` 为 `verify`（默认）或 `build`；`target` 为 `auto`（默认
 | `stream_logs` | **不勾选** | 开启后，记录工具执行的命令和输出经过脱敏后进入公开 Actions 日志和转录附件 |
 | `request_id` | 空 | Agent 的关联编号；命令行启动工具自动生成 |
 
-Windows verify 支持 `before-install`（装驱动前）、`before-permissions`（权限矩阵前）、`after-permissions`（矩阵后）、`after-test`、`on-failure`、`none`。Android verify 支持 `ready`、`before-install`、`after-test`、`on-failure`、`none`。安装场景在安装就绪后交付，不额外执行整套验证。
+Windows verify 支持 `before-install`（装驱动前）、`before-permissions`（权限矩阵前）、`after-permissions`（矩阵后）、`after-test`、`on-failure`、`none`。Android verify 支持 `ready`、`before-install`、`after-test`、`on-failure`、`none`。安装场景在安装就绪后仅交付一次，不额外执行整套验证。基础、工具、成品和安装场景只接受 `pause_at=ready/none`；测试阶段暂停只用于 verify／dual。
 
 双机支持 `ready/after-test/on-failure/none`。ready 场景在双方就绪后协调共同截止时间，双方会话收尾后再继续自动验证；故障留场分别保留出错一端的现场。双机失败后重跑整组，不能拿旧轮次的一端与新轮次的另一端配对。
 

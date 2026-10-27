@@ -35,7 +35,7 @@ runs:
     run: python .github/scripts/ci.py run --seconds 720 -- bash .github/actions/android-runtime/steps.sh s7
     shell: bash
   - name: Lab before Android install
-    if: ${{ inputs.pause_at == 'before-install' }}
+    if: ${{ inputs.mode == 'verify' && inputs.pause_at == 'before-install' }}
     uses: ./.github/actions/lab-session
     with:
       minutes: ${{ inputs.minutes }}
@@ -46,7 +46,7 @@ runs:
     run: python .github/scripts/ci.py run --seconds 600 -- bash .github/actions/android-runtime/steps.sh s8
     shell: bash
   - name: Lab before Android test
-    if: ${{ inputs.pause_at == 'before-test' }}
+    if: ${{ inputs.mode == 'verify' && inputs.pause_at == 'before-test' }}
     uses: ./.github/actions/lab-session
     with:
       minutes: ${{ inputs.minutes }}
@@ -71,7 +71,7 @@ runs:
     run: python .github/scripts/ci.py run --seconds 240 -- bash .github/actions/android-runtime/steps.sh s12
     shell: bash
   - name: Lab Android scene
-    if: ${{ inputs.mode == 'installed' || inputs.pause_at == 'after-test' || (failure() && inputs.pause_at == 'on-failure') }}
+    if: ${{ (success() && (inputs.mode == 'installed' || (inputs.mode == 'verify' && inputs.pause_at == 'after-test'))) || (failure() && inputs.mode == 'verify' && inputs.pause_at == 'on-failure') }}
     uses: ./.github/actions/lab-session
     with:
       minutes: ${{ inputs.minutes }}

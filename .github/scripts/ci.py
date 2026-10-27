@@ -127,12 +127,16 @@ def summary():
     jobs=json.loads(os.environ.get('NEEDS_JSON','{}'));failed=[]
     # 汇总必须区分“未选中”和“依赖失败后被跳过”，不能让 skipped 洗绿。
     plan_outputs=jobs.get('plan',{}).get('outputs',{})
-    required={'checks'}
+    required={'plan'}
+    if 'checks' in jobs:required.add('checks')
+    if 'scene' in jobs:
+        required.update(['linux-app','windows-client'] if plan_outputs.get('dual')=='true' else ['scene'])
     if plan_outputs.get('android')=='true':required.add('build-android')
     if plan_outputs.get('windows')=='true':required.add('build-windows')
     if plan_outputs.get('verify')=='true':
         if 'build-android' in required:required.update(['protocol-tests','verify-android'])
         if 'build-windows' in required:required.add('verify-windows')
+    failed.extend(sorted(required-set(jobs)))
     for name,j in jobs.items():
         print(name,j.get('result'))
         if j.get('result') in ['failure','cancelled'] or (name in required and j.get('result')!='success'):failed.append(name)

@@ -108,7 +108,7 @@ runs:
     shell: pwsh
     if: ${{ inputs.mode == 'verify' }}
   - name: Lab after Windows test
-    if: ${{ success() && inputs.pause_at == 'after-test' }}
+    if: ${{ success() && inputs.mode == 'verify' && inputs.pause_at == 'after-test' }}
     uses: ./.github/actions/lab-session
     with:
       minutes: ${{ inputs.minutes }}
@@ -120,7 +120,7 @@ runs:
     run: python .github/scripts/ci.py run --seconds 600 -- pwsh -NoProfile -File .github/actions/windows-runtime/steps.ps1 -Stage s18
     shell: pwsh
   - name: Lab pause on failure
-    if: ${{ failure() && inputs.pause_at == 'on-failure' }}
+    if: ${{ failure() && inputs.mode == 'verify' && inputs.pause_at == 'on-failure' }}
     uses: ./.github/actions/lab-session
     with:
       minutes: ${{ inputs.minutes }}
