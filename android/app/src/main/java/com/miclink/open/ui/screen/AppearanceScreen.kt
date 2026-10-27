@@ -344,7 +344,7 @@ private fun LivePreviewCard(scheme: ColorScheme, caption: String) {
                         color = MaterialTheme.colorScheme.tertiaryContainer
                     ) {
                         Text(
-                            text = "LIVE",
+                            text = stringResource(R.string.theme_preview_badge),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -352,7 +352,7 @@ private fun LivePreviewCard(scheme: ColorScheme, caption: String) {
                     }
                 }
                 Text(
-                    text = "192.168.1.5:8125",
+                    text = stringResource(R.string.theme_preview_address),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

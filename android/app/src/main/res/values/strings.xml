@@ -147,6 +147,8 @@
     <string name="palette_stone">石灰</string>
     <string name="palette_brand_blue">品牌蓝</string>
     <string name="theme_dynamic_unsupported">当前系统（Android 11 及以下）不支持动态取色，已回退到「%1$s」</string>
+    <string name="theme_preview_badge">预览</string>
+    <string name="theme_preview_address">示例地址 · 192.168.1.5:8125</string>
     <string name="theme_section_amoled">AMOLED 纯黑</string>
     <string name="theme_amoled_hint">仅深色模式生效：背景与卡片统一为纯黑，用灰度梯度区分层级</string>
     <string name="theme_amoled_unavailable">当前为浅色模式，AMOLED 仅在深色模式下生效</string>

@@ -84,16 +84,21 @@ fun AboutScreen(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.height(8.dp))
             LICENSES.forEach { license ->
-                Row(modifier = Modifier.padding(vertical = 3.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
                     Text(
                         text = license.name,
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.width(150.dp)
+                        modifier = Modifier.weight(1f)
                     )
                     Text(
                         text = license.license,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
