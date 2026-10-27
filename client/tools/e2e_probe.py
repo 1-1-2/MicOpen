@@ -294,8 +294,11 @@ def analyze(raw, rate):
 
 
 def driver_versions():
-    """扫 C:\\Windows\\INF\\oem*.inf，找出与 womic 相关的 DriverVer（INF 可能是 UTF-16）。"""
-    windir = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    """从 Windows 当前系统目录的 INF 子目录查找相关驱动版本。"""
+    system_root = os.environ.get("SystemRoot")
+    if not system_root:
+        return []
+    windir = Path(system_root)
     out = []
     try:
         for p in sorted((windir / "INF").glob("oem*.inf")):

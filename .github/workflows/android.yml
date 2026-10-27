@@ -422,7 +422,7 @@ jobs:
         shell: pwsh
         run: |
           $cands = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT,
-                     "C:\Android\android-sdk", "$env:LOCALAPPDATA\Android\Sdk") |
+                     (Join-Path $env:LOCALAPPDATA "Android\Sdk")) |
                    Where-Object { $_ -and (Test-Path $_) }
           $sdk = $cands | Select-Object -First 1
           if (-not $sdk) { throw "未找到 Android SDK（ANDROID_HOME/ANDROID_SDK_ROOT 均为空且默认路径不存在）" }

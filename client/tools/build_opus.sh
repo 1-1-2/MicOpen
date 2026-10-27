@@ -8,19 +8,27 @@
 set -euo pipefail
 
 VER=${OPUS_VER:-1.5.2}
-WORK=${WORK:-${TMPDIR:-/tmp}/miclink-opus-build}
 DEST="$(cd "$(dirname "$0")/.." && pwd)/deps/opus"
 HOST=${HOST:-x86_64-w64-mingw32}
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
+
+# WORK、RUNNER_TEMP 或 TMPDIR 可指定临时目录根；默认由 mktemp 选择系统目录。
+# 每次使用独立子目录，避免固定路径互相覆盖，也不清理调用方已有目录。
+TMP_ROOT="${WORK:-${RUNNER_TEMP:-${TMPDIR:-}}}"
+if [ -n "$TMP_ROOT" ]; then
+    mkdir -p "$TMP_ROOT"
+    WORK_DIR="$(mktemp -d "$TMP_ROOT/miclink-opus-build.XXXXXX")"
+else
+    WORK_DIR="$(mktemp -d)"
+fi
 
 command -v "${HOST}-gcc" >/dev/null 2>&1 || {
     echo "缺少 ${HOST}-gcc，请先 apt install gcc-mingw-w64-x86-64" >&2
     exit 1
 }
 
-rm -rf "$WORK"
-mkdir -p "$WORK"
-cd "$WORK"
+mkdir -p "$WORK_DIR"
+cd "$WORK_DIR"
 
 echo "==> 下载 opus-${VER}"
 curl -sSL -o opus.tar.gz "https://downloads.xiph.org/releases/opus/opus-${VER}.tar.gz"

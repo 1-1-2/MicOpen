@@ -96,7 +96,7 @@ typedef struct {
     int      inf_ok;                /* L2：InfPath 非空 */
     int      sys_on_disk;           /* L3：System32\drivers\womic.sys 落盘 */
     wchar_t  inf_path[MAX_PATH];    /* oemNN.inf */
-    wchar_t  inf_full[MAX_PATH];    /* C:\Windows\INF\oemNN.inf */
+    wchar_t  inf_full[MAX_PATH];    /* 系统 INF 目录中的 oemNN.inf */
     wchar_t  provider[64];
     wchar_t  version[32];
     wchar_t  friendly[64];          /* 设备描述名（DriverDesc，D-09 pill 用真实值） */

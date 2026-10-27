@@ -421,6 +421,7 @@ static int make_dirs(const wchar_t *dir)
 int drvpkg_target_dir(int arch, wchar_t *dir, int cap)
 {
     wchar_t progdata[MAX_PATH] = { 0 };
+    DWORD env_len;
     /* SHGetKnownFolderPath 动态加载：避免为 knownfolders/uuid 增加链接期依赖 */
     typedef HRESULT (WINAPI *fn_kf)(const GUID *, DWORD, HANDLE, PWSTR *);
     HMODULE sh = GetModuleHandleW(L"shell32.dll");
@@ -435,8 +436,11 @@ int drvpkg_target_dir(int arch, wchar_t *dir, int cap)
         CoTaskMemFree(out);
     }
     if (!progdata[0]) {
-        if (!GetEnvironmentVariableW(L"ProgramData", progdata, MAX_PATH) || !progdata[0])
-            wcscpy(progdata, L"C:\\ProgramData");
+        env_len = GetEnvironmentVariableW(L"ProgramData", progdata, MAX_PATH);
+        if (!env_len || env_len >= MAX_PATH || !progdata[0]) {
+            set_err("无法定位 ProgramData 目录");
+            return 0;
+        }
     }
     _snwprintf(dir, cap, L"%s\\MicLink\\driver\\%s", progdata, drvpkg_arch_dir(arch));
     return 1;

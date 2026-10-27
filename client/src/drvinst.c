@@ -394,7 +394,12 @@ int drv_install(void)
 
     /* 1) 释放三件套到 %ProgramData%\MicLink\driver\<arch>\
      *    不用 %TEMP%：会被清理工具中途删掉，且不像正规软件。 */
-    drvpkg_target_dir(arch, dir, MAX_PATH);
+    if (!drvpkg_target_dir(arch, dir, MAX_PATH)) {
+        wchar_t pkgerr[512];
+        u8_to_w(drvpkg_last_error(), pkgerr, 512);
+        set_errw(L"无法确定驱动释放目录：%ls", pkgerr);
+        return 0;
+    }
     wcsncpy(g_lastdir, dir, MAX_PATH - 1);
     if (g_extpack[0]) {
         wchar_t pkgerr[512];
