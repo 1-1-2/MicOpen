@@ -1,5 +1,6 @@
 # ---- 构建产物 ----
 build/
+_public/
 out/
 cmake-build-*/
 *.o
