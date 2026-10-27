@@ -2,19 +2,22 @@
  * intentionally separate from the audio architecture. */
 #include "app.h"
 #include "monitor.h"
+#include "ui_draw.h"
 #include <commctrl.h>
 #include <stdio.h>
 
 static HWND panel, device, module, enabled, suppress, volume, delay, status, vol_label;
 static MonitorDevice devices[128];
 static int device_count;
+static HBRUSH panel_brush;
+static DWORD reset_notice_until;
 static wchar_t selected_id[MON_DEVICE_ID];
 enum { C_ENABLE = 701, C_DEVICE, C_MODULE, C_FX, C_VOLUME, C_DELAY, C_RESET, C_REFRESH };
 static HWND control(HWND w, const wchar_t *cls, const wchar_t *text, DWORD style, int x, int y,
                     int width, int height, int id) {
-    HWND h = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, width, height, w,
+    HWND h = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, sd(x), sd(y), sd(width), sd(height), w,
                              (HMENU)(INT_PTR)id, GetModuleHandleW(NULL), NULL);
-    SendMessageW(h, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
+    SendMessageW(h, WM_SETFONT, (WPARAM)ui_font(14, FW_NORMAL, 0), TRUE);
     return h;
 }
 static void refresh(void) {
@@ -41,17 +44,14 @@ static void sync(void) {
     swprintf(v, 64, L"监听音量：%d%%", s.volume);
     SetWindowTextW(vol_label, v);
     swprintf(text, 768,
-             L"%ls\r\n当前输出：%ls\r\nRing Out：%ls，已建立 %d "
-             L"个陷波；SpeexDSP：%ls\r\n%ls；丢弃过期音频：%u 块（10 ms/块）",
+             L"%ls\r\n当前输出：%ls\r\nRing Out：%ls（陷波 %d）\r\nSpeexDSP AEC：%ls\r\n%ls；丢弃过期音频：%u 块",
              s.message[0] ? s.message : L"监听默认关闭；选择输出后勾选监听。",
-             s.active ? s.device : L"未播放", s.ring_available ? L"可用" : L"不可用", s.filters,
-             s.aec_available ? L"可用" : L"不可用",
-             s.switching ? L"效果正在平滑切换"
-             : s.suppression
-                 ? ((s.module == 0 ? s.ring_available : s.aec_available) ? L"已选择处理音频"
-                                                                         : L"模块不可用，原声旁路")
-                 : L"原声旁路",
-             s.dropped_frames);
+             s.active ? s.device : L"未播放",
+             !s.ring_available ? L"不可用" : s.suppression && s.module == 0 && s.active ? L"已启用" : L"可用（未启用）", s.filters,
+             !s.aec_available ? L"不可用" : s.suppression && s.module == 1 && s.active ? L"已启用" : L"可用（未启用）",
+             !s.active ? L"等待播放" : s.switching ? L"效果切换中" : s.suppression && (s.module == 0 ? s.ring_available : s.aec_available) ? L"处理音频" : L"原声旁路", s.dropped_frames);
+    if ((int)(reset_notice_until - GetTickCount()) > 0)
+        wcscat(text, L"\r\n学习状态已重置；延迟保持不变。");
     SetWindowTextW(status, text);
 }
 static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
@@ -59,6 +59,7 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_CREATE: {
         MonitorStatus s;
         monitor_init();
+        panel_brush = CreateSolidBrush(g_th.card);
         monitor_snapshot(&s);
         enabled = control(w, L"BUTTON", L"启用监听", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 16, 140, 26,
                           C_ENABLE);
@@ -88,18 +89,28 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             SendMessageW(delay, CB_ADDSTRING, 0, (LPARAM)b);
         }
         SendMessageW(delay, CB_SETCURSEL, s.delay_ms / 10 - 1, 0);
-        control(w, L"BUTTON", L"重新学习", BS_PUSHBUTTON | WS_TABSTOP, 474, 240, 100, 28, C_RESET);
-        control(w, L"STATIC",
-                L"Ring Out 连续自动学习。AEC "
-                L"需要匹配实际返回延迟，仅使用本监听的播放参考，\r\n不包含其他软件的声音。它可能不"
-                L"适合当前声学反馈路径，请与原声对比。",
-                0, 20, 282, 554, 48, 0);
-        status = control(w, L"STATIC", L"", 0, 20, 344, 554, 126, 0);
+        control(w, L"BUTTON", L"重置学习状态", BS_PUSHBUTTON | WS_TABSTOP, 20, 302, 160, 32, C_RESET);
+        control(w, L"STATIC", L"重置会清空两种算法的学习状态；延迟数值不会改变。AEC 需要重新收敛。",
+                0, 20, 344, 554, 40, 0);
+        control(w, L"STATIC", L"AEC 只使用本监听的播放参考，不含其他应用的声音。",
+                0, 20, 388, 554, 24, 0);
+        status = control(w, L"STATIC", L"", 0, 20, 426, 554, 145, 0);
         refresh();
         sync();
         SetTimer(w, 1, 250, NULL);
         return 0;
     }
+    case WM_APP + 20:
+        if (panel_brush) DeleteObject(panel_brush);
+        panel_brush = CreateSolidBrush(g_th.card);
+        RedrawWindow(w, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+        return 0;
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN:
+        SetTextColor((HDC)wp, g_th.text);
+        SetBkColor((HDC)wp, g_th.card);
+        return (LRESULT)panel_brush;
+    case WM_ERASEBKGND: { RECT r; GetClientRect(w, &r); FillRect((HDC)wp, &r, panel_brush); return 1; }
     case WM_TIMER:
         sync();
         return 0;
@@ -113,7 +124,7 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_COMMAND: {
         int id = LOWORD(wp), event = HIWORD(wp);
-        if (id == C_ENABLE)
+        if (id == C_ENABLE && event == BN_CLICKED)
             monitor_enable(SendMessageW(enabled, BM_GETCHECK, 0, 0) == BST_CHECKED);
         if (id == C_DEVICE && event == CBN_SELCHANGE) {
             int i = (int)SendMessageW(device, CB_GETCURSEL, 0, 0);
@@ -122,14 +133,16 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
                 monitor_device(selected_id);
             }
         }
-        if ((id == C_MODULE && event == CBN_SELCHANGE) || id == C_FX)
+        if ((id == C_MODULE && event == CBN_SELCHANGE) || (id == C_FX && event == BN_CLICKED))
             monitor_effect(SendMessageW(suppress, BM_GETCHECK, 0, 0) == BST_CHECKED,
                            (int)SendMessageW(module, CB_GETCURSEL, 0, 0));
         if (id == C_DELAY && event == CBN_SELCHANGE)
             monitor_delay(((int)SendMessageW(delay, CB_GETCURSEL, 0, 0) + 1) * 10);
-        if (id == C_RESET)
+        if (id == C_RESET && event == BN_CLICKED) {
             monitor_reset();
-        if (id == C_REFRESH)
+            reset_notice_until = GetTickCount() + 4000;
+        }
+        if (id == C_REFRESH && event == BN_CLICKED)
             refresh();
         sync();
         return 0;
@@ -139,6 +152,7 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_DESTROY:
         KillTimer(w, 1);
+        if (panel_brush) { DeleteObject(panel_brush); panel_brush = NULL; }
         panel = NULL;
         return 0;
     }
@@ -155,7 +169,7 @@ void monitor_show(HWND owner) {
         wc.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
         wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
         RegisterClassW(&wc);
-        RECT r = {0, 0, 596, 484};
+        RECT r = {0, 0, sd(596), sd(585)};
         AdjustWindowRectEx(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, 0, WS_EX_TOOLWINDOW);
         panel =
             CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"MicLink · 监听实验室",
@@ -165,3 +179,5 @@ void monitor_show(HWND owner) {
     ShowWindow(panel, SW_SHOW);
     SetForegroundWindow(panel);
 }
+
+void monitor_theme_changed(void) { if (panel) SendMessageW(panel, WM_APP + 20, 0, 0); }

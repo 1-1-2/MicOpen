@@ -417,21 +417,22 @@ static void draw_gain(HDC dc, RECT card)
     }
     /* 0 dB 刻度：90.9% 处 1.5×12 accent 竖线（D-07） */
     {
-        int zx = x0 + (x1 - x0) * 909 / 1000;
+        int zx = x0 + (x1 - x0) * ui_gain_pos(0) / 1000;
         ui_line(dc, zx, g_lo.slider.top + sd(2), zx, g_lo.slider.top + sd(14),
                 g_th.accent, 1.5, 255);
     }
     /* dB 刻度：-60/-36/-24/-12/0 dB/+6 @ 0/36.4/54.5/72.7/90.9/100% */
     {
         static const wchar_t *sc[6] = { L"-60", L"-36", L"-24", L"-12", L"0 dB", L"+6" };
-        static const int pos[6] = { 0, 364, 545, 727, 909, 1000 };
+        static const int db10[6] = { -600, -360, -240, -120, 0, 60 };
         HFONT f = ui_font(11, FW_NORMAL, 1);
         int sy = g_lo.slider.bottom + sd(2);
         int k;
         for (k = 0; k < 6; k++) {
-            int sx = x0 + (x1 - x0) * pos[k] / 1000;
+            int target = (k == 5 && g_ui.gain_ext) ? GAIN_DB10_MAX_EXT : db10[k];
+            int sx = x0 + (x1 - x0) * ui_gain_pos(target) / 1000;
             ui_text(dc, (RECT){ sx - sd(30), sy, sx + sd(30), sy + sd(14) },
-                    sc[k], f, (k == 4) ? g_th.text_dim : g_th.text_mute,
+                    (k == 5 && g_ui.gain_ext) ? L"+14" : sc[k], f, (k == 4) ? g_th.text_dim : g_th.text_mute,
                     DT_CENTER | DT_SINGLELINE);
         }
     }

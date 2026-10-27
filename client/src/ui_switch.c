@@ -28,7 +28,13 @@ static COLORREF mix_c_white(COLORREF c, int pct)
  * 结果是连续位移+连续变色，不是"啪"地跳到另一态。 */
 void ui_switch(HDC dc, RECT r, int on, int pos)
 {
-    int h = r.bottom - r.top;
+    int h;
+    /* Keep the original hit rectangle while drawing a slimmer track. */
+    if (r.bottom - r.top > sd(24)) {
+        int inset_y = (r.bottom - r.top - sd(24)) / 2;
+        r.top += inset_y; r.bottom -= inset_y;
+    }
+    h = r.bottom - r.top;
     int rad = h / 2;
     int inset = sd(4);
     int d = h - inset * 2;

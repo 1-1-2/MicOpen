@@ -52,8 +52,9 @@ void ui_toggle_theme(void)
     g_ui.br_sunken = CreateSolidBrush(g_th.sunken);
     /* 字体与主题无关（缓存键里没有颜色），不重建：编辑框还持有旧 HFONT，
      * DeleteObject 会让它们悬挂。只有 DPI 变化时才 ui_fonts_reset()。 */
+    monitor_theme_changed();
     g_dirty = 1;
-    if (g_ui.hwnd) InvalidateRect(g_ui.hwnd, NULL, FALSE);
+    if (g_ui.hwnd) RedrawWindow(g_ui.hwnd, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
 /* ---------------------------------------------------------------- 连接 */
@@ -256,7 +257,8 @@ void ui_on_click(int id, int x, int y)
     case ID_MONITOR:
         monitor_show(g_ui.hwnd);
         return;
-    case ID_GAINEXT:
+    case ID_GAINEXT: {
+        int old_gain = g_ui.gain_db10;
         /* R-47 扩展增益范围：量程上限 +6 dB(200%) ↔ +14 dB(501%)。
          * 打开 = 把轨道上半段让给过载区（炸麦效果）；关闭时引擎会把当前增益
          * 钳回 +6 dB，这里必须用返回值把 UI 的 dB 也一起钳，否则滑杆位置
@@ -265,12 +267,12 @@ void ui_on_click(int id, int x, int y)
         g_ui.gain_db10 = eng_set_gain_ext(g_ui.gain_ext);
         ui_switch_anim_set(SWI_GAINEXT, g_ui.gain_ext);
         ui_log_add(g_ui.gain_ext
-                       ? "扩展增益已开启：上限 +14.0 dB（501%）。超过 100% 必然削波，"
-                         "样本侧按 int16 饱和钳制——这是刻意的「炸麦」效果"
+                       ? "扩展增益已开启：上限 +14.0 dB（501%）。高输入电平可能削波"
                        : "扩展增益已关闭：上限回到 +6.0 dB（200%）", 0);
-        if (!g_ui.gain_ext && g_ui.gain_db10 != 0)
+        if (!g_ui.gain_ext && g_ui.gain_db10 != old_gain)
             ui_log_add("增益已按新上限钳制", 0);
         break;
+    }
     case ID_AUTOREC:
         /* R-27：默认关；开启后断线 0.5 s 固定间隔重试，无上限、不退避。
          * R-40：关开关时若正在重连，必须把三个状态一起清掉 —— 否则
@@ -302,8 +304,8 @@ void ui_on_click(int id, int x, int y)
         g_ui.transport = 0;
         ui_log_add("传输方式已切回 Wi-Fi", 0);
     }
-    if (id >= ID_RATE0 && id <= ID_RATE2) g_ui.seg_rate = id - ID_RATE0;
-    if (id >= ID_BUF0 && id <= ID_BUF2) g_ui.buf_idx = id - ID_BUF0;
+    if (id >= ID_RATE0 && id <= ID_RATE2 && !g_ui.running) g_ui.seg_rate = id - ID_RATE0;
+    if (id >= ID_BUF0 && id <= ID_BUF2 && !g_ui.running) g_ui.buf_idx = id - ID_BUF0;
     if (id == ID_SLIDER) {
         g_ui.drag_slider = 1;
         {

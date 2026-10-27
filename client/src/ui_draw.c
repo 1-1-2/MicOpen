@@ -751,7 +751,8 @@ int ui_pos_to_db10(int pos)
     /* R-32：只对"落点"吸附。每个新 pos 都重新算，所以继续拖就能离开吸附区，
      * 不会粘死在刻度上（不做累积吸附）。 */
     for (i = 0; i < 6; i++)
-        if (db10 - g_snap_db10[i] <= g_snap_radius[i] &&
+        if (!(g_ui.gain_ext && g_snap_db10[i] == GAIN_DB10_MAX) &&
+            db10 - g_snap_db10[i] <= g_snap_radius[i] &&
             g_snap_db10[i] - db10 <= g_snap_radius[i])
             return g_snap_db10[i];
     /* R-47：扩展模式下把 +14 dB 也做成吸附点，方便一下拉到满档 */
@@ -777,7 +778,8 @@ int ui_gain_snap_target(int db10)
 {
     int i;
     for (i = 0; i < 6; i++)
-        if (db10 == g_snap_db10[i]) return g_snap_db10[i];
+        if (!(g_ui.gain_ext && g_snap_db10[i] == GAIN_DB10_MAX) &&
+            db10 == g_snap_db10[i]) return g_snap_db10[i];
     if (db10 == g_snap_ext_db10) return g_snap_ext_db10;
     return 1000;                       /* 未吸附（1000 不是合法 dB10） */
 }
@@ -1083,18 +1085,18 @@ void ui_draw_audio_card(HDC dc)
     static const wchar_t *rate_lbl[3] = { L"48 kHz", L"16 kHz", L"8 kHz" };
     static const wchar_t *buf_lbl[3]  = { L"26 ms", L"60 ms", L"120 ms" };
     wchar_t sum[64];
-    int en[3] = { 1, 1, 1 };
+    int en[3] = { !g_ui.running, !g_ui.running, !g_ui.running };
 
-    swprintf(sum, 64, L"48 kHz · 单声道 · 16 bit · %d ms",
+    swprintf(sum, 64, L"采集 %ls · 缓冲 %d ms", rate_lbl[g_ui.seg_rate],
              g_ui.buf_idx == 0 ? 26 : g_ui.buf_idx == 1 ? 60 : 120);
     ui_card(dc, g_lo.card_audio);
-    ui_panel_hdr(dc, g_lo.hdr_audio, L"音频参数", sum, g_ui.exp_audio, ID_EXP_AUDIO);
+    ui_panel_hdr(dc, g_lo.hdr_audio, L"音频设置", sum, g_ui.exp_audio, ID_EXP_AUDIO);
     if (!g_ui.exp_audio) return;
 
     {
         RECT c = g_lo.card_audio;
         RECT lr = { c.left + ui_pad(), c.top + sd(60), c.right - ui_pad(), c.top + sd(75) };
-        ui_text(dc, lr, L"采样率（灌给驱动的一律是 48 kHz）", ui_font(11, FW_NORMAL, 0),
+        ui_text(dc, lr, g_ui.running ? L"手机采集采样率（连接中不可修改）" : L"手机采集采样率", ui_font(11, FW_NORMAL, 0),
                 g_th.text_dim, DT_LEFT | DT_SINGLELINE);
     }
     ui_seg_group(dc, (RECT){ g_lo.seg_rate[0].left, g_lo.seg_rate[0].top,
@@ -1103,7 +1105,7 @@ void ui_draw_audio_card(HDC dc)
     {
         RECT c = g_lo.card_audio;
         RECT lr = { c.left + ui_pad(), c.top + sd(117), c.right - ui_pad(), c.top + sd(132) };
-        ui_text(dc, lr, L"环形缓冲（26 ms 低延迟 / 120 ms 更抗抖动）", ui_font(11, FW_NORMAL, 0),
+        ui_text(dc, lr, g_ui.running ? L"电脑驱动缓冲（连接中不可修改）" : L"电脑驱动缓冲（26 ms 低延迟 / 120 ms 更抗抖动）", ui_font(11, FW_NORMAL, 0),
                 g_th.text_dim, DT_LEFT | DT_SINGLELINE);
     }
     ui_seg_group(dc, (RECT){ g_lo.seg_buf[0].left, g_lo.seg_buf[0].top,
@@ -1120,13 +1122,14 @@ void ui_draw_audio_card(HDC dc)
         swprintf(v[1], 24, L"单声道");
         swprintf(v[2], 24, L"16 bit");
         swprintf(v[3], 24, L"%d ms", g_ui.buf_idx == 0 ? 26 : g_ui.buf_idx == 1 ? 60 : 120);
+        { RECT area = { c.left + ui_pad(), c.top + sd(170), c.right - ui_pad(), c.top + sd(232) };
+          ui_fill_round(dc, area, sd(8), g_th.sunken, 255);
+          ui_stroke_round(dc, area, sd(8), g_th.stroke, 255, 1); }
         for (i = 0; i < 4; i++) {
             int col = i % 2, row = i / 2;
             RECT cell = { c.left + ui_pad() + col * (cw + sd(8)), c.top + sd(174) + row * sd(32),
                           c.left + ui_pad() + col * (cw + sd(8)) + cw, c.top + sd(198) + row * sd(32) };
             int x = cell.left + sd(10);
-            ui_fill_round(dc, cell, sd(8), g_th.sunken, 255);
-            ui_stroke_round(dc, cell, sd(8), g_th.stroke, 255, 1);
             ui_text(dc, (RECT){ x, cell.top, x + sd(70), cell.bottom }, k[i],
                     ui_font(11, FW_NORMAL, 0), g_th.text_dim,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -1214,18 +1217,18 @@ void ui_draw_stats_card(HDC dc)
             int y = c.top + sd(60) + i * sd(26);
             RECT lr = { c.left + ui_pad(), y, c.left + ui_pad() + sd(44), y + sd(20) };
             RECT vr = { c.left + sd(64), y, c.left + sd(64) + sd(88), y + sd(20) };
-            RECT br = { bx0, y + sd(7), bx1, y + sd(13) };
+            RECT br = { bx0, y + sd(5), bx1, y + sd(15) };
             RECT cr = { bx1 + sd(6), y, c.right - ui_pad(), y + sd(20) };
             ui_text(dc, lr, lb[i], ui_font(14, FW_NORMAL, 0), g_th.text_dim,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             ui_text(dc, vr, v[i], ui_font(14, FW_NORMAL, 1), g_th.text,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             /* 横向进度条：轨道 6 胶囊 bg-sunken，填充随健康度 */
-            ui_fill_round(dc, br, sd(3), g_th.sunken, 255);
+            ui_fill_round(dc, br, sd(5), g_th.sunken, 255);
             if (live && frac[i] > 0.0) {
                 RECT fr = br;
                 fr.right = br.left + (int)(bw * (frac[i] > 1.0 ? 1.0 : frac[i]));
-                if (fr.right > fr.left) ui_fill_round(dc, fr, sd(3), fill[i], 255);
+                if (fr.right > fr.left) ui_fill_round(dc, fr, sd(5), fill[i], 255);
             }
             /* 阈值刻度 1px text-3 */
             {
@@ -1274,9 +1277,12 @@ void ui_draw_stats_card(HDC dc)
             swprintf(v[2], 40, L"—");
         }
         swprintf(v[3], 40, L"Wi-Fi");
+        { RECT area = { c.left + ui_pad(), c.top + sd(140), c.right - ui_pad(), c.top + sd(225) };
+          ui_fill_round(dc, area, sd(8), g_th.sunken, 255);
+          ui_stroke_round(dc, area, sd(8), g_th.stroke, 255, 1); }
         for (i = 0; i < 4; i++) {
             int col = i % 2, row = i / 2;
-            int x = c.left + ui_pad() + col * (cw + sd(8));
+            int x = c.left + ui_pad() + sd(8) + col * (cw + sd(8));
             int y = c.top + sd(144) + row * sd(41);
             ui_text(dc, (RECT){ x, y, x + cw, y + sd(15) }, k[i],
                     ui_font(11, FW_NORMAL, 0), g_th.text_dim, DT_LEFT | DT_SINGLELINE);
@@ -1378,7 +1384,7 @@ void ui_draw_statusbar(HDC dc)
     /* R-28：右段 40% 留给「最新一条事件」，左段（状态徽标 … 时长）夹在 58% 内，
      * 两段各画各的，互不越界。 */
     {
-        int sp = g_ui.w * 58 / 100;
+        int sp = g_ui.w - sd(8);
         int saved_l = ui_clip_push(dc, (RECT){ 0, r.top, sp, r.bottom });
         (void)saved_l;   /* 左段裁剪在函数末尾 pop，见下 */
 
@@ -1473,15 +1479,16 @@ void ui_draw_statusbar(HDC dc)
     }
     ui_text(dc, (RECT){ x, r.top, x + sd(80), r.bottom }, item, mf, g_th.text,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        x += ui_measure_text(item, mf) + sd(12);
         ui_clip_pop(dc, saved_l);
     }
 
     /* ---- R-28 右段：最新一条事件（HH:MM:SS + 级别 + 消息，单行省略号） ----
      * 级别色只用于左侧 3px 竖条与级别词；只在被下一条替换时更新（取环形里最新）。 */
-    if (ui_log_count() > 0) {
+    if (ui_log_count() > 0 && x + sd(160) < g_ui.w - sd(8)) {
         const LogLine *L = ui_log_get(0);
-        int rx = g_ui.w * 60 / 100 + sd(4);
-        int savedr = ui_clip_push(dc, (RECT){ g_ui.w * 60 / 100, r.top, g_ui.w - sd(8), r.bottom });
+        int rx = x;
+        int savedr = ui_clip_push(dc, (RECT){ rx, r.top, g_ui.w - sd(8), r.bottom });
         static const wchar_t *lvw[4] = { L"INFO", L"ERROR", L"OK", L"WARN" };
         wchar_t msg[LOG_LEN];
         COLORREF lc;

@@ -225,8 +225,8 @@ int  eng_media_port(void);
 #define GAIN_DB10_MIN      (-600)
 #define GAIN_DB10_MAX      (60)     /* 常态上限：+6.0 dB = 200% */
 #define GAIN_DB10_MAX_EXT  (140)    /* 扩展上限：+14.0 dB = 501% */
-#define GAIN_SPAN_NORMAL   (660)    /* -600 → +60  */
-#define GAIN_SPAN_EXT      (740)    /* -600 → +140 */
+#define GAIN_SPAN_NORMAL   (GAIN_DB10_MAX - GAIN_DB10_MIN)    /* -600 → +60  */
+#define GAIN_SPAN_EXT      (GAIN_DB10_MAX_EXT - GAIN_DB10_MIN)    /* -600 → +140 */
 
 /* 设置本地增益（0.1 dB）。按当前范围上限钳制，返回实际值。 */
 int  eng_set_gain_db(int db10);

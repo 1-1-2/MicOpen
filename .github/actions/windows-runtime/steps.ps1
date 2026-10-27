@@ -729,8 +729,12 @@ exit 0
 if ($Stage -eq 's17') {
 $dir = "probe-results/screenshots"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$env:MICLINK_EXPAND_ALL = '1'
+$env:MICLINK_SHOW_MONITOR = '1'
+$env:MICLINK_SHOW_HELP = '1'
 $p = Start-Process -FilePath "$env:GITHUB_WORKSPACE\dist\womic.exe" `
   -WorkingDirectory "$env:GITHUB_WORKSPACE\dist" -PassThru
+Remove-Item Env:MICLINK_EXPAND_ALL, Env:MICLINK_SHOW_MONITOR, Env:MICLINK_SHOW_HELP
 
 # 等主窗口就绪（最多 10s，每 0.5s 轮询一次）
 $hwnd = [IntPtr]::Zero
@@ -764,6 +768,7 @@ public class W32 {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
 }
 "@
 [W32]::SetForegroundWindow($hwnd) | Out-Null
@@ -785,6 +790,21 @@ if ($w -gt 0 -and $h -gt 0) {
   $bmp.Dispose()
   "printwindow=$ok" | Out-File -Append "$dir/h2-gui-info.txt"
   $shotOk = Test-Path "$dir/gui-main.png"
+}
+# 监听和命令行说明子窗口：真实渲染，供视觉核对与文档更新。
+foreach ($item in @(@('MicLinkMonitorTest','gui-monitor.png'), @('MicLinkHelpClass','gui-help.png'))) {
+  $child = [W32]::FindWindow($item[0], $null)
+  if ($child -eq [IntPtr]::Zero) { throw "Missing screenshot window $($item[0])" }
+  $r = New-Object W32+RECT
+  [W32]::GetWindowRect($child, [ref]$r) | Out-Null
+  $bmp = New-Object System.Drawing.Bitmap(($r.R - $r.L), ($r.B - $r.T))
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $hdc = $g.GetHdc()
+  $ok = [W32]::PrintWindow($child, $hdc, 2)
+  $g.ReleaseHdc($hdc); $g.Dispose()
+  if (-not $ok) { $bmp.Dispose(); throw "Cannot capture $($item[0])" }
+  $bmp.Save("$dir/$($item[1])", [System.Drawing.Imaging.ImageFormat]::Png)
+  $bmp.Dispose()
 }
 # 整屏兜底：PrintWindow 在个别会话下会出全黑，留一张屏幕截图对照
 try {

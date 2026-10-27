@@ -83,7 +83,7 @@
     <string name="capture_effect_ns">降噪（NS）</string>
     <string name="capture_effect_ns_desc">系统 NoiseSuppressor，抑制稳态噪声。</string>
     <string name="capture_effect_aec">回声消除（AEC）</string>
-    <string name="capture_effect_aec_desc">系统 AcousticEchoCanceler，消除扬声器回声。单向推流一般不需要。</string>
+    <string name="capture_effect_aec_desc">尝试抑制手机端回声；此处没有电脑扬声器的播放参考。</string>
     <string name="capture_effect_agc">自动增益（AGC）</string>
     <string name="capture_effect_agc_desc">系统 AutomaticGainControl，自动放大过小声级。</string>
     <string name="capture_effect_unavailable">当前设备不支持该效果（系统未提供对应音效实现）</string>
@@ -111,6 +111,8 @@
     <string name="capture_msg_effect_failed">系统%1$s启用失败：%2$s</string>
 
     <!-- ==================== R-34 连接页只读状态栏 ==================== -->
+    <string name="capture_status_title">采集与传输状态</string>
+    <string name="capture_status_effect_hint">效果显示为所选设置，实际启用情况取决于系统。</string>
     <string name="status_sent">已发送</string>
     <string name="status_device_selected">已选设备</string>
     <string name="status_ns">降噪</string>

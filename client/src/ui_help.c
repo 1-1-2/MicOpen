@@ -213,6 +213,17 @@ static LRESULT CALLBACK help_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         ScreenToClient(hwnd, &p);
         GetClientRect(hwnd, &cr);
         cb = help_close_rect(cr);
+        {
+            int edge = sd(6);
+            if (p.y < edge && p.x < edge) return HTTOPLEFT;
+            if (p.y < edge && p.x >= cr.right - edge) return HTTOPRIGHT;
+            if (p.y >= cr.bottom - edge && p.x < edge) return HTBOTTOMLEFT;
+            if (p.y >= cr.bottom - edge && p.x >= cr.right - edge) return HTBOTTOMRIGHT;
+            if (p.y < edge) return HTTOP;
+            if (p.y >= cr.bottom - edge) return HTBOTTOM;
+            if (p.x < edge) return HTLEFT;
+            if (p.x >= cr.right - edge) return HTRIGHT;
+        }
         if (p.y < sd(HELP_TITLE_H) && !PtInRect(&cb, p)) return HTCAPTION;
         return HTCLIENT;
     }
@@ -301,7 +312,7 @@ void ui_show_help(HINSTANCE hInst, HWND parent)
     {
         RECT wr = { 0, 0, sd(760), sd(620) };
         g_hwnd = CreateWindowExW(WS_EX_APPWINDOW, HELP_CLASS, L"命令行使用说明书",
-                                 WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                                 WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN,
                                  CW_USEDEFAULT, CW_USEDEFAULT,
                                  wr.right - wr.left, wr.bottom - wr.top,
                                  parent, NULL, hInst, NULL);

@@ -30,6 +30,7 @@ void monitor_delay(int ms);                   /* playback-to-return delay, 10..4
 void monitor_reset(void);
 void monitor_snapshot(MonitorStatus *out);
 void monitor_show(HWND owner);
+void monitor_theme_changed(void);
 #ifdef __cplusplus
 }
 #endif

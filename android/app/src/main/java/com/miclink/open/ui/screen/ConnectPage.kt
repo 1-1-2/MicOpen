@@ -225,10 +225,17 @@ fun ConnectPage(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            // R-47：2dp（原 6dp）—— 清单式密排，四行只占三行的高度
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(tokens.bgSunken)
+                .border(1.dp, tokens.border, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            Text(
+                text = stringResource(R.string.capture_status_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = tokens.text1
+            )
             StatusRow(
                 leftLabel = stringResource(R.string.home_row_source),
                 leftValue = audioSourceLabel(state.capture.audioSource),
@@ -254,6 +261,11 @@ fun ConnectPage(
                 leftValue = onOff(state.capture.gainControl),
                 rightLabel = stringResource(R.string.status_sent),
                 rightValue = ReconcileText.formatBytes(state.bytes)
+            )
+            Text(
+                text = stringResource(R.string.capture_status_effect_hint),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                color = tokens.text2
             )
             // R-38a 回执行：常驻一行（不随状态增减、不抖布局），
             // 未回执时用 WARN 色警示，但**不阻断推流**。
