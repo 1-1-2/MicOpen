@@ -250,7 +250,7 @@ if [ "$B_STATUS" = "completed" ]; then
   if [ "$B_CONCLUSION" = "success" ] && [ "$FORWARDED" -gt 0 ] 2>/dev/null; then
     VERDICT=PASS; REASON="B 成功且 UDP 中继转发 $FORWARDED 包"
   elif [ "$B_CONCLUSION" != "success" ]; then
-    REASON="windows-client 结论=$B_CONCLUSION（详见 B 作业日志/dual-evidence-windows）"
+    REASON="windows-client 结论=$B_CONCLUSION（详见本次 windows-client 作业日志与 report-windows-client 附件）"
   else
     REASON="B 成功但中继转发量=$FORWARDED（矛盾：B 收到音频必有转发）"
   fi

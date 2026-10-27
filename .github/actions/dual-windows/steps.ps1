@@ -458,7 +458,7 @@ if (Test-Path $sumPath) {
   "| 录音判据 | RESULT=$env:record_result |",
   "| 录音 RMS / 主峰 / SNR | $rms / $peak / $snr |",
   "",
-  "音频原始文件：artifact ``dual-evidence-windows`` → probe-results/record/capture.wav"
+  "公开附件仅含 record/summary.json 的音频统计和来源清单；原始 WAV 不上传。详细运行输出见本作业日志。"
 ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 if (-not $ok) {
   Write-Host "::error::I: 双证据链不完整（record=$env:record_result frames=$env:womic_frames injected=$env:womic_injected）"

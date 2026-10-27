@@ -50,10 +50,12 @@ class ArtifactTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);(root/'probe-results').mkdir();(root/'probe-results/private-note.txt').write_text('DO NOT UPLOAD')
             (root/'probe-results/capture.wav').write_bytes(b'personal audio')
+            (root/'probe-results/record').mkdir();(root/'probe-results/record/personal-note.json').write_text('{\"private\":true}')
+            (root/'probe-results/personal-verdict.json').write_text('{\"private\":true}')
             (root/'probe-results/verdict.txt').write_text('RESULT=PASS')
             with patch.object(ci,'ROOT',root),patch.object(ci.subprocess,'check_output',return_value='fake-sha\n'):
                 ci.stage('lab-report')
             out=root/'_public/lab-report'
-            self.assertTrue((out/'verdict.txt').exists());self.assertFalse((out/'private-note.txt').exists());self.assertFalse((out/'capture.wav').exists())
+            self.assertTrue((out/'verdict.txt').exists());self.assertFalse((out/'private-note.txt').exists());self.assertFalse((out/'capture.wav').exists());self.assertFalse((out/'record/personal-note.json').exists());self.assertFalse((out/'personal-verdict.json').exists())
 
 if __name__=='__main__':unittest.main()

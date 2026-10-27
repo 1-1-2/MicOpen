@@ -57,7 +57,7 @@ def stage(kind):
     else:
         # 不上传整个 probe-results。人工 Lab 只导出结构化摘要；不会自动打包桌面或音频。
         base=ROOT/'probe-results'
-        patterns=['verdict.txt','*verdict*.json','relay-stats.json','record/*.json']
+        patterns=['verdict.txt','relay-stats.json','record/summary.json']
         if kind=='report':patterns+=['logs/[a-h]*.txt','logs/0-env.txt','logs/hello*.txt','interop/attempt-*.out','ui-screenshots/*.png','ui-screenshots/*.xml','screenshots/*.png']
         for pattern in patterns:files.extend(base.glob(pattern))
         files=sorted(set(p for p in files if p.is_file() and not p.is_symlink()))
