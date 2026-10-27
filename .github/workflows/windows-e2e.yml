@@ -783,11 +783,11 @@ jobs:
       #      反引号转义引号。
       #    * schtasks /create /xml 的 XML 必须 UTF-16 编码
       #      （[IO.File]::WriteAllText(..., [Text.Encoding]::Unicode)）。
-      #    * 计划任务 Actions 的 cmd 环境不继承 pwsh 的 PATH，python
-      #      必须写绝对路径；WorkingDirectory 用绝对路径（相对路径会
-      #      被解析到 C:\Windows\System32）。
-      #    * workspace（C:\Users\runneradmin\work\...）各级目录默认 ACL
-      #      只允许 runneradmin/Administrators/SYSTEM traverse——标准用户
+      #    * 计划任务 Actions 的 cmd 环境不继承 pwsh 的 PATH；Python
+      #      可执行文件要从当前 runner 的 PATH 解析后传入，WorkingDirectory
+      #      要使用由环境变量计算出的绝对路径（相对路径会落到系统默认目录）。
+      #    * GITHUB_WORKSPACE 各级目录默认 ACL 只允许 runner 账户、
+      #      Administrators 与 SYSTEM traverse——标准用户
       #      进不去 workspace。因此 g1/g2 的探针必须由 elevated pwsh 复制
       #      到已授权 Modify 的 $dir（$env:TEMP\womic-stduser）里跑：cd
       #      进 workspace 会失败（cwd 落 system32），打开 workspace 下的
@@ -810,16 +810,19 @@ jobs:
         timeout-minutes: 15
         run: |
           $user = 'womic-e2e-probe'
-          $pass = 'Womic-Probe-2026!'
           $ws = $env:GITHUB_WORKSPACE
-          # 计划任务的 cmd 环境不继承 Actions 进程 PATH，python 必须写绝对路径
-          $py = (Get-Command python).Source
+          # 计划任务的 cmd 环境不继承 Actions 进程 PATH；运行时解析 Python 路径并显式传入
+          $py = (Get-Command python -ErrorAction SilentlyContinue).Source
           if (-not $py) {
-            Write-Host "::error::g: 解析 python 绝对路径失败"
+            Write-Host "::error::g: 当前 runner PATH 中找不到 Python"
             exit 1
           }
+          # 每次运行生成随机临时密码；它只用于本次 runner 上的探针账户。
+          $passwordBytes = New-Object byte[] 24
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($passwordBytes)
+          $pass = 'Womic-' + [Convert]::ToBase64String($passwordBytes).TrimEnd('=').Replace('+', 'A').Replace('/', 'B') + '!a1'
           # 建用户：run 39904485784 真机教训——net user ... /add 在 pwsh 7
-          # （步骤 shell 是 C:\Program Files\PowerShell\7\pwsh.EXE）下返回
+          # 下返回
           # 非零退出码，且错误文本被 | Out-Null 吞掉，日志只剩
           # "No valid response was provided."（net.exe 的通用错误输出），
           # 无法定位失败原因。改用 pwsh 原生的 New-LocalUser + try/catch，
@@ -827,15 +830,17 @@ jobs:
           # 错误交给 catch。$sec 前置创建：New-LocalUser 与 g2 的
           # Start-Process -Credential 共用同一个 SecureString。
           $sec = ConvertTo-SecureString $pass -AsPlainText -Force
-          # 幂等：用户已存在（重复跑/重试）则跳过创建，不算基础设施错误
-          if (-not (Get-LocalUser -Name $user -ErrorAction SilentlyContinue)) {
-            try {
+          # 幂等：账户已存在时同步更新随机密码，使后续任务仍可用本次凭据。
+          try {
+            if (-not (Get-LocalUser -Name $user -ErrorAction SilentlyContinue)) {
               New-LocalUser -Name $user -Password $sec `
                 -Description "WOMic E2E R3 标准用户裁决" -ErrorAction Stop | Out-Null
-            } catch {
-              Write-Host "::error::g: 创建标准用户失败: $($_.Exception.Message)"
-              exit 1
+            } else {
+              Set-LocalUser -Name $user -Password $sec -ErrorAction Stop
             }
+          } catch {
+            Write-Host "::error::g: 创建或更新标准用户失败: $($_.Exception.Message)"
+            exit 1
           }
           $dir = "$env:TEMP\womic-stduser"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -846,7 +851,7 @@ jobs:
           Set-Acl $dir $acl
           # 预建收证目录（Copy-Item 静默失败教训：先确保目标目录存在）
           New-Item -ItemType Directory -Force -Path "$ws\probe-results\logs" | Out-Null
-          # 标准用户进不去 workspace（各级 ACL 只允许 runneradmin/Administrators/
+          # 标准用户进不去 workspace（各级 ACL 只允许 runner/Administrators/
           # SYSTEM traverse）：由 elevated pwsh 把探针复制到已授权的 $dir，
           # g1/g2 都从这里跑。复制后必须验证目标存在（Copy-Item 会静默失败）。
           $probeSrc = "$ws\client\tools\e2e_probe.py"
