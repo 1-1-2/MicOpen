@@ -197,6 +197,12 @@ assert_text 03-advanced "控制端口" "高级页-控制端口"
 # R-07：抽屉移除后「关于与帮助」落到高级页底部（文字按钮）
 assert_text 03-advanced "关于与帮助" "高级页-关于与帮助（R-07）"
 
+echo "[ui] 关于与帮助：验证使用说明并留图"
+tap_text "关于与帮助" "使用方式"
+snap 03b-about
+assert_text 03b-about "使用方式" "关于-使用方式"
+press_back
+
 echo "[ui] 4/5 外观页（顶栏右上角 👕 进入）"
 tap_text "外观" "主题模式"
 sleep 1

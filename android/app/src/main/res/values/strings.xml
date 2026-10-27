@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WO Mic 采集端</string>
+    <string name="app_name">MicLink 采集端</string>
 
     <!-- ==================== 前台服务通知（D-16：通知标题 = 状态词，与主页徽标同一事实来源） ==================== -->
     <string name="notification_action_stop">停止</string>
@@ -153,10 +153,10 @@
 
     <!-- ==================== 关于与帮助 ==================== -->
     <string name="usage_title">使用方式</string>
-    <string name="usage_body">1. 手机与 PC 接入同一局域网；\n2. 点「启动」，等待状态变为「等待连接」；\n3. 在 PC 端 WO Mic 客户端填入主页显示的地址；\n4. PC 端点开始推流后，手机自动开始采集并发送。</string>
-    <string name="protocol_note">协议实现见 docs/protocol/womic-wifi-protocol-v1.md（双端实证）。</string>
-    <string name="about_protocol">协议说明</string>
-    <string name="about_protocol_body">手机是 TCP 服务端（默认端口 8125）+ UDP 发送端：PC 客户端连入后经 CONFIG 消息协商采样率与媒体端口，随后 Opus 编码音频经 UDP 发出。控制通道与媒体通道分离，心跳 5s 超时断开。</string>
+    <string name="usage_body">1. 手机与电脑连接同一网络；\n2. 手机点「启动」，等待连接；\n3. 在电脑的 MicLink 客户端输入手机显示的地址；\n4. 电脑点「连接」，手机开始采集和发送声音。</string>
+    <string name="protocol_note">电脑需要预先安装兼容的 WO Mic 虚拟麦克风驱动。</string>
+    <string name="about_protocol">连接与兼容性</string>
+    <string name="about_protocol_body">手机通过网络向电脑发送声音，采样率由电脑端连接时选择。连接建立后，在录音软件中选择虚拟麦克风即可使用。</string>
     <string name="about_version">版本</string>
     <string name="about_app_version">应用版本</string>
     <string name="about_opus_version">libopus 版本</string>

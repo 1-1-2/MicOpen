@@ -590,10 +590,12 @@ case "\$1" in
             200,160) echo source > "\$S" ;;
             300,160) echo advanced > "\$S" ;;
             920,160) echo appearance > "\$S" ;;
+            350,1850) echo about > "\$S" ;;
           esac
         elif [ "\$3" = "keyevent" ]; then
           # 返回键：外观 / 关于是独立目的地，回退到三段外壳（停在离开前的页）
           [ "\$(cat "\$S")" = "appearance" ] && echo advanced > "\$S"
+          [ "\$(cat "\$S")" = "about" ] && echo advanced > "\$S"
         fi
         exit 0 ;;
     esac
@@ -620,6 +622,10 @@ X
 cat > "$T23/fx/advanced.xml" <<'X'
 <hierarchy rotation="0"><node text="连接" content-desc="" clickable="true" bounds="[60,140][140,180]"/><node text="音源" content-desc="" clickable="true" bounds="[160,140][240,180]"/><node text="高级" content-desc="" clickable="true" bounds="[260,140][340,180]"/><node text="" content-desc="外观" clickable="true" bounds="[880,140][960,180]"/><node text="降噪（NS）" content-desc="" clickable="true" bounds="[100,600][400,650]"/><node text="控制端口" content-desc="" clickable="false" bounds="[100,900][300,950]"/><node text="关于与帮助" content-desc="" clickable="true" bounds="[100,1800][600,1900]"/></hierarchy>
 X
+# 关于页与外观页是独立目的地
+cat > "$T23/fx/about.xml" <<'X'
+<hierarchy rotation="0"><node text="使用方式" content-desc="" clickable="false" bounds="[100,500][300,550]"/></hierarchy>
+X
 # 外观页：独立目的地（无三段顶栏），主题模式 / 配色
 cat > "$T23/fx/appearance.xml" <<'X'
 <hierarchy rotation="0"><node text="主题模式" content-desc="" clickable="false" bounds="[100,500][300,550]"/><node text="配色" content-desc="" clickable="false" bounds="[100,800][200,850]"/></hierarchy>
@@ -627,12 +633,12 @@ X
 echo connect > "$T23/state"
 PATH="$T23/bin:$PATH" bash "$SCRIPTS/ui-capture.sh" "$T23/out" > "$T23/run.log" 2>&1
 t23_pass=$(grep -c '\[PASS\]' "$T23/run.log")
-assert_eq "$t23_pass" "15" "T23 五屏断言 15 项全 PASS（含 R-34/R-38a 新增 2 项）"
+assert_eq "$t23_pass" "16" "T23 六张界面截图的 16 项断言全 PASS"
 assert_eq "$(tr '\n' ' ' < "$T23/taps" 2>/dev/null | sed 's/ $//')" \
-          "tap 200 160 tap 300 160 tap 920 160 tap 100 160" \
+          "tap 200 160 tap 300 160 tap 350 1850 tap 920 160 tap 100 160" \
           "T23 导航序列正确（连接→音源→高级→外观→回连接，全程点中可点击项）"
 assert_eq "$(cat "$T23/state")" "connect" "T23 走完五屏后复原回连接页"
-assert_eq "$(ls "$T23/out" | grep -c '\.png$')" "5" "T23 产出 5 张截图"
+assert_eq "$(ls "$T23/out" | grep -c '\.png$')" "6" "T23 产出 6 张截图"
 
 # ---------------------------------------------------------------------------
 echo

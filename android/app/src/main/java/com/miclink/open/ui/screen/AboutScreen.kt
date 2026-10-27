@@ -8,13 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,11 +19,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import com.miclink.open.BuildConfig
 import com.miclink.open.OpusEncoder
 import com.miclink.open.R
+import com.miclink.open.ui.component.SectionCard
 
 /**
  * AboutScreen -- 关于与帮助页：使用说明 / 协议说明 / 版本 / 开源许可。
@@ -108,26 +103,7 @@ fun AboutScreen(modifier: Modifier = Modifier) {
 
 @Composable
 private fun InfoCard(title: String, content: @Composable () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Info,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(text = title, style = MaterialTheme.typography.titleSmall)
-            }
-            Spacer(Modifier.height(8.dp))
-            content()
-        }
-    }
+    SectionCard(title = title) { content() }
 }
 
 @Composable
@@ -160,6 +136,5 @@ private val LICENSES = listOf(
     LicenseEntry("AndroidX / Jetpack Compose", "Apache License 2.0"),
     LicenseEntry("Kotlin 标准库", "Apache License 2.0"),
     LicenseEntry("material-kolor (jordond)", "MIT License"),
-    LicenseEntry("libopus (Xiph.Org)", "BSD-style License"),
-    LicenseEntry("WO Mic 协议（参考实现）", "见 docs/protocol 规格文档")
+    LicenseEntry("libopus (Xiph.Org)", "BSD-style License")
 )
