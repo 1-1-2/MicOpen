@@ -751,10 +751,10 @@ int ui_pos_to_db10(int pos)
     /* R-32：只对"落点"吸附。每个新 pos 都重新算，所以继续拖就能离开吸附区，
      * 不会粘死在刻度上（不做累积吸附）。 */
     for (i = 0; i < 6; i++)
-        if (!(g_ui.gain_ext && g_snap_db10[i] == GAIN_DB10_MAX) &&
-            db10 - g_snap_db10[i] <= g_snap_radius[i] &&
+        if (db10 - g_snap_db10[i] <= g_snap_radius[i] &&
             g_snap_db10[i] - db10 <= g_snap_radius[i])
             return g_snap_db10[i];
+    if (!g_ui.gain_ext && db10 >= GAIN_DB10_MAX - 8) return GAIN_DB10_MAX;
     /* R-47：扩展模式下把 +14 dB 也做成吸附点，方便一下拉到满档 */
     if (g_ui.gain_ext &&
         db10 - g_snap_ext_db10 <= g_snap_ext_radius &&
@@ -778,9 +778,9 @@ int ui_gain_snap_target(int db10)
 {
     int i;
     for (i = 0; i < 6; i++)
-        if (!(g_ui.gain_ext && g_snap_db10[i] == GAIN_DB10_MAX) &&
-            db10 == g_snap_db10[i]) return g_snap_db10[i];
-    if (db10 == g_snap_ext_db10) return g_snap_ext_db10;
+        if (db10 == g_snap_db10[i]) return g_snap_db10[i];
+    if (!g_ui.gain_ext && db10 == GAIN_DB10_MAX) return GAIN_DB10_MAX;
+    if (g_ui.gain_ext && db10 == g_snap_ext_db10) return g_snap_ext_db10;
     return 1000;                       /* 未吸附（1000 不是合法 dB10） */
 }
 

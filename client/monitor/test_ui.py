@@ -98,6 +98,12 @@ def capture_window(hwnd, name):
         g.DeleteObject(bmp); g.DeleteDC(dc); u.ReleaseDC(None, screen)
 
 exe = Path(sys.argv[1]).resolve()
+# The CLI uses the same gain mapping as the slider and its snap points.
+for args, upper in [(['--gain-table'], '6.0'), (['--gain-table', '--gain-ext'], '14.0')]:
+    result = subprocess.run([str(exe), *args], cwd=exe.parent, capture_output=True, timeout=15)
+    output = result.stdout.decode('utf-8', errors='replace')
+    assert result.returncode == 0 and 'monotonic=YES' in output and f'db(pos=1000)={upper}' in output, output
+print('PASS normal/extended gain mapping, endpoints and monotonicity')
 env = dict(os.environ, MICLINK_SHOW_MONITOR='1')
 p = subprocess.Popen([str(exe)], cwd=exe.parent, env=env)
 try:
