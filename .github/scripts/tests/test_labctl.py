@@ -37,6 +37,20 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(inputs['artifact_run_id'],'40491670551')
         self.assertEqual(inputs['session_minutes'],'5')
         self.assertEqual(inputs['stream_logs'],'false')
+    def test_transport_choice_reaches_plan_as_internal_value(self):
+        for choice,expected in [('Tailscale Tailnet','tailnet'),('Upterm Relay','relay'),('relay','relay')]:
+            data=dict(scenario='base',target='windows',session_minutes='5',artifact_run_id='0',pause_at='ready',stream_logs=False,ssh_transport=choice)
+            with patch.dict(os.environ,{'LAB_INPUTS':json.dumps(data)}),patch.object(labctl,'output') as out:
+                labctl.plan()
+            self.assertEqual(out.call_args.args[0]['ssh_transport'],expected)
+    def test_dispatch_converts_legacy_transport_before_api(self):
+        with patch.object(labctl,'api',return_value={'workflow_run_id':123}) as api:
+            labctl.dispatch('lab.yml','main',['ssh_transport=relay'])
+            self.assertEqual(api.call_args.args[2]['inputs']['ssh_transport'],'Upterm Relay')
+            api.reset_mock()
+            with self.assertRaisesRegex(ValueError,'ssh_transport'):
+                labctl.dispatch('lab.yml','main',['ssh_transport=unknown'])
+            api.assert_not_called()
     def test_wss_scheme_is_not_part_of_ssh_user(self):
         self.assertEqual(lab_relay.relay_user("ssh -o 'ProxyCommand=upterm proxy wss://session:Ym9i=@uptermd.upterm.dev' session:Ym9i=@uptermd.upterm.dev:443"),'session:Ym9i=')
         with self.assertRaises(ValueError):lab_relay.relay_user('wss://session@untrusted.example')

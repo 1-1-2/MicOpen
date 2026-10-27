@@ -19,6 +19,14 @@ import uuid
 import zipfile
 import io
 
+SSH_TRANSPORT_NAMES={'tailnet':'Tailscale Tailnet','relay':'Upterm Relay'}
+
+
+def ssh_transport(value):
+    for key,name in SSH_TRANSPORT_NAMES.items():
+        if value in [key,name]:return key
+    raise ValueError('ssh_transport: choose Tailscale Tailnet or Upterm Relay')
+
 
 def repo():
     value=os.environ.get('GH_REPO') or os.environ.get('GITHUB_REPOSITORY')
@@ -69,6 +77,7 @@ def integer_input(value,name,minimum,maximum):
 
 def plan():
     a=json.loads(os.environ['LAB_INPUTS']);scenario=a['scenario'];target=a['target'];minutes=a['session_minutes'];source=a['artifact_run_id'];pause=a['pause_at']
+    transport=ssh_transport(a.get('ssh_transport','Tailscale Tailnet'))
     if scenario not in ['base','toolchain','built','installed','verify','dual'] or target not in ['windows','linux','android','both']:raise ValueError('invalid scenario/target')
     minutes=integer_input(minutes,'session_minutes',1,120)
     source=integer_input(source,'artifact_run_id',0,2**63-1)
@@ -82,6 +91,7 @@ def plan():
     needs_product=scenario in ['built','installed','verify','dual']
     flags={p:str(needs_product and p in products and source==0).lower() for p in ['android','windows']}
     flags['dual']=str(scenario=='dual').lower()
+    flags['ssh_transport']=transport
     flags['matrix']=json.dumps({'include':[{'role':p,'os':'windows-latest' if p=='windows' else 'ubuntu-latest'} for p in products]},separators=(',',':'))
     source=int(source)
     if source:
@@ -98,7 +108,7 @@ def plan():
     output(flags)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
-            f.write(f'## Lab 执行计划\n\n场景 `{scenario}`；目标 `{target}`；暂停 `{pause}`；会话 {int(minutes)} 分钟；SSH 正文公开 `{a["stream_logs"]}`。\n\n产物来源：'+('本次构建' if not source else '指定运行 `'+str(source)+'`')+'。\n')
+            f.write(f'## Lab 执行计划\n\n场景 `{scenario}`；目标 `{target}`；暂停 `{pause}`；会话 {int(minutes)} 分钟；接入 **{SSH_TRANSPORT_NAMES[transport]}**；SSH 正文公开 `{a["stream_logs"]}`。\n\n产物来源：'+('本次构建' if not source else '指定运行 `'+str(source)+'`')+'。\n')
 
 
 def connection(run,role,attempt,timeout):
@@ -184,6 +194,9 @@ def dispatch(workflow,ref,items):
         # REST dispatch 的 inputs 走字符串；workflow 的类型声明负责还原布尔/数字。
         inputs[k]=v
     inputs.setdefault('request_id',uuid.uuid4().hex[:12])
+    # 网页 choice 使用完整名称；本工具仍接受旧的简写并在发送前转换。
+    if workflow=='lab.yml' and 'ssh_transport' in inputs:
+        inputs['ssh_transport']=SSH_TRANSPORT_NAMES[ssh_transport(inputs['ssh_transport'])]
     try:result=api('/actions/workflows/'+workflow+'/dispatches','POST',{'ref':ref,'inputs':inputs})
     except (urllib.error.URLError,TimeoutError):
         raise ValueError('dispatch response uncertain; inspect request_id='+inputs['request_id']+' before retrying') from None

@@ -45,12 +45,12 @@ run-name: Lab · ${{ inputs.scenario }} · ${{ inputs.scenario == 'dual' && 'bot
         type: number
         default: 20
       ssh_transport:
-        description: SSH 接入方式；relay 仅用于无法入网的操作端
+        description: SSH 接入方式；Upterm Relay 无需操作端入网，双机音频仍走 Tailnet
         type: choice
         options:
-        - tailnet
-        - relay
-        default: tailnet
+        - Tailscale Tailnet
+        - Upterm Relay
+        default: Tailscale Tailnet
       stream_logs:
         description: 公开转发并归档记录工具执行的命令及输出（默认关闭）
         type: boolean
@@ -80,6 +80,7 @@ jobs:
       windows: ${{ steps.plan.outputs.windows }}
       matrix: ${{ steps.plan.outputs.matrix }}
       dual: ${{ steps.plan.outputs.dual }}
+      ssh_transport: ${{ steps.plan.outputs.ssh_transport }}
       artifact_android: ${{ steps.plan.outputs.artifact_android }}
       artifact_windows: ${{ steps.plan.outputs.artifact_windows }}
     steps:
@@ -176,7 +177,7 @@ jobs:
         minutes: ${{ inputs.session_minutes }}
         stream_logs: ${{ inputs.stream_logs }}
         public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
-        ssh_transport: ${{ inputs.ssh_transport }}
+        ssh_transport: ${{ needs.plan.outputs.ssh_transport }}
     - name: android installation/verification scene
       if: matrix.role == 'android' && (inputs.scenario == 'installed' || inputs.scenario == 'verify')
       uses: ./.github/actions/android-runtime
@@ -186,7 +187,7 @@ jobs:
         minutes: ${{ inputs.session_minutes }}
         stream_logs: ${{ inputs.stream_logs }}
         public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
-        ssh_transport: ${{ inputs.ssh_transport }}
+        ssh_transport: ${{ needs.plan.outputs.ssh_transport }}
     - name: windows installation/verification scene
       if: matrix.role == 'windows' && (inputs.scenario == 'installed' || inputs.scenario == 'verify')
       uses: ./.github/actions/windows-runtime
@@ -196,7 +197,7 @@ jobs:
         minutes: ${{ inputs.session_minutes }}
         stream_logs: ${{ inputs.stream_logs }}
         public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
-        ssh_transport: ${{ inputs.ssh_transport }}
+        ssh_transport: ${{ needs.plan.outputs.ssh_transport }}
     - name: Stage public report
       if: ${{ always() }}
       shell: bash
@@ -251,7 +252,7 @@ jobs:
         minutes: ${{ inputs.session_minutes }}
         stream_logs: ${{ inputs.stream_logs }}
         public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
-        ssh_transport: ${{ inputs.ssh_transport }}
+        ssh_transport: ${{ needs.plan.outputs.ssh_transport }}
     - name: Stage public report
       if: ${{ always() }}
       shell: bash
@@ -296,7 +297,7 @@ jobs:
         minutes: ${{ inputs.session_minutes }}
         stream_logs: ${{ inputs.stream_logs }}
         public_key: ${{ vars.UPTERM_DEBUG_PUBKEY }}
-        ssh_transport: ${{ inputs.ssh_transport }}
+        ssh_transport: ${{ needs.plan.outputs.ssh_transport }}
     - name: Stage public report
       if: ${{ always() }}
       shell: bash
