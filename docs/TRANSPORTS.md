@@ -87,3 +87,19 @@ binary-compatible. The packet protocol and fixtures can be retained for its test
 The README/product page connection screenshots were refreshed from native CI:
 Android release run `40651214343` (emulator), Windows run `40651522992`.
 These show the newly exposed connection controls, not proof of physical radio/USB operation.
+
+## Verification record (2026-10-28)
+
+- Local Windows x64 cross-build: PASS, including size/import/resource checks.
+- Local JVM protocol tests: 27 passed; Android app unit tests: 77 passed.
+- CI helper unit tests: 31 passed; existing integration harness unit tests: 29 passed.
+- [Android CI 40652725060](https://github.com/1-1-2/WKB_test/actions/runs/40652725060):
+  PASS on commit `ebe4791`. Both debug and R8 release build and emulator runtime pass,
+  including `stream_client.py` over actual ADB forwards, STOP and reconnect.
+- [Windows CI 40653436393](https://github.com/1-1-2/WKB_test/actions/runs/40653436393):
+  PASS on commit `eaab8d7`. Native runtime includes stream fragmentation, legacy peer
+  refusal and invalid-length rejection against the real client executable.
+- The Windows changes between those tested commits affect Windows labels/forwarded
+  commands and screenshot documentation; Android sources and its test action are unchanged.
+- Physical Bluetooth, USB unplug/replug, phone hotspot interoperability and real acoustic
+  quality: NOT TESTED. No new public release is made by this development change.
