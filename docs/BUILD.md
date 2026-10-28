@@ -6,15 +6,15 @@
 
 | 组件 | 当前配置 |
 |---|---|
-| JDK | 17 或更新版本 |
+| JDK | 完整 JDK 17，需同时有 `java` 和 `javac` |
 | Gradle / AGP | 9.3.1 / 9.1.0 |
 | Kotlin | 2.2.21 |
-| Android API | compileSdk 37，minSdk 26 |
+| Android API | compileSdk 37.0（显式 minor=0），minSdk 26，targetSdk 37 |
 | NDK | CI 使用 28.2.13676358 |
 | CMake | 3.22.1 |
 | Opus | 构建前获取源码，仓库不内置 |
 
-版本以 `android/gradle/libs.versions.toml`、Gradle wrapper 和模块构建文件为准。通过 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指定本机 SDK，不提交 `local.properties`。
+版本以 `android/gradle/libs.versions.toml`、Gradle wrapper 和模块构建文件为准。通过 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指定本机 SDK，不提交 `local.properties`。新的 SDK 按 `android-37.0` 标识平台，模块已显式指定次版本 0，不依赖某台机器预装的 `android-37` 旧别名。
 
 ```bash
 # 从仓库根目录执行

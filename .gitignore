@@ -84,3 +84,6 @@ id_ed25519*
 # Per-session operator connection files (public metadata, never source).
 lab-connection.json
 lab-ssh.conf*
+
+# Kotlin 编译器本地会话缓存
+**/.kotlin/
