@@ -329,7 +329,7 @@ typedef struct {
     int   gain_ext;            /* R-47 扩展增益范围：1 = 上限 +14 dB（501%，炸麦档） */
     int   dark;
     int   running;
-    int   transport;           /* 0 Wi-Fi（默认且唯一已实现）/1 Wi-Fi 直连 /2 蓝牙 /3 USB */
+    int   transport;           /* 0 Wi-Fi /1 手机热点直连 /2 蓝牙 RFCOMM /3 USB ADB */
     int   mute;                /* 静音开关（D-06，eng_set_mute 真实生效） */
     int   exp_audio, exp_stats, exp_log;      /* 折叠面板展开标志（D-11 默认收起） */
     float hist[HIST_BARS];     /* 最近 10 秒电平历史（0=旧 … hist_count-1=新） */

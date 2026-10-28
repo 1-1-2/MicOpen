@@ -87,11 +87,11 @@ goto :build_drvinst
 echo [4/4] compiling %APP_OUT%
 "%CC%" -Os -s -mwindows -std=c99 -Wall -D_WIN32_WINNT=0x0A00 ^
     %OPUSCFG% -Wl,--gc-sections -o "%APP_OUT%" ^
-    src\main.c src\engine.c src\devio.c src\opusdec.c src\drvpkg.c src\drvinst.c ^
+    src\main.c src\transport.c src\engine.c src\devio.c src\opusdec.c src\drvpkg.c src\drvinst.c ^
     src\singleinst.c src\cli.c src\theme.c src\ui_draw.c src\ui_layout.c ^
     src\ui_voicemeter.c src\ui_help.c src\drvbridge.c ^
     build\app_res.o %OPUSLIB% ^
-    -lgdi32 -luser32 -lws2_32 -luxtheme -ldwmapi -lshell32 -lole32 ^
+    -lgdi32 -luser32 -lws2_32 -lbthprops -luxtheme -ldwmapi -lshell32 -lole32 ^
     -lsetupapi -lcrypt32 -lnewdev -ladvapi32
 if errorlevel 1 goto :fail
 python tools\check_pe.py "%APP_OUT%" app

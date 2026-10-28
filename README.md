@@ -16,7 +16,8 @@ Android 端提供音源、输入设备及系统音效控制；Windows 端提供�
 
 - Android 8.0 或更新系统，授予麦克风权限。
 - Windows 电脑已从 [WO Mic 官方渠道](https://wolicheng.com/womic/)安装兼容驱动；本项目已验证的驱动基线和限制见[驱动接口白皮书](docs/protocol/driver-whitepaper.md)。
-- 手机与电脑处于可互相访问的网络，当前主要使用 Wi-Fi。
+- Wi-Fi / 手机热点：手机与电脑处于可互相访问的网络。USB 需要 ADB 与调试授权；蓝牙需要系统配对并在手机启用蓝牙传输。
+- 新增连接适配及验证边界见[连接方式说明](docs/TRANSPORTS.md)；USB、蓝牙的物理设备链路尚待实机验收。
 
 ## 从源码构建
 

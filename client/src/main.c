@@ -302,7 +302,7 @@ void ui_on_click(int id, int x, int y)
     case ID_EXP_LOG:   g_ui.exp_log = !g_ui.exp_log; break;
     default: break;
     }
-    /* D-03：传输方式仅 Wi-Fi 已实现，其余段可见但禁用（点了不响应） */
+    /* Connection adapters may be changed only while idle. */
     if (id >= ID_TRANS0 && id <= ID_TRANS3 && !g_ui.running) {
         g_ui.transport = id - ID_TRANS0;
         if (g_ui.transport == 3) SetWindowTextW(g_ui.edit_host,L"");

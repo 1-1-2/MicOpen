@@ -43,6 +43,7 @@ static int adb_run(const char *args, char *out, int cap)
     char exe[MAX_PATH], command[1024];
     STARTUPINFOA si; PROCESS_INFORMATION pi; SECURITY_ATTRIBUTES sa;
     HANDLE rd, wr; DWORD n = 0, code = 1;
+    int cleanup = strstr(args, "--remove") != NULL;
     if (!SearchPathA(NULL, "adb.exe", NULL, MAX_PATH, exe, NULL)) return 0;
     memset(&sa, 0, sizeof(sa)); sa.nLength = sizeof(sa); sa.bInheritHandle = TRUE;
     if (!CreatePipe(&rd, &wr, &sa, 0)) return 0;
@@ -58,7 +59,7 @@ static int adb_run(const char *args, char *out, int cap)
     {
         DWORD start = GetTickCount();
         while (WaitForSingleObject(pi.hProcess, 50) == WAIT_TIMEOUT) {
-            if (cancelled || GetTickCount() - start > 8000) {
+            if ((!cleanup && cancelled) || GetTickCount() - start > (cleanup ? 1000u : 8000u)) {
                 TerminateProcess(pi.hProcess, 1); WaitForSingleObject(pi.hProcess, 1000); break;
             }
         }

@@ -969,7 +969,7 @@ void ui_draw_conn_card(HDC dc)
     ui_card_title(dc, r, L"连接");
     draw_steps(dc, r);
 
-    /* 传输方式标签 + 四段 segmented（D-03：仅 Wi-Fi 已实现，其余可见禁用） */
+    /* Four connection adapters; selection is locked during a session. */
     {
         RECT lr = { r.left + ui_pad(), r.top + t_tlab, r.right - ui_pad(), r.top + t_tlab + sd(15) };
         static const wchar_t *lb[4] = { L"Wi-Fi", L"热点直连", L"蓝牙", L"USB" };

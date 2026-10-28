@@ -61,7 +61,7 @@ mode exercises the same framing without requiring radio/USB hardware.
 - USB: `womic.exe --transport usb --connect`; optionally `--host <usb-serial>`.
   `adb.exe` must be on PATH. Enable USB debugging, authorize this PC, start the app's
   capture service. `auto` selects exactly one USB device using `adb -d get-serialno`.
-  Forwarding uses an OS-assigned PC port; cleanup removes only that device/port rule.
+  Forwarding uses an OS-assigned PC port; cleanup attempts to remove only that device/port rule (bounded to one second even when the device is gone).
   MicLink never kills the shared ADB server or removes unrelated forwarding rules.
 - Bluetooth: enable the Android Bluetooth transport switch before starting capture,
   grant the nearby-device permission, enable Bluetooth and pair in system settings.
