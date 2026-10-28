@@ -1,6 +1,10 @@
 package com.miclink.open.ui.screen
 
 import android.os.SystemClock
+import com.miclink.open.ConnectionMode
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.ui.platform.LocalContext
@@ -83,6 +87,8 @@ fun ConnectPage(
     onStartClicked: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    var mode by remember { mutableStateOf(ConnectionMode.read(context)) }
     val state = vm.uiState
     val tokens = LocalMicLinkTokens.current
     // 波形无障碍标签（semantics lambda 不是 @Composable 上下文，组合层先取好）
@@ -95,6 +101,42 @@ fun ConnectPage(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        SectionCard {
+            Text("1. 选择连接方式", style = MaterialTheme.typography.titleSmall)
+            ConnectionMode.entries.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth()) {
+                    pair.forEach { option ->
+                        Row(
+                            modifier = Modifier.weight(1f).selectable(
+                                selected = mode == option,
+                                enabled = !state.isRunning,
+                                role = Role.RadioButton,
+                                onClick = { mode = option; ConnectionMode.save(context, option) }
+                            ).padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = mode == option, onClick = null, enabled = !state.isRunning)
+                            Text(option.title, color = if (state.isRunning) tokens.text2 else tokens.text1)
+                        }
+                    }
+                }
+            }
+            Text("准备：${mode.title}", style = MaterialTheme.typography.labelLarge)
+            HintText(mode.preparation)
+            val settingsAction = when (mode) {
+                ConnectionMode.WIFI -> Settings.ACTION_WIFI_SETTINGS
+                ConnectionMode.HOTSPOT -> Settings.ACTION_WIRELESS_SETTINGS
+                ConnectionMode.BLUETOOTH -> Settings.ACTION_BLUETOOTH_SETTINGS
+                ConnectionMode.USB -> Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS
+            }
+            TextButton(onClick = {
+                try { context.startActivity(Intent(settingsAction)) }
+                catch (_: android.content.ActivityNotFoundException) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+            }, enabled = !state.isRunning) { Text("打开系统设置") }
+            HintText(if (state.isRunning) "当前使用${mode.title}。更换方式请先停止。"
+                else "2. 准备完成后点击下方“启动”，等待 Windows 连接。")
+        }
+
         // ---- ① 连接状态卡 ----
         SectionCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -105,7 +147,7 @@ fun ConnectPage(
                     container = badgeContainer
                 )
                 Spacer(Modifier.weight(1f))
-                val address = state.listeningAddress.ifBlank {
+                val address = if (mode.localOnly) "无需填写 IP" else state.listeningAddress.ifBlank {
                     stringResource(R.string.home_value_unknown)
                 }
                 // 无障碍标签在组合层取（semantics lambda 不是 @Composable 上下文）
@@ -134,8 +176,8 @@ fun ConnectPage(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 FieldCell(
-                    label = stringResource(R.string.home_field_transport),
-                    value = state.transport.ifBlank { stringResource(R.string.home_value_unknown) },
+                    label = "所选方式",
+                    value = mode.title,
                     modifier = Modifier.weight(1f)
                 )
                 FieldCell(
@@ -187,29 +229,12 @@ fun ConnectPage(
             // 现在压到 12dp 的连续留白 —— 波形容器与按钮同属"当前状态"这一件事，
             // 中间不需要再画一道墙。
             Spacer(Modifier.height(12.dp))
+            HintText(if (state.isRunning) "3. 在 Windows 选择${mode.title}，点击连接。"
+                else "启动后只等待电脑接入，不会自动连接电脑。")
             MainActionButton(
                 running = state.isRunning,
                 onStart = onStartClicked,
                 onStopRequest = { vm.requestStopConfirmation() }
-            )
-        }
-
-        SectionCard {
-            val context = LocalContext.current
-            val prefs = remember { context.getSharedPreferences("transport", android.content.Context.MODE_PRIVATE) }
-            var bluetooth by remember { mutableStateOf(prefs.getBoolean("bluetooth", false)) }
-            Text("连接方式", style = MaterialTheme.typography.titleSmall)
-            HintText("Wi-Fi：同一局域网。USB：开启USB调试并授权电脑，电脑端选择USB。")
-            TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }, enabled = !state.isRunning) {
-                Text("手机热点直连 · 打开网络设置")
-            }
-            HintText("电脑连接本机热点后，填写手机热点接口的IP；不固定假设为192.168.43.1。")
-            LabeledSwitchRow(
-                title = "启用蓝牙传输",
-                description = "先在系统设置中配对电脑并开启蓝牙；启动服务时申请附近设备权限。更改后下次启动生效。",
-                checked = bluetooth,
-                enabled = !state.isRunning,
-                onCheckedChange = { bluetooth = it; prefs.edit().putBoolean("bluetooth", it).apply() }
             )
         }
 

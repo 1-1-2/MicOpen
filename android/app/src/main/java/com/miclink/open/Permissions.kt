@@ -33,7 +33,7 @@ object Permissions {
     /** 尚未授予的权限列表。 */
     fun missing(context: Context): List<String> {
         val required = requiredPermissions().toMutableList()
-        if (Build.VERSION.SDK_INT >= 31 && context.getSharedPreferences("transport", Context.MODE_PRIVATE).getBoolean("bluetooth", false)) {
+        if (Build.VERSION.SDK_INT >= 31 && ConnectionMode.read(context) == ConnectionMode.BLUETOOTH) {
             required.add(Manifest.permission.BLUETOOTH_CONNECT)
         }
         return required.filter {

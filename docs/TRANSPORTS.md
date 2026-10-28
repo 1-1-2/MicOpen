@@ -63,7 +63,7 @@ mode exercises the same framing without requiring radio/USB hardware.
   capture service. `auto` selects exactly one USB device using `adb -d get-serialno`.
   Forwarding uses an OS-assigned PC port; cleanup attempts to remove only that device/port rule (bounded to one second even when the device is gone).
   MicLink never kills the shared ADB server or removes unrelated forwarding rules.
-- Bluetooth: enable the Android Bluetooth transport switch before starting capture,
+- Bluetooth: select Bluetooth on Android before starting capture,
   grant the nearby-device permission, enable Bluetooth and pair in system settings.
   Choose a paired phone in Windows. CLI accepts a 12-digit hexadecimal Bluetooth
   address without separators. Service UUID: `ad5c9d21-8a64-487b-9c74-6f3aa069472e`.
@@ -103,3 +103,13 @@ These show the newly exposed connection controls, not proof of physical radio/US
   commands and screenshot documentation; Android sources and its test action are unchanged.
 - Physical Bluetooth, USB unplug/replug, phone hotspot interoperability and real acoustic
   quality: NOT TESTED. No new public release is made by this development change.
+
+## Android connection flow
+
+Choose exactly one of Wi-Fi, phone hotspot, USB or Bluetooth **before** starting.
+Only the selected method's preparation and system-settings entry are shown. Start
+means “wait for Windows”; Windows then chooses the same method and connects.
+Stop first to change methods. The previous separate Bluetooth switch migrates to
+this shared choice. USB/Bluetooth listen on IPv4 loopback only, require stream
+negotiation, and Bluetooth additionally requires ownership by the RFCOMM relay.
+Wi-Fi/hotspot retain the legacy network protocol and diagnostic stream support.

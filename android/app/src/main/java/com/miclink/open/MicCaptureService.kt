@@ -238,6 +238,7 @@ class MicCaptureService : Service() {
     @Volatile
     private var connection: Socket? = null
     private var bluetoothTransport: BluetoothTransport? = null
+    private var connectionMode = ConnectionMode.WIFI
     @Volatile private var streamConnection: Socket? = null
     @Volatile private var streamWriter: ((ByteArray) -> Unit)? = null
 
@@ -409,7 +410,7 @@ class MicCaptureService : Service() {
                 "PC 已连接：${peerDescription} · 协商 ${codecName(negotiatedCodec())}/" +
                     "${negotiatedSampleRate}Hz/媒体端口 ${negotiatedMediaPort}"
             isRunning ->
-                "等待 PC 连接 · 手机 ${listeningAddress()}"
+                "${connectionMode.title} · 等待 Windows 连接"
             else ->
                 lastError ?: "未启动"
         }
@@ -563,15 +564,26 @@ class MicCaptureService : Service() {
         acquireWakeLock()
 
         // 4) TCP 控制服务器（手机 = server，等 PC 客户端连入）
+        connectionMode = ConnectionMode.read(this)
+        if (connectionMode == ConnectionMode.BLUETOOTH) {
+            val enabled = try {
+                getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter?.isEnabled == true
+            } catch (_: SecurityException) { false }
+            if (!enabled) {
+                fail("请先开启蓝牙并授予附近设备权限，再启动等待连接")
+                return
+            }
+        }
         val sock = try {
-            ServerSocket(controlPort)
+            if (connectionMode.localOnly) ServerSocket(controlPort, 1, java.net.InetAddress.getByName("127.0.0.1"))
+            else ServerSocket(controlPort)
         } catch (e: IOException) {
             fail("无法监听控制端口 $controlPort：${e.message}（可能被其他应用占用）")
             releaseWakeLock()
             return
         }
         serverSocket = sock
-        if (getSharedPreferences("transport", MODE_PRIVATE).getBoolean("bluetooth", false)) {
+        if (connectionMode == ConnectionMode.BLUETOOTH) {
             bluetoothTransport = BluetoothTransport(this, controlPort) { message -> mainHandler.post { listener?.onMessage(message) } }.also { it.start() }
         }
 
@@ -581,7 +593,7 @@ class MicCaptureService : Service() {
         serverThread = thread
         thread.start()
 
-        notifyState(STATE_LISTENING, "等待 PC 连接 · 手机 ${listeningAddress()}")
+        notifyState(STATE_LISTENING, "${connectionMode.title} · 等待 Windows 连接")
         updateNotification("等待 PC 连接 · ${listeningAddress()}")
     }
 
@@ -651,6 +663,10 @@ class MicCaptureService : Service() {
         while (!Thread.currentThread().isInterrupted && !sock.isClosed) {
             try {
                 val client = sock.accept()
+                if (connectionMode == ConnectionMode.BLUETOOTH && bluetoothTransport?.owns(client) != true) {
+                    client.close()
+                    continue
+                }
                 synchronized(this) {
                     // 已有连接：礼貌拒绝（官方 app 同样只服务一个客户端）
                     val existing = connection
@@ -717,6 +733,9 @@ class MicCaptureService : Service() {
                 val frames = decoder.feed(buf, n)
                 for (frame in frames) {
                     sess.onFrame(frame)
+                    if (frame.type == 101 && connectionMode.localOnly && !sess.streamMedia) {
+                        throw IOException("所选连接方式需要流式音频，请在 Windows 选择相同方式")
+                    }
                     if (sess.streamMedia && streamConnection !== client) {
                         streamConnection = client
                         streamWriter = { bytes -> synchronized(output) { output.write(bytes); output.flush() } }
@@ -858,7 +877,7 @@ class MicCaptureService : Service() {
         )
 
         if (owned && notify && isRunning) {
-            notifyState(STATE_LISTENING, "等待 PC 连接 · 手机 ${listeningAddress()}")
+            notifyState(STATE_LISTENING, "${connectionMode.title} · 等待 Windows 连接")
             updateNotification("等待 PC 连接 · ${listeningAddress()}")
         }
     }

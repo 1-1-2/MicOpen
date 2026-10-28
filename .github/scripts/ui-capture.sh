@@ -162,6 +162,12 @@ sleep 3
 
 echo "[ui] 1/5 连接页（三段导航 + 状态卡 + 主按钮 + 音量 + 只读状态栏）"
 snap 01-connect
+for choice in '1. 选择连接方式' 'Wi-Fi' '热点直连' 'USB' '蓝牙'; do
+    if ! grep -qF "$choice" "$OUT/01-connect.xml"; then
+        echo "[FAIL] 连接方式选择未显示：$choice" >&2
+        exit 1
+    fi
+done
 # R-12：顶栏三段（放在原来「主页」标题的位置）
 assert_text 01-connect "连接" "三段导航-连接"
 assert_text 01-connect "音源" "三段导航-音源"
