@@ -72,7 +72,7 @@ Windows 端提供输入增益、扩展增益和一键静音。打开「监听实
 | 排查与复现 | Windows 运行事件可复制；Android 440 Hz 调试音可帮助检查链路。 |
 | 外观与习惯 | Windows 浅色／深色；Android 跟随系统、预设配色、Android 12+ 动态取色与 AMOLED 纯黑。 |
 
-这里展示的是**当前开发分支**。Wi-Fi、热点已有用户实机反馈；蓝牙修复包已有可用反馈，有线 USB 的实体设备授权、拔插与重连仍待验收。CI 覆盖两种 Android 构建、模拟器 ADB 转发及 Windows 协议／驱动检查，不代表所有设备和长时间场景都已验证。详见[当前交付与待测项](docs/CLOSEOUT-2026-10-28.md)。
+Wi-Fi、手机热点、蓝牙和有线 ADB / USB 均已有用户实机可用反馈。CI 覆盖两种 Android 构建、模拟器 ADB 转发及 Windows 协议／驱动检查，不代表所有设备和长时间场景都已验证。详见[发布记录与验证范围](docs/RELEASES.md)。
 
 > [!IMPORTANT]
 > **关于 Windows 的安全提示**
@@ -85,10 +85,11 @@ Windows 端提供输入增益、扩展增益和一键静音。打开「监听实
 
 **[前往 MicOpen Releases →](https://github.com/1-1-2/MicOpen/releases)**
 
-`MicOpen` 用于发布，开发与问题反馈在 [`WKB_test`](https://github.com/1-1-2/WKB_test)。目前公开的 `v0.1.0` 提供以下附件；当前开发分支的后续改动不一定已包含在该版本中，请结合[交付记录](docs/CLOSEOUT-2026-10-28.md)核对。
+源码、问题反馈与正式发布统一在 [`1-1-2/MicOpen`](https://github.com/1-1-2/MicOpen)。`v0.1.1` 提供独立安装包和两端合集，更新内容见[发布记录](docs/RELEASES.md)。
 
-- **Android APK**：`MicOpen-Android-v0.1.0.apk`。安装后授予麦克风权限，按系统提示允许前台服务通知。
-- **Windows x64 ZIP**：`MicOpen-Windows-x64-v0.1.0.zip`。完整解压，运行 `womic.exe`；保留同目录的监听 DLL、安装器与许可文件。
+- **Android APK**：`MicOpen-Android-v0.1.1.apk`。安装后授予麦克风权限，按系统提示允许前台服务通知。
+- **Windows x64 ZIP**：`MicOpen-Windows-x64-v0.1.1.zip`。完整解压，运行 `womic.exe`；保留同目录的监听 DLL、安装器与许可文件。
+- **安卓／Windows 合集**：`MicOpen-v0.1.1-Android-Windows.zip`，一次下载两端及对应许可、源码材料。
 - **校验清单**：`SHA256SUMS.txt`。核对下载文件的 SHA-256；一致只说明文件与清单一致，不是安全认证。
 
 **先准备好这些：**
@@ -97,7 +98,7 @@ Windows 端提供输入增益、扩展增益和一键静音。打开「监听实
 - **Windows x64 与兼容的 WO Mic 驱动**。请从 [WO Mic 官方渠道](https://wolicheng.com/womic/)获取驱动；本项目验证基线是 2022 版 `2.1.0.0`，不承诺任意新旧版本、x86 或 ARM64 已通过验证。见[驱动说明](docs/protocol/driver-whitepaper.md)。
 - **USB 才需要 ADB**。从 [Google Platform-Tools](https://developer.android.com/tools/releases/platform-tools) 获取 Windows 版本，保留完整工具目录并加入 `PATH`；也可将 `adb.exe` 与配套 DLL 放到 `womic.exe` 同目录。客户端不会自动下载 ADB，也不会搜索任意子目录。完成 USB 调试授权后，它会创建和清理自己的端口转发。详见[连接指南](docs/TRANSPORTS.md#operation)。
 
-想试当前开发代码，可按下一节构建。[GitHub Actions](https://github.com/1-1-2/WKB_test/actions/workflows/ci.yml) 也提供短期测试产物：**CI 的 release 是测试签名，不是正式分发签名**；源码归档不含第三方驱动，公开 CI 安装器也不内置驱动。
+想自行编译，可按下一节构建。[GitHub Actions](https://github.com/1-1-2/MicOpen/actions/workflows/ci.yml) 也提供短期测试产物：**CI 的 release 是测试签名，不是正式分发签名**；源码归档不含第三方驱动，公开 CI 安装器也不内置驱动。
 
 <a id="build"></a>
 

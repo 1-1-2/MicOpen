@@ -5,7 +5,7 @@
 ## 1. 检出源码
 
 ```bash
-git clone <仓库地址> miclink-open
+git clone https://github.com/1-1-2/MicOpen.git miclink-open
 cd miclink-open
 ```
 

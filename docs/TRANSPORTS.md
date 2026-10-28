@@ -1,6 +1,6 @@
 # Connection adapters
 
-Development repository: `1-1-2/WKB_test`. `1-1-2/MicOpen` is distribution-only.
+Source, issues, CI and releases: [`1-1-2/MicOpen`](https://github.com/1-1-2/MicOpen).
 
 ## Scope and reference implementations
 
@@ -82,10 +82,13 @@ If multiple USB devices are connected, enter the intended device's serial number
 
 ## Verification limits
 
+For release assets and current validation scope, see [release records](RELEASES.md).
+Historical CI run numbers below are retained as records of pre-migration checks;
+they are not links to runs in this repository.
 For the latest physical-device feedback and remaining issues, see the
 [2026-10-28 closeout](CLOSEOUT-2026-10-28.md). Wi-Fi and phone hotspot have working
-user reports; the Bluetooth fix package received a working report. Physical USB
-acceptance remains pending. Historical NOT TESTED entries below describe those
+user reports; Bluetooth and wired ADB / USB also have working physical-device reports.
+The USB result was confirmed by the user on 2026-10-29. Historical NOT TESTED entries below describe those
 specific runs, not a claim that no subsequent device feedback exists.
 
 
@@ -95,7 +98,8 @@ fixture, including legacy capability refusal and malformed media length.
 Android CI additionally exercises the installed APK through ADB forwarding, including
 media framing, heartbeats, STOP, reconnect and forwarding cleanup, for both variants.
 Physical USB authorization/unplugging, Bluetooth pairing/reconnect and real hotspot/audio
-quality still require physical devices. A passing simulated stream is not reported
+quality require physical devices; current user reports establish basic usability, not
+a complete device matrix or long-session coverage. A passing simulated stream is not reported
 as a passing physical USB or Bluetooth connection.
 
 Native HarmonyOS is a separate future platform adapter; Kotlin/Compose code is not
@@ -112,10 +116,10 @@ These show the newly exposed connection controls, not proof of physical radio/US
 - Local Windows x64 cross-build: PASS, including size/import/resource checks.
 - Local JVM protocol tests: 27 passed; Android app unit tests: 77 passed.
 - CI helper unit tests: 31 passed; existing integration harness unit tests: 29 passed.
-- [Android CI 40652725060](https://github.com/1-1-2/WKB_test/actions/runs/40652725060):
+- Android CI 40652725060:
   PASS on commit `ebe4791`. Both debug and R8 release build and emulator runtime pass,
   including `stream_client.py` over actual ADB forwards, STOP and reconnect.
-- [Windows CI 40653436393](https://github.com/1-1-2/WKB_test/actions/runs/40653436393):
+- Windows CI 40653436393:
   PASS on commit `eaab8d7`. Native runtime includes stream fragmentation, legacy peer
   refusal and invalid-length rejection against the real client executable.
 - The Windows changes between those tested commits affect Windows labels/forwarded
@@ -135,7 +139,7 @@ Wi-Fi/hotspot retain the legacy network protocol and diagnostic stream support.
 
 ### Connection-flow revision verification
 
-[Android CI 40655787135](https://github.com/1-1-2/WKB_test/actions/runs/40655787135)
+Android CI 40655787135
 passes on `e04e10c`: debug/release builds, both emulator UI/legacy protocol/ADB-stream
 runs. The four-choice UI assertion is mandatory. Its release-emulator connection
 screenshot was visually reviewed and replaces the README/product-page image.
@@ -167,13 +171,13 @@ now uses select-based receive deadlines and distinguishes EOF, timeout, WSA erro
 oversized replies in HELLO errors. A native-executable fixture tests early peer EOF.
 
 This addresses a confirmed ordering defect. Whether it is the sole cause of the
-reported physical Bluetooth failure remains subject to the new package's device test.
+reported physical Bluetooth failure remains subject to device feedback; the fix package subsequently received a working report.
 
 Follow-up: the reporter confirmed using the previous CI release APK, rather than a
 local build of the later source fix. This matches the package/source discrepancy.
-[CI 40663752768](https://github.com/1-1-2/WKB_test/actions/runs/40663752768)
+CI 40663752768
 passes: Android debug/release builds with app unit tests (including LoopbackRelay),
 both emulator protocol/ADB-stream runs, and Windows runtime checks.
-[Windows CI 40664700217](https://github.com/1-1-2/WKB_test/actions/runs/40664700217)
+Windows CI 40664700217
 also passes with delayed-frame-header and explicit early-EOF diagnostic fixtures.
 Neither run has a physical Bluetooth radio. Device confirmation is still required.

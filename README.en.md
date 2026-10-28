@@ -72,7 +72,7 @@ See the [monitoring guide](client/monitor/README.md) for modules, delay adjustme
 | Troubleshoot | Copy Windows event logs; use Android's 440 Hz test tone to check the audio path. |
 | Make it yours | Light/dark Windows UI; Android system theme, preset palettes, Android 12+ dynamic colors and AMOLED black. |
 
-This page describes the **current development branch**. Wi-Fi and hotspot have user-reported device results; the Bluetooth fix package has received a working report. Physical USB authorization, unplugging and reconnection still await acceptance testing. CI covers both Android build variants, emulator ADB forwarding and Windows protocol/driver checks—not every device or long session. See the [delivery status and remaining checks](docs/CLOSEOUT-2026-10-28.md).
+Wi-Fi, phone hotspot, Bluetooth and wired ADB / USB all have user-reported working results on physical devices. CI covers both Android build variants, emulator ADB forwarding and Windows protocol/driver checks—not every device or long session. See the [release record and validation scope](docs/RELEASES.md).
 
 > [!IMPORTANT]
 > **About Windows security prompts**
@@ -85,10 +85,11 @@ This page describes the **current development branch**. Wi-Fi and hotspot have u
 
 **[Go to MicOpen Releases →](https://github.com/1-1-2/MicOpen/releases)**
 
-`MicOpen` is the distribution repository; development and issue reports live in [`WKB_test`](https://github.com/1-1-2/WKB_test). The public `v0.1.0` release provides the following assets. Later development changes may not be included; check the [delivery record](docs/CLOSEOUT-2026-10-28.md) when comparing versions.
+Source, issue reports and releases now live together in [`1-1-2/MicOpen`](https://github.com/1-1-2/MicOpen). Release `v0.1.1` offers separate downloads and a combined bundle. See the [release record](docs/RELEASES.md) for changes.
 
-- **Android APK**: `MicOpen-Android-v0.1.0.apk`. Install it, grant microphone access, and allow foreground-service notifications when prompted.
-- **Windows x64 ZIP**: `MicOpen-Windows-x64-v0.1.0.zip`. Extract the entire archive and run `womic.exe`. Keep its monitoring DLLs, driver utility and license files together.
+- **Android APK**: `MicOpen-Android-v0.1.1.apk`. Install it, grant microphone access, and allow foreground-service notifications when prompted.
+- **Windows x64 ZIP**: `MicOpen-Windows-x64-v0.1.1.zip`. Extract the entire archive and run `womic.exe`. Keep its monitoring DLLs, driver utility and license files together.
+- **Android + Windows bundle**: `MicOpen-v0.1.1-Android-Windows.zip`, with both apps, licenses and corresponding-source materials.
 - **Checksums**: `SHA256SUMS.txt`. Compare the downloads' SHA-256 hashes. A match establishes agreement with the manifest, not a security certification.
 
 **Before you connect:**
@@ -97,7 +98,7 @@ This page describes the **current development branch**. Wi-Fi and hotspot have u
 - **Windows x64 with a compatible WO Mic driver.** Obtain the driver through [WO Mic's official channel](https://wolicheng.com/womic/). The verified baseline is the 2022 driver, version `2.1.0.0`; arbitrary older/newer versions, x86 and ARM64 are not claimed as tested. See the [driver notes](docs/protocol/driver-whitepaper.md).
 - **ADB is needed only for USB.** Download Windows [Google Platform-Tools](https://developer.android.com/tools/releases/platform-tools), keep the tools directory intact and add it to `PATH`. Alternatively, place `adb.exe` and its companion DLLs beside `womic.exe`. The client does not download ADB or search arbitrary subdirectories. Once USB debugging is authorized, it creates and cleans up its own forwarding rule. See the [connection guide](docs/TRANSPORTS.md#operation).
 
-To try current development code, build it below. [GitHub Actions](https://github.com/1-1-2/WKB_test/actions/workflows/ci.yml) also offers short-lived test artifacts: **CI release APKs use a test signing identity, not the distribution identity**. Source archives contain no third-party driver binaries, and public CI driver utilities have no embedded driver payload.
+To compile the apps yourself, follow the steps below. [GitHub Actions](https://github.com/1-1-2/MicOpen/actions/workflows/ci.yml) also offers short-lived test artifacts: **CI release APKs use a test signing identity, not the distribution identity**. Source archives contain no third-party driver binaries, and public CI driver utilities have no embedded driver payload.
 
 <a id="build"></a>
 

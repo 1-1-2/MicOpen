@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 TOK = os.environ.get("GH_TOKEN")
-OWNER, REPO = "1-1-2", "WKB_test"
+OWNER, REPO = "1-1-2", "MicOpen"
 BASE = os.environ.get("GH_API_BASE", "https://api.github.com").rstrip("/")
 _base_parts = urllib.parse.urlsplit(BASE)
 if (_base_parts.scheme != "https" or not _base_parts.hostname or
