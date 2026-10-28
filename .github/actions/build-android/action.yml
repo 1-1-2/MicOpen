@@ -1,5 +1,5 @@
 name: Build Android artifacts
-description: SDK、Opus 与全 ABI APK 构建的唯一实现。
+description: SDK、Opus 与全 ABI debug/release APK 构建的唯一实现。
 runs:
   using: composite
   steps:
@@ -9,10 +9,14 @@ runs:
   - name: Fetch Opus
     shell: bash
     run: python3 .github/scripts/ci.py run --seconds 480 -- bash .github/scripts/fetch-opus.sh
-  - name: Assemble APK
+  - name: Assemble debug and R8 release APKs
     shell: bash
     working-directory: android
-    run: python3 ../.github/scripts/ci.py run --seconds 1500 -- ./gradlew :app:assembleDebug --no-daemon
+    # CI 不持有分发私钥；release 是非 debuggable 的 R8 构建，使用显式测试签名。
+    run: python3 ../.github/scripts/ci.py run --seconds 1500 -- ./gradlew :app:assembleDebug :app:assembleRelease -PmiclinkTestSigning=true --no-daemon
+  - name: Verify release optimization and signing
+    shell: bash
+    run: python3 .github/scripts/android-release.py
   - name: Stage Android artifacts
     shell: bash
     run: python3 .github/scripts/ci.py stage --kind android

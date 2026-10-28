@@ -20,7 +20,7 @@
 # 从仓库根目录执行
 bash .github/scripts/fetch-opus.sh
 cd android
-./gradlew :core:test :app:assembleDebug
+./gradlew :core:test :app:assembleDebug :app:assembleRelease
 ```
 
 调试 APK 位于 `android/app/build/outputs/apk/debug/`。JNI 构建要求 `android/app/src/main/cpp/opus/` 中存在完整源码；缺失时 CMake 会报错。
@@ -70,3 +70,5 @@ export WOMIC_DRIVER_DIR="<本机官方驱动目录>"
 已执行的运行链接和限制见[验证报告](verification/windows-e2e-report.md)。工具链、缓存和系统依赖没有变化时，纯文档修改无需重跑整套远端构建。
 
 具体入口和选项见[工作流使用说明](../.github/workflows/README.md)。
+
+Android debug 与 release 分别输出到 `app/build/outputs/apk/debug/`、`app/build/outputs/apk/release/`（从 Android 模块定位）。release 开启 R8 与资源裁剪，且 `debuggable=false`。未提供签名配置时 release 默认不签名；本机可通过 `MICLINK_ANDROID_KEYSTORE`、`MICLINK_ANDROID_STORE_PASSWORD`、`MICLINK_ANDROID_KEY_ALIAS`、`MICLINK_ANDROID_KEY_PASSWORD` 配置发布签名。CI 显式使用 `-PmiclinkTestSigning=true`，不持有分发私钥；其 release 用于功能验证，分发前在本机签名。调试构建与测试签名均不能代替正式分发身份。

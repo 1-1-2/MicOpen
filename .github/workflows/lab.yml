@@ -28,6 +28,11 @@ run-name: Lab · ${{ inputs.scenario }} · ${{ inputs.scenario == 'dual' && 'bot
         description: 运行编号；0=本次构建，其他=现有运行的公开产物
         type: string
         default: '0'
+      android_variant:
+        description: Android 安装类型；构建时仍同时生成两种 APK
+        type: choice
+        options: [release, debug]
+        default: release
       pause_at:
         description: verify 的暂停点；dual 用 ready/after-test/on-failure/none
         type: choice
@@ -182,6 +187,7 @@ jobs:
       if: matrix.role == 'android' && (inputs.scenario == 'installed' || inputs.scenario == 'verify')
       uses: ./.github/actions/android-runtime
       with:
+        variant: ${{ inputs.android_variant }}
         mode: ${{ inputs.scenario }}
         pause_at: ${{ inputs.pause_at == 'ready' && 'before-test' || inputs.pause_at }}
         minutes: ${{ inputs.session_minutes }}

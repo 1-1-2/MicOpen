@@ -50,7 +50,7 @@ fi
 # android.yml / integration-test / Install and launch app
 
 if [ "$stage" = "s8" ]; then
-bash ../.github/scripts/install-app.sh ../apk/app-debug.apk
+bash ../.github/scripts/install-app.sh
 exit 0
 fi
 

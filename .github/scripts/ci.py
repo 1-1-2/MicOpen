@@ -57,7 +57,9 @@ def stage(kind):
         files += license_files
         for p in files:
             if p.suffix.lower()=='.exe':safe_exe(p)
-    elif kind=='android':files=list((ROOT/'android/app/build/outputs/apk/debug').glob('*.apk'))
+    elif kind=='android':
+        files=[ROOT/f'android/app/build/outputs/apk/{v}/app-{v}.apk' for v in ['debug','release']]
+        files += [ROOT/'android/app/build/outputs/mapping/release/mapping.txt',ROOT/'android/app/build/outputs/release-info.json']
     else:
         # 不上传整个 probe-results。人工 Lab 只导出结构化摘要；不会自动打包桌面或音频。
         base=ROOT/'probe-results'
@@ -67,6 +69,11 @@ def stage(kind):
         files=sorted(set(p for p in files if p.is_file() and not p.is_symlink()))
     if kind in ['windows','android'] and not files:raise ValueError('missing build product')
     license_names={str(ROOT/'client/monitor/README.md'):'监听测试说明.md',str(ROOT/'client/monitor/TEST-LICENSE.md'):'测试组合许可.md'}
+    if kind=='android':
+        for v in ['debug','release']:
+            license_names[str(ROOT/f'android/app/build/outputs/apk/{v}/app-{v}.apk')]=f'{v}/app-{v}.apk'
+        license_names[str(ROOT/'android/app/build/outputs/mapping/release/mapping.txt')]='release/mapping.txt'
+        license_names[str(ROOT/'android/app/build/outputs/release-info.json')]='release/release-info.json'
     if kind in ['windows','android']:
         opus=ROOT/('client/deps/opus/COPYING' if kind=='windows' else 'android/app/src/main/cpp/opus/COPYING')
         files += [ROOT/'LICENSE',ROOT/'NOTICE.md',opus]
@@ -86,6 +93,7 @@ def stage(kind):
         entries.append({'path':str(rel).replace('\\','/'),'bytes':dest.stat().st_size,'sha256':sha(dest)})
     subprocess_sha=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip()
     manifest=dict(schema=1,kind=kind,sha=subprocess_sha,run_id=os.environ.get('GITHUB_RUN_ID','local'),attempt=os.environ.get('GITHUB_RUN_ATTEMPT','1'),embedded_drivers=False,files=entries)
+    if kind=='android':manifest['variants']=['debug','release']
     (out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (out/'SHA256SUMS.txt').write_text(''.join(f'{e["sha256"]}  {e["path"]}\n' for e in entries),encoding='utf-8')
     print(f'public artifact staged: {kind}, {len(entries)} files')

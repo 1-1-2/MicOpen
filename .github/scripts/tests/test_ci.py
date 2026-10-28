@@ -16,6 +16,27 @@ import ci
 import labctl
 
 class ArtifactTests(unittest.TestCase):
+    def test_android_stages_both_variants_in_separate_directories(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            products={
+                'android/app/build/outputs/apk/debug/app-debug.apk':b'debug-apk',
+                'android/app/build/outputs/apk/release/app-release.apk':b'release-apk',
+                'android/app/build/outputs/mapping/release/mapping.txt':b'Class -> a:\n',
+                'android/app/build/outputs/release-info.json':b'{"minify":true}\n',
+                'android/app/src/main/cpp/opus/COPYING':b'Opus license',
+                'LICENSE':b'Project license','NOTICE.md':b'Notices',
+            }
+            for name,data in products.items():
+                p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
+            with patch.object(ci,'ROOT',root),patch.object(ci.subprocess,'check_output',return_value='fake-sha\n'):
+                ci.stage('android')
+            out=root/'_public/android';m=json.loads((out/'manifest.json').read_text())
+            self.assertEqual(m['variants'],['debug','release'])
+            self.assertEqual((out/'release/app-release.apk').read_bytes(),b'release-apk')
+            self.assertTrue((out/'debug/app-debug.apk').is_file())
+            self.assertFalse((out/'app-debug.apk').exists())
+            self.assertTrue((out/'release/mapping.txt').is_file())
     def test_embedded_driver_is_rejected_inside_exe(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'womic-drvinst.exe';p.write_bytes(b'MZ'+b'padding'*20+b'MICLDRV1'+struct.pack('<II',1,9)+b'compressed driver')

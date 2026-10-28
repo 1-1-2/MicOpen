@@ -44,3 +44,5 @@
 - 修改 verdict：保留 PASS/FAIL/UNSUPPORTED/未执行的区别，尤其 G2 不能因 GUI 或 SSH 成功变成 PASS。
 
 离线脚本回归入口见 [scripts README](../scripts/README.md)；完整操作步骤、两种接入拓扑和已有实测证据见 [workflow README](../workflows/README.md)。
+
+Android 构建组件同时生成 debug/release；运行组件的 `variant` 输入默认 release。CI 验证矩阵覆盖两者，Lab 可选；两种构建的签名与产物边界见工作流说明。

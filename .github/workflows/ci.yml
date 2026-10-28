@@ -99,6 +99,10 @@ jobs:
     if: needs.plan.outputs.verify == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [debug, release]
     steps:
     - *id001
     - name: Download android artifact
@@ -112,6 +116,7 @@ jobs:
     - uses: ./.github/actions/android-runtime
       with:
         mode: verify
+        variant: ${{ matrix.variant }}
     - name: Stage public report
       if: ${{ always() }}
       shell: bash
@@ -119,7 +124,7 @@ jobs:
     - uses: actions/upload-artifact@v7
       if: ${{ always() }}
       with:
-        name: report-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+        name: report-${{ github.job }}-${{ matrix.variant }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
         path: _public/report/
         retention-days: 7
         if-no-files-found: error

@@ -1,6 +1,9 @@
 name: Android emulator and verification
 description: 模拟器就绪、安装、UI 与协议闭环；保留硬超时和首次失败证据。
 inputs:
+  variant:
+    default: release
+    description: 待安装 APK 类型（debug 或 release）
   mode:
     default: verify
     description: 准备或验证阶段
@@ -43,6 +46,8 @@ runs:
       public_key: ${{ inputs.public_key }}
       ssh_transport: ${{ inputs.ssh_transport }}
   - name: Install and launch app
+    env:
+      ANDROID_VARIANT: ${{ inputs.variant }}
     run: python .github/scripts/ci.py run --seconds 600 -- bash .github/actions/android-runtime/steps.sh s8
     shell: bash
   - name: Lab before Android test

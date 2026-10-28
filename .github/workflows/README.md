@@ -257,3 +257,9 @@ Windows 构建强制 `pack_driver.py --empty`，并检查资源和 EXE 中是否
 | 原生驱动解压、安装状态、录音与 GUI | 各自验证不同层次，不能互相替代；SYSTEM／标准用户会话矩阵继续保留 |
 
 逐步骤旧位置、新脚本阶段和预算见[迁移对照](../actions/migration-map.json)。公共组件见 [Actions 模块说明](../actions/README.md)，通用工具见 [脚本说明](../scripts/README.md)。本轮全量回归见[运行 40491670551](https://github.com/1-1-2/WKB_test/actions/runs/40491670551)：Android、Windows 与双机音频联调通过；WSS 原生 SSH、SFTP、日志开关和退出码见[运行 40490290865](https://github.com/1-1-2/WKB_test/actions/runs/40490290865)。G2 仍为 UNSUPPORTED。
+
+## Android 双版本构建
+
+每次 Android 构建同时生成 debug 和 release，置于同一个 `build-android-run-attempt` 附件的 `debug/`、`release/` 目录。release 启用 R8 和资源裁剪，`release/mapping.txt` 用于对应版本的崩溃还原，`release/release-info.json` 记录 APK 大小、DEX 大小、ABI、调试标志和签名指纹。自动 CI 以 matrix 分别验证两种 APK，报告名称包含版本以免覆盖。
+
+Lab 的 `android_variant` 控制 installed/verify 场景安装哪种 APK，默认 release；built 场景始终交付两种。双机场景默认使用 release。CI 的 release 使用显式测试签名，分发私钥不上传到 runner；整理版只收录本地固定发布密钥签名的 R8 release。

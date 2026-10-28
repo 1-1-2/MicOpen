@@ -11,12 +11,18 @@
 
 set -uo pipefail
 
-APK="${1:-../apk/app-debug.apk}"
+APK="${1:-}"
 PKG=com.miclink.open
 
 # 允许从任意目录调用：脚本在 <repo>/.github/scripts/ 下
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-[ -f "$APK" ] || APK="$REPO_ROOT/apk/app-debug.apk"
+if [ -z "$APK" ]; then
+    variant="${ANDROID_VARIANT:-release}"
+    case "$variant" in debug|release) ;; *) echo "::error::Invalid Android variant"; exit 2 ;; esac
+    APK="$REPO_ROOT/apk/$variant/app-$variant.apk"
+    # 同类型的旧单 APK artifact 仍可使用，但不把 release 请求悄悄降为 debug。
+    [ -f "$APK" ] || APK="$REPO_ROOT/apk/app-$variant.apk"
+fi
 
 if [ ! -f "$APK" ]; then
     echo "::error::APK 不存在: $APK"

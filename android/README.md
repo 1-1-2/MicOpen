@@ -9,7 +9,7 @@ Android 端负责音频采集、Opus 编码和向 Windows 接收端发送音频�
 ```bash
 bash .github/scripts/fetch-opus.sh
 cd android
-./gradlew :core:test :app:assembleDebug
+./gradlew :core:test :app:assembleDebug :app:assembleRelease
 ```
 
 Windows 上可在准备好 Opus 源码后使用 `gradlew.bat`。工具链版本见[构建说明](../docs/BUILD.md)，完整安装流程见[逐步上手指南](../docs/STEP-BY-STEP.md)。
@@ -32,3 +32,5 @@ python3 android/verify/integration/pc_client.py --self-test
 ```
 
 上面的命令从仓库根目录执行。真实设备与模拟器闭环见[联调指南](verify/integration/README.md)。通信字段见[接口说明](../docs/protocol/womic-wifi-protocol-v1.md)。本项目客户端之间的验证结果不能替代真实手机采集质量或官方客户端互操作测试。
+
+Android debug 与 release 分别输出到 `app/build/outputs/apk/debug/`、`app/build/outputs/apk/release/`（从 Android 模块定位）。release 开启 R8 与资源裁剪，且 `debuggable=false`。未提供签名配置时 release 默认不签名；本机可通过 `MICLINK_ANDROID_KEYSTORE`、`MICLINK_ANDROID_STORE_PASSWORD`、`MICLINK_ANDROID_KEY_ALIAS`、`MICLINK_ANDROID_KEY_PASSWORD` 配置发布签名。CI 显式使用 `-PmiclinkTestSigning=true`，不持有分发私钥；其 release 用于功能验证，分发前在本机签名。调试构建与测试签名均不能代替正式分发身份。

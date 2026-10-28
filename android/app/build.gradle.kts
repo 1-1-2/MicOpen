@@ -45,7 +45,16 @@ android {
     }
 
     signingConfigs {
-        // 发布签名留给使用者自行配置（gradle.properties 中提供 storeFile / storePassword 等）
+        // 发布私钥只从本机环境读取，不放入源码或 CI。CI 的 release 由显式测试签名验证。
+        val path = providers.environmentVariable("MICLINK_ANDROID_KEYSTORE").orNull
+        if (!path.isNullOrBlank()) {
+            create("distribution") {
+                storeFile = file(path)
+                storePassword = providers.environmentVariable("MICLINK_ANDROID_STORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("MICLINK_ANDROID_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("MICLINK_ANDROID_KEY_PASSWORD").get()
+            }
+        }
     }
 
     buildTypes {
@@ -53,8 +62,8 @@ android {
             // R8：代码压缩（minify）+ **资源压缩**（shrinkResources）。
             // R-47：shrinkResources 之前是关的 —— R8 只裁代码不裁资源，
             // res 里没被引用的图标/布局字节全部随包带出去。
-            // 两者都开后 R8 才是完整的"无用物剔除"：dex 裁类、native 裹符号、
-            // res 裁掉连字符串表里都没人引用的条目。
+            // 两者都开后 R8 才是完整的"无用物剔除"：dex 裁类、
+            // res 裁掉连字符串表里都没人引用的条目；native 符号处理由 AGP/NDK 完成。
             // ⚠ keep 规则见 proguard-rules.pro：JNI 类 / Manifest 声明的四组件
             //   已显式 keep，Compose 在 AGP 9 的默认规则里处理（无反射风险）。
             isMinifyEnabled = true
@@ -63,14 +72,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // R-47：分发用 release 也用 **debug 签名**。理由：
-            //  · 试用分发的 release 包与 debug 包同 applicationId + 同签名，
-            //    可以直接覆盖安装（不用先卸载）；
-            //  · release 的真身（R8 压缩 + 资源裁剪 + 无 debuggable）比 debug
-            //    包小一个数量级 —— 分发链路里没有任何理由再发 debug 包。
-            //  · 正式上架时在 gradle.properties 里配 storeFile 换正式签名即可，
-            //    这里只是默认值，不影响正式签名流程。
-            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            signingConfig = signingConfigs.findByName("distribution")
+                ?: if (providers.gradleProperty("miclinkTestSigning").orNull == "true") {
+                    signingConfigs.getByName("debug")
+                } else null // 无发布密钥时默认生成 unsigned release，不默默使用调试签名。
         }
     }
 
