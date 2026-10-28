@@ -45,11 +45,14 @@ def exercise(exe, scenario):
                         else: peer.sendall(frame(expected,b'\0'))
                     if scenario == 'oversize':
                         peer.sendall(bytes([200])+struct.pack('>I',2049)); time.sleep(1); return
-                    for seq in range(520):
+                    seq = 0
+                    deadline = time.monotonic() + 30
+                    while time.monotonic() < deadline:
                         # WO Mic format C, Opus silence, original datagram preserved.
                         packet = struct.pack('>BBHHIB',4,0,10,seq,seq*960,5)+b'\xf8\xff\xfe'
                         wire = frame(200,packet)
                         peer.sendall(wire[:3]); peer.sendall(wire[3:])
+                        seq = (seq + 1) & 0xffff
                         time.sleep(.02)
         except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):
             pass  # Client intentionally closes at end of no-GUI smoke window.
