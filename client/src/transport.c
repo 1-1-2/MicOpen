@@ -196,11 +196,14 @@ SOCKET transport_connect(int mode, const char *endpoint, int port, char *error, 
             if (!adb_prepare()) goto adb_error;
             /* Resolve exactly one USB device to a serial, then use -s for setup AND cleanup. */
             if (!strcmp(endpoint,"auto") || !endpoint[0]) {
-                if (!adb_run("-d get-serialno", serial, sizeof(serial))) goto adb_error;
+                if (!adb_run("-d wait-for-device", result, sizeof(result)) ||
+                    !adb_run("-d get-serialno", serial, sizeof(serial))) goto adb_error;
                 serial[strcspn(serial,"\r\n")] = 0;
             } else { snprintf(serial, sizeof(serial), "%s", endpoint); }
             if (!serial[0] || strlen(serial)>100 || !strcmp(serial,"unknown")) goto adb_error;
             for(i=0; serial[i]; i++) if (!((serial[i]>='a'&&serial[i]<='z') || (serial[i]>='A'&&serial[i]<='Z') || (serial[i]>='0'&&serial[i]<='9') || serial[i]=='-' || serial[i]=='_' || serial[i]=='.')) goto adb_error;
+            snprintf(args,sizeof(args),"-s %s wait-for-device",serial);
+            if (!adb_run(args,result,sizeof(result))) goto adb_error;
             snprintf(args,sizeof(args),"-s %s forward tcp:0 tcp:%d",serial,port);
             if (!adb_run(args,result,sizeof(result))) goto adb_error;
             port = (int)strtol(result,&end,10);

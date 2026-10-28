@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-static DWORD WINAPI cancel_after(void *unused){(void)unused;Sleep(250);transport_cancel();return 0;}
+static DWORD WINAPI cancel_after(void *unused){(void)unused;Sleep(1000);transport_cancel();return 0;}
 int main(int argc,char **argv)
 {
     WSADATA w;SOCKET s;char err[512];HANDLE cancel=NULL;int expect_error;
