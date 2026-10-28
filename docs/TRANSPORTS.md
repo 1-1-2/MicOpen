@@ -122,3 +122,30 @@ runs. The four-choice UI assertion is mandatory. Its release-emulator connection
 screenshot was visually reviewed and replaces the README/product-page image.
 The subsequent relay source-port registration fix and connected-state hint (`d288fdb`)
 pass the local debug build and 104 JVM/app tests. Shell regression: 68 passed.
+
+## Bluetooth HELLO investigation (2026-10-28)
+
+Reported physical-device symptoms: phone reports `bt socket closed, read return -1`;
+Windows reports `101 无应答`. Wi-Fi and phone hotspot work on the same setup.
+These messages identify a connection closed before the HELLO response; they do not
+by themselves establish a pairing failure or a unique root cause.
+
+The previously validated CI APK on `e04e10c` predates the explicit loopback bind in
+`d288fdb`. Its Bluetooth relay publishes an unbound Socket and immediately connects,
+while the session server independently checks the source port on accept. The server
+can observe an unregistered port and reject the internal connection. `d288fdb` fixed
+the startup ordering in source but was only locally built/tested; its earlier CI APK
+was not a build of that change.
+
+The dedicated fix extracts LoopbackRelay: bind IPv4 loopback, capture the assigned
+source port, publish ownership, then connect. A JVM test checks ownership at accept,
+forwards a fragmented type-101 HELLO and returns its response; an unrelated connection
+must be rejected. This requires no physical radio. App tests now run in APK build CI.
+
+Phone diagnostics log internal source/target ports and the byte counts of each
+forwarding direction; rejected internal connections are logged explicitly. Windows
+now uses select-based receive deadlines and distinguishes EOF, timeout, WSA error and
+oversized replies in HELLO errors. A native-executable fixture tests early peer EOF.
+
+This addresses a confirmed ordering defect. Whether it is the sole cause of the
+reported physical Bluetooth failure remains subject to the new package's device test.

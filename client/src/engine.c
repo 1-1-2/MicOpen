@@ -284,13 +284,18 @@ static int recv_exact(unsigned char *b, int n, int timeout_ms)
 static int msg_recv(unsigned char *type, unsigned char *pl, int cap, int *len, int timeout_ms)
 {
     unsigned char h[5];
+    DWORD started = GetTickCount();
     if (!recv_exact(h, 5, timeout_ms)) return 0;
     *type = h[0];
     uint32_t l = ((uint32_t)h[1] << 24) | ((uint32_t)h[2] << 16) |
                  ((uint32_t)h[3] << 8) | h[4];
     if (l > (uint32_t)cap) { snprintf(g_receive_detail, sizeof(g_receive_detail), "应答长度异常：%u B", (unsigned)l); return 0; }
     *len = (int)l;
-    if (l && !recv_exact(pl, (int)l, timeout_ms)) return 0;
+    if (l) {
+        int remaining = timeout_ms - (int)(GetTickCount() - started);
+        if (remaining <= 0) { snprintf(g_receive_detail, sizeof(g_receive_detail), "应答帧接收超时"); return 0; }
+        if (!recv_exact(pl, (int)l, remaining)) return 0;
+    }
     return 1;
 }
 
@@ -662,7 +667,7 @@ static unsigned __stdcall worker(void *arg)
                 if (n > 0) on_udp_frame(buf, n);
             }
             if (FD_ISSET(g_tcp, &rf)) {
-                if (!msg_recv(&type, pl, sizeof(pl), &len, 100)) {
+                if (!msg_recv(&type, pl, sizeof(pl), &len, 2000)) {
                     elog("控制连接已断开");
                     strcpy(g_st.last_error, "对端关闭控制连接");
                     g_st.state = ST_ERROR;

@@ -52,7 +52,9 @@ def exercise(exe, scenario):
                         # WO Mic format C, Opus silence, original datagram preserved.
                         packet = struct.pack('>BBHHIB',4,0,10,seq,seq*960,5)+b'\xf8\xff\xfe'
                         wire = frame(200,packet)
-                        peer.sendall(wire[:3]); peer.sendall(wire[3:])
+                        peer.sendall(wire[:3])
+                        if scenario == 'slowheader' and seq == 0: time.sleep(.25)
+                        peer.sendall(wire[3:])
                         seq = (seq + 1) & 0xffff
                         time.sleep(.02)
         except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):
@@ -64,7 +66,7 @@ def exercise(exe, scenario):
     worker.join(16)
     assert not worker.is_alive(), 'fixture did not stop'
     assert not errors, errors
-    if scenario=='media':
+    if scenario in ('media', 'slowheader'):
         assert p.returncode==0, p.stdout
         # CLI prints ASCII "OK" only after ST_STREAMING; require received media too.
         text=p.stdout.decode('utf-8',errors='replace')
@@ -78,4 +80,4 @@ def exercise(exe, scenario):
 
 
 if __name__=='__main__':
-    for case in ('media','legacy','oversize','closed'): exercise(sys.argv[1],case)
+    for case in ('media','slowheader','legacy','oversize','closed'): exercise(sys.argv[1],case)
