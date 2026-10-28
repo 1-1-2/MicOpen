@@ -32,6 +32,8 @@ class BluetoothTransport(private val context: Context, private val port: Int,
                     }
                     try {
                         val tcp = Socket()
+                        // Register the loopback source port before accept can check ownership.
+                        tcp.bind(java.net.InetSocketAddress("127.0.0.1", 0))
                         synchronized(this) {
                             if (stopped) { tcp.close(); bt.close(); return@Thread }
                             local = tcp

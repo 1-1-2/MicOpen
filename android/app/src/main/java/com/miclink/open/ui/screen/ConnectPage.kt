@@ -229,8 +229,11 @@ fun ConnectPage(
             // 现在压到 12dp 的连续留白 —— 波形容器与按钮同属"当前状态"这一件事，
             // 中间不需要再画一道墙。
             Spacer(Modifier.height(12.dp))
-            HintText(if (state.isRunning) "3. 在 Windows 选择${mode.title}，点击连接。"
-                else "启动后只等待电脑接入，不会自动连接电脑。")
+            HintText(when (state.state) {
+                MicCaptureService.STATE_CONNECTED, MicCaptureService.STATE_STREAMING -> "电脑已连接。更换连接方式请先停止。"
+                else -> if (state.isRunning) "3. 在 Windows 选择${mode.title}，点击连接。"
+                    else "启动后只等待电脑接入，不会自动连接电脑。"
+            })
             MainActionButton(
                 running = state.isRunning,
                 onStart = onStartClicked,
