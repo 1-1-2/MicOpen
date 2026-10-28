@@ -56,10 +56,22 @@ mode exercises the same framing without requiring radio/USB hardware.
 
 ## Operation
 
+In the Android app, **choose the method first, then tap Start**. Leave it waiting;
+choose the same method on Windows and click Connect. Stop Android before changing
+methods. USB and Bluetooth do not require an IP address.
+
+For USB, obtain Windows [Platform-Tools](https://developer.android.com/tools/releases/platform-tools).
+Keep the complete tools directory and add it to PATH, or put `adb.exe` and its
+companion DLLs (including `AdbWinApi.dll` and `AdbWinUsbApi.dll`) beside `womic.exe`.
+The client uses Windows executable search; it does not download ADB or recursively
+search a `platform-tools` subdirectory. A charge-only cable will not provide ADB.
+If multiple USB devices are connected, enter the intended device's serial number.
+
+
 - LAN: `womic.exe --transport wifi --host <phone-ip> --connect`
 - Hotspot: `womic.exe --transport hotspot --host <phone-hotspot-ip> --connect`
 - USB: `womic.exe --transport usb --connect`; optionally `--host <usb-serial>`.
-  `adb.exe` must be on PATH. Enable USB debugging, authorize this PC, start the app's
+  `adb.exe` must be discoverable as described above. Enable USB debugging, authorize this PC, start the app's
   capture service. `auto` selects exactly one USB device using `adb -d get-serialno`.
   Forwarding uses an OS-assigned PC port; cleanup attempts to remove only that device/port rule (bounded to one second even when the device is gone).
   MicLink never kills the shared ADB server or removes unrelated forwarding rules.
@@ -69,6 +81,13 @@ mode exercises the same framing without requiring radio/USB hardware.
   address without separators. Service UUID: `ad5c9d21-8a64-487b-9c74-6f3aa069472e`.
 
 ## Verification limits
+
+For the latest physical-device feedback and remaining issues, see the
+[2026-10-28 closeout](CLOSEOUT-2026-10-28.md). Wi-Fi and phone hotspot have working
+user reports; the Bluetooth fix package received a working report. Physical USB
+acceptance remains pending. Historical NOT TESTED entries below describe those
+specific runs, not a claim that no subsequent device feedback exists.
+
 
 Protocol negotiation, fragmentation, length validation and blocked-sender tests run
 without hardware. Windows CI runs the actual executable against a fragmented TCP

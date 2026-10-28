@@ -1,37 +1,47 @@
-# 工程文档索引
+# 工程文档地图
 
-本目录只放当前 MicLink Open 的使用与工程文档。首次运行从逐步上手指南开始，接口细节由白皮书与通信说明承载。
+[← 项目首页](../README.md) · [English overview](../README.en.md)
 
-## 开发与构建
+先按想完成的事找入口，再往实现细节走。下列文档以中文为主；连接适配指南为英文。当前功能、发布包与实机验证的范围可能不同，遇到差异先查交付记录。
 
-| 文档 | 用途 |
+## 使用与排查
+
+| 想做的事 | 入口与内容 |
 |---|---|
-| [`STEP-BY-STEP.md`](STEP-BY-STEP.md) | 从检出源码到 Android/Windows 构建、安装与联调的逐步操作流程 |
-| [`BUILD.md`](BUILD.md) | Android 与 Windows 的依赖、构建命令和产物说明 |
-| [`../android/README.md`](../android/README.md) | Android 采集端与 Opus 源码准备 |
-| [`../client/README.md`](../client/README.md) | Windows 客户端、驱动包选项与本地构建 |
-| [`git-policy.md`](maintenance/git-policy.md) | 提交身份、提交说明与历史维护规则 |
-| [`CREDENTIALS.md`](maintenance/CREDENTIALS.md) | 凭据变量名、保存位置和泄露处置规则；不含凭据值 |
-| [`../tools/README.md`](../tools/README.md) | API 推送工具的安全用法 |
+| 第一次连上手机 | [首页快速上手](../README.md#quick-start)：Wi-Fi 四步连接。 |
+| 换热点、USB 或蓝牙 | [连接指南](TRANSPORTS.md)：准备顺序、ADB 放置与授权、蓝牙配对、协议边界。 |
+| 调整手机采集 | [Android 采集端](../android/README.md)：应用模块、采集与验证入口。 |
+| 管理电脑接收与驱动 | [Windows 接收端](../client/README.md)：CLI、外置驱动管理与无声排查。 |
+| 试听与抑制监听啸叫 | [监听实验室](../client/monitor/README.md)：设备、独立音量、Ring Out 与实验性 AEC。 |
+| 看最新交付和已知问题 | [2026-10-28 收尾记录](CLOSEOUT-2026-10-28.md)：当前包、实机反馈、USB 待测及蓝牙状态显示缺口。 |
 
-## 协议与驱动
+## 构建与理解实现
 
-| 文档 | 用途 |
+| 想做的事 | 入口与内容 |
 |---|---|
-| [`protocol/womic-wifi-protocol-v1.md`](protocol/womic-wifi-protocol-v1.md) | 采集端与接收端的控制、媒体和会话约定 |
-| [`driver-whitepaper.md`](protocol/driver-whitepaper.md) | 已有驱动的访问流程、版本基线与 PCM 写入约束 |
+| 从源码跑通两端 | [逐步指南](STEP-BY-STEP.md)：检出、构建、安装、连接与分层验证。 |
+| 准备工具链或签名 | [构建说明](BUILD.md)：SDK / NDK、Linux 交叉编译、Windows 构建限制、R8 与分发签名。 |
+| 理解控制与媒体 | [通信接口](protocol/womic-wifi-protocol-v1.md)：Wi-Fi 控制帧与 UDP 格式；[连接适配](TRANSPORTS.md)：USB / 蓝牙流式扩展。 |
+| 理解驱动接入 | [驱动白皮书](protocol/driver-whitepaper.md)：2022 驱动基线、PCM 写入与验证限制，非官方接口承诺。 |
+| 了解依赖与分发要求 | [第三方说明](../NOTICE.md) · [项目许可](../LICENSE) · [监听组合许可](../client/monitor/TEST-LICENSE.md)。 |
 
-## 验证与运维
+## 验证与 CI 现场
 
-| 文档 | 用途 |
+| 想做的事 | 入口与内容 |
 |---|---|
-| [`windows-e2e-report.md`](verification/windows-e2e-report.md) | Windows CI 安装、注音、录音和 GUI 验证记录 |
-| [`android-interop-checklist.md`](verification/android-interop-checklist.md) | 官方 WO Mic App/Client 互操作的待执行人工清单 |
-| [`tailscale-channel.md`](maintenance/tailscale-channel.md) | 双机 CI 网络通道的安全配置说明；不记录实际凭据或节点信息 |
-| [`github-api-push.md`](maintenance/github-api-push.md) | 受限环境下 Git Data API 推送工具的使用边界 |
+| 判断现有证据能说明什么 | [Windows 验证报告](verification/windows-e2e-report.md) · [连接适配验证记录](TRANSPORTS.md#verification-record-2026-10-28)。 |
+| 在真实设备上补验 | [人工互操作清单](verification/android-interop-checklist.md)：记录版本、音质、恢复与长时间运行。 |
+| 从本地跑 Android 检查 | [验证入口](../android/verify/README.md) · [协议闭环工具](../android/verify/integration/README.md)。 |
+| 触发构建、复核或远程调试 | [CI / Lab 使用说明](../.github/workflows/README.md)：网页、API、产物、暂停点与退出。 |
+| 排查远程环境和媒体网络 | [Windows 交互调试](maintenance/windows-interactive-debug.md) · [双机网络通道](maintenance/tailscale-channel.md)。 |
+| 维护自动化本身 | [共享 Actions 组件](../.github/actions/README.md) · [CI 脚本](../.github/scripts/README.md)。 |
 
-## 已知验证边界
+CI 中本项目两端的闭环通过，不等于与官方 WO Mic 客户端互操作通过，也不替代小时级稳定性和所有手机音效的实测。标准用户交互会话录音 `UNSUPPORTED` 不计作通过；后续用户设备反馈见[收尾记录](CLOSEOUT-2026-10-28.md)。
 
-双机 CI 的 Android app 与本仓库 Windows 客户端链路已通过；官方 WO Mic Windows Client 互操作、真实手机采集质量和小时级稳定性仍需人工验证。不要把 CI 通过描述成所有真实设备场景都已验证。
+## 贡献与仓库维护
 
-CI／Lab 参数、网页与 API 操作、产物边界见[工作流使用说明](../.github/workflows/README.md)。
+- **准备提交**：[Git 规范](maintenance/git-policy.md)说明提交身份、说明格式与历史维护约定。
+- **配置自动化凭据**：[凭据管理](maintenance/CREDENTIALS.md)只列变量名与存储边界，不包含实际值。
+- **受限环境推送**：[工具入口](../tools/README.md)与 [Git Data API 说明](maintenance/github-api-push.md)提供普通 Git 不可用时的后备路线。
+
+问题反馈请附两端版本、连接方式、系统与相关日志。开发在 `1-1-2/WKB_test`，`1-1-2/MicOpen` 仅作发布入口。

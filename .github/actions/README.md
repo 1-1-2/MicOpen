@@ -7,7 +7,7 @@
 | 组件 | 平台与调用者 | 前提 | 完成什么、产生什么 |
 |---|---|---|---|
 | [android-tools](android-tools/action.yml) | Ubuntu；Android 构建或运行组件 | 已 checkout，SDK 可定位/下载 | 设置 Java 17；`purpose=build` 安装编译 SDK/NDK/CMake，`emulator` 安装模拟器组件。不启动模拟器、不生成 APK。 |
-| [build-android](build-android/action.yml) | Ubuntu；CI/Lab 的构建 job | 已 checkout，可获取依赖 | 调用 android-tools、取得 Opus、构建全默认 ABI 的 **Debug APK**，经允许清单上传 `build-android-run-attempt`。当前不产出 R8 Release。 |
+| [build-android](build-android/action.yml) | Ubuntu；CI/Lab 的构建 job | 已 checkout，可获取依赖 | 调用 android-tools、取得 Opus、执行 JVM / app 单测，构建全默认 ABI 的 **debug 与 R8 release APK**，经允许清单上传 `build-android-run-attempt`。CI release 使用测试签名。 |
 | [build-windows](build-windows/action.yml) | Ubuntu 交叉构建；CI/Lab | 已 checkout，可安装工具链 | 构建 Windows 应用及无内嵌第三方驱动的安装器，生成来源/哈希清单并上传 `build-windows-run-attempt`。不安装驱动。 |
 | [android-runtime](android-runtime/action.yml) | Ubuntu/KVM；CI、Lab、dual-linux | 调用方已下载/核验 APK 到 `apk/` | 调用 android-tools，创建模拟器并安装启动 app；`prepare` 为上层双机准备现场，`installed` 交接安装现场，`verify` 执行 UI/协议验证。验证材料进入 `probe-results/`，由 workflow 挑选上传。 |
 | [windows-runtime](windows-runtime/action.yml) | Windows；CI/Lab | 调用方已下载/核验 EXE 到 `dist/` | 现场取得哈希固定的官方驱动夹具、原生解压/复制自检及安装；`installed` 交接，`verify` 再执行录音、权限矩阵与 GUI。不把驱动二进制打入公开产物。 |

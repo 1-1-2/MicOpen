@@ -20,23 +20,44 @@
 # 从仓库根目录执行
 bash .github/scripts/fetch-opus.sh
 cd android
-./gradlew :core:test :app:assembleDebug :app:assembleRelease
+./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+```
+
+Windows 可在 Git Bash 中执行 Opus 源码准备脚本，然后在 `android` 中使用 `gradlew.bat`（CMD）或 `.\gradlew.bat`（PowerShell）执行同样的 Gradle 任务。
+
+安装 Android SDK Command-line Tools 后，在其 `bin` 已加入 PATH 的终端执行（与 CI 固定组件一致）：
+
+```bash
+sdkmanager --licenses
+sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "cmake;3.22.1" "ndk;28.2.13676358"
 ```
 
 调试 APK 位于 `android/app/build/outputs/apk/debug/`。JNI 构建要求 `android/app/src/main/cpp/opus/` 中存在完整源码；缺失时 CMake 会报错。
 
 ## Windows
 
-Linux 交叉编译要求 MinGW-w64、Python 3 和 7-Zip；Windows 原生构建要求 MinGW-w64 的 `gcc`、`windres` 及 Python 在 `PATH` 中。
+当前完整客户端采用 **Linux → Windows x64 交叉编译**，与 CI 的构建路线一致。Ubuntu 24.04 可按以下步骤准备；Windows 开发者可在 WSL2 Ubuntu 内复用这些命令，再到 Windows 运行产物。CI 的验证环境是 Ubuntu runner 与 Windows runner，未单独覆盖每种 WSL 配置。Linux 不是客户端运行目标。
 
 ```bash
-cd client
-./build.sh app
-./build.sh drvinst
-./build.sh test
+sudo apt-get update
+sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 python3 p7zip-full curl make
+
+# 从仓库根目录执行，明确使用 POSIX 工具链
+export CC=x86_64-w64-mingw32-gcc-posix
+export CXX=x86_64-w64-mingw32-g++-posix
+bash client/tools/build_opus.sh
+(cd client && python3 tools/pack_driver.py --empty)
+bash client/build.sh
+bash client/monitor/build.sh
 ```
 
-`./build.sh` 默认构建应用和安装器。Windows 原生入口为 `client/build.bat`。产物位于 `client/build/`，构建脚本检查文件体积、PE 导入表和资源包结构。
+`pack_driver.py --empty` 与公开 CI 一致，明确生成不含第三方驱动的安装器资源。最后一步是可选监听模块；不运行它仍可使用基础监听，但 Ring Out / SpeexDSP 处理不可用。应用和安装器位于 `client/build/`；监听步骤另产出 `miclink-ringout.dll`、`miclink-speex.dll`、许可和对应源码归档。分发包含 Ring Out 的组合时，按[组合许可](../client/monitor/TEST-LICENSE.md)保留相关材料。
+
+`bash client/build.sh app` 只构建应用，`drvinst` 只构建驱动管理工具。`test` 生成驱动包自检程序，需要 Windows 或 Wine 执行；空驱动包会报告跳过，不计作通过。构建脚本检查文件体积、PE 导入表和资源包结构。
+
+### Windows 原生入口的当前限制
+
+仓库保留 `client/build.bat`，但它尚未加入 `monitor.cpp`、`monitor_ui.c` 和 `ui_switch.c` 等当前依赖，也未提供完整的 C++ 编译／链接步骤。因此它不能作为当前完整客户端的可靠构建方法。本轮仅修正文档，不修改构建或应用代码；Windows 上请使用上面的 WSL2 路径，或下载 CI 的交叉构建产物。
 
 ### Opus
 
@@ -50,7 +71,7 @@ cd client
 
 ```bash
 export WOMIC_DRIVER_DIR="<本机官方驱动目录>"
-(cd client && ./build.sh)
+(cd client && python3 tools/pack_driver.py --driver-dir "$WOMIC_DRIVER_DIR" && bash build.sh)
 ```
 
 驱动目录应包含 2022 基线的 `womic.inf`、`womic_1.inf`、`womic_2.inf` 及配套 SYS/CAT。版本、架构和哈希核对由打包工具负责；不要混用不同版本文件。相关第三方说明见[NOTICE](../NOTICE.md)。
@@ -62,7 +83,7 @@ export WOMIC_DRIVER_DIR="<本机官方驱动目录>"
 | `bash .github/scripts/tests/run-tests.sh` | CI 脚本离线回归 |
 | `python3 android/verify/integration/pc_client.py --self-test` | 媒体包解析及协议自测 |
 | `python3 android/verify/integration/test_pc_client.py` | 联调工具的监听、重连与二进制通道 |
-| `cd android && ./gradlew :core:test` | JVM 协议模块 |
+| `cd android && ./gradlew :core:test :app:testDebugUnitTest` | JVM 协议、Android 设置与传输适配单测 |
 | `ci.yml`（Android） | APK、模拟器闭环与界面 |
 | `ci.yml`（Windows） | Windows 安装、录音和 GUI |
 | `lab.yml`（dual） | 两台 runner 之间的真实音频链路 |

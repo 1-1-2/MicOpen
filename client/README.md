@@ -6,16 +6,17 @@
 
 ## 构建
 
-在 Linux 安装 MinGW-w64 和 Python 3，然后从本目录执行：
+在 Linux 准备 MinGW-w64 GCC / G++ POSIX 工具链、Python 3、7-Zip、curl 和 make，然后从本目录执行：
 
 ```bash
+bash tools/build_opus.sh
 ./build.sh
 ./build.sh app
 ./build.sh drvinst
 ./build.sh test
 ```
 
-Windows 原生构建使用 `build.bat`，要求 `gcc`、`windres` 和 Python 在 `PATH` 中。输出位于 `build/`。可选的 Opus 静态库由 `tools/build_opus.sh` 构建；未提供静态库时，运行需要可用的 `opus.dll`。完整依赖见[构建说明](../docs/BUILD.md)。
+Windows 开发者可在 WSL2 Ubuntu 中使用上述交叉编译路线。`build.bat` 尚未同步当前监听与开关控件的编译依赖，暂不作为完整客户端的可靠原生构建入口。输出位于 `build/`。可选的 Opus 静态库由 `tools/build_opus.sh` 构建；未提供静态库时，运行需要可用的 `opus.dll`。可选监听处理模块另由 `bash monitor/build.sh` 构建。完整依赖见[构建说明](../docs/BUILD.md)。
 
 ## 使用
 

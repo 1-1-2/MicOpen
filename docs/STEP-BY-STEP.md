@@ -13,7 +13,7 @@ cd miclink-open
 
 ## 2. 构建 Android APK
 
-准备 JDK 17 或更新版本、Android SDK（API 37）、NDK 和 CMake 3.22.1。先获取仓库未内置的 Opus 源码，再运行协议单测和 APK 构建：
+准备完整 JDK 17、Android SDK（API 37）、NDK 和 CMake 3.22.1。先获取仓库未内置的 Opus 源码，再运行协议单测和 APK 构建：
 
 ```bash
 bash .github/scripts/fetch-opus.sh
@@ -38,26 +38,25 @@ cd ..
 
 ### Linux 交叉编译
 
-安装 MinGW-w64、Python 3 和 7-Zip，然后构建：
+安装 MinGW-w64 GCC / G++ POSIX 工具链与依赖，然后构建（Ubuntu 24.04）：
 
 ```bash
-sudo apt install gcc-mingw-w64-x86-64 p7zip-full
+sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 python3 p7zip-full curl make
+export CC=x86_64-w64-mingw32-gcc-posix
+export CXX=x86_64-w64-mingw32-g++-posix
 cd client
-./build.sh
+bash tools/build_opus.sh
+python3 tools/pack_driver.py --empty
+bash build.sh
+bash monitor/build.sh
 cd ..
 ```
 
-产物在 `client/build/`：`womic.exe` 是客户端，`womic-drvinst.exe` 是驱动安装器。若希望静态链接 Opus 解码器，可按 [`BUILD.md`](BUILD.md) 的说明构建可选的 Opus 静态库；缺少它时客户端仍可构建，但运行时需要可用的 `opus.dll`。
+产物在 `client/build/`：`womic.exe` 是客户端，`womic-drvinst.exe` 是驱动安装器。上述步骤已构建并静态链接 Opus，另生成两个可选监听 DLL。若跳过 Opus 构建，客户端会回退到运行时加载 `opus.dll`。保留监听 DLL 及相应许可、源码材料，详见 [`BUILD.md`](BUILD.md)。
 
-### Windows 原生构建
+### 在 Windows 上构建
 
-准备 MinGW-w64（`gcc` 和 `windres` 在 `PATH` 中）及 Python 3，在仓库根目录运行：
-
-```bat
-cd client
-build.bat
-cd ..
-```
+在 WSL2 Ubuntu 内执行上面的 Linux 交叉编译流程，完成后到 Windows 运行 `client/build/` 中的 EXE。`client/build.bat` 尚未同步当前监听模块及开关控件依赖，不能作为当前完整客户端的可靠入口；原因与环境边界见[构建说明](BUILD.md#windows)。这条路线生成 Windows 程序，不是 Linux 桌面客户端。
 
 ## 4. 准备并安装官方驱动
 
