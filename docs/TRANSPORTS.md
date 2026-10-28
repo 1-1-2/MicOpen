@@ -113,3 +113,12 @@ Stop first to change methods. The previous separate Bluetooth switch migrates to
 this shared choice. USB/Bluetooth listen on IPv4 loopback only, require stream
 negotiation, and Bluetooth additionally requires ownership by the RFCOMM relay.
 Wi-Fi/hotspot retain the legacy network protocol and diagnostic stream support.
+
+### Connection-flow revision verification
+
+[Android CI 40655787135](https://github.com/1-1-2/WKB_test/actions/runs/40655787135)
+passes on `e04e10c`: debug/release builds, both emulator UI/legacy protocol/ADB-stream
+runs. The four-choice UI assertion is mandatory. Its release-emulator connection
+screenshot was visually reviewed and replaces the README/product-page image.
+The subsequent relay source-port registration fix and connected-state hint (`d288fdb`)
+pass the local debug build and 104 JVM/app tests. Shell regression: 68 passed.
