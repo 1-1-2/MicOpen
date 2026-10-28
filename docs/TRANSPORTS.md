@@ -81,3 +81,9 @@ as a passing physical USB or Bluetooth connection.
 
 Native HarmonyOS is a separate future platform adapter; Kotlin/Compose code is not
 binary-compatible. The packet protocol and fixtures can be retained for its tests.
+
+## UI evidence
+
+The README/product page connection screenshots were refreshed from native CI:
+Android release run `40651214343` (emulator), Windows run `40651522992`.
+These show the newly exposed connection controls, not proof of physical radio/USB operation.

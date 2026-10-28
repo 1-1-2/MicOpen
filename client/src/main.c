@@ -727,6 +727,13 @@ static void on_forwarded(const wchar_t *cmdline)
     cli_set_defaults(&a);
     if (cli_parse(&a, argc, argv)) {
         if (a.driver_pack) drv_set_external_pack(a.driver_pack);
+        if (a.connect && !g_ui.running) {
+            wchar_t port[16];
+            g_ui.transport = a.transport == 4 ? 0 : a.transport;
+            _snwprintf(port, 16, L"%d", a.port); port[15] = 0;
+            SetWindowTextW(g_ui.edit_port, port);
+            if (a.transport == 3 && !a.host_pos) SetWindowTextW(g_ui.edit_host, L"");
+        }
         if (a.host_pos) SetWindowTextW(g_ui.edit_host, a.host_pos);
         if (a.media_port > 0 && g_ui.edit_media) {
             wchar_t buf[16];

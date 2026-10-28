@@ -982,7 +982,7 @@ void ui_draw_conn_card(HDC dc)
     }
 
     /* 手机 IP / 控制端口 / 媒体端口（C-06，可编辑） */
-    draw_input(dc, g_lo.ed_host, L"手机 IP");
+    draw_input(dc, g_lo.ed_host, g_ui.transport == 2 ? L"蓝牙地址（12位）" : g_ui.transport == 3 ? L"设备序列号（留空自动）" : L"手机 IP");
     draw_input(dc, g_lo.ed_port, L"控制端口");
     draw_input(dc, g_lo.ed_media, L"媒体端口（留空 = 随机）");
 
