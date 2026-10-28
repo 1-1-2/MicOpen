@@ -73,7 +73,9 @@ mode exercises the same framing without requiring radio/USB hardware.
 Protocol negotiation, fragmentation, length validation and blocked-sender tests run
 without hardware. Windows CI runs the actual executable against a fragmented TCP
 fixture, including legacy capability refusal and malformed media length.
-USB authorization/unplugging, Bluetooth pairing/reconnect and real hotspot/audio
+Android CI additionally exercises the installed APK through ADB forwarding, including
+media framing, heartbeats, STOP, reconnect and forwarding cleanup, for both variants.
+Physical USB authorization/unplugging, Bluetooth pairing/reconnect and real hotspot/audio
 quality still require physical devices. A passing simulated stream is not reported
 as a passing physical USB or Bluetooth connection.
 

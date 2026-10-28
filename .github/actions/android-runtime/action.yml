@@ -66,6 +66,11 @@ runs:
     run: python .github/scripts/ci.py run --seconds 360 -- bash .github/actions/android-runtime/steps.sh s11
     shell: bash
     if: ${{ inputs.mode == 'verify' }}
+  - name: ADB stream media, heartbeat, STOP, reconnect and forward cleanup
+    working-directory: android
+    run: python3 ../.github/scripts/ci.py run --seconds 120 -- python3 verify/integration/stream_client.py
+    shell: bash
+    if: ${{ inputs.mode == 'verify' }}
   - name: Collect diagnostics
     if: ${{ always() && inputs.mode == 'verify' }}
     continue-on-error: true
