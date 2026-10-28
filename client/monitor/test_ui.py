@@ -110,7 +110,8 @@ try:
     panel = None
     for _ in range(100):
         panel = u.FindWindowW('MicLinkMonitorTest', None)
-        if panel:
+        # CreateWindow may expose a handle before ShowWindow; wait for the tested state.
+        if panel and u.IsWindowVisible(panel):
             break
         if p.poll() is not None:
             raise RuntimeError('GUI exited before monitor panel appeared')
