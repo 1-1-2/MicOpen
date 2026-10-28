@@ -55,6 +55,6 @@ Android 模拟器闭环、Windows 驱动与录音验证、Tailscale 双机推流
 
 ## 许可
 
-原创代码使用 [MIT 许可](LICENSE)。第三方组件及驱动说明见 [NOTICE](NOTICE.md)。
+自有代码以 [MIT 许可](LICENSE)为主；Ring Out 适配及包含它的测试组合使用 GPL-3.0-or-later。第三方组件及驱动说明见 [NOTICE](NOTICE.md)。
 
 构建、自动验证及临时调试环境的操作见[工作流使用说明](.github/workflows/README.md)。
