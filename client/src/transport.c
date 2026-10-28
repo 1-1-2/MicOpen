@@ -34,27 +34,109 @@ static int bounded_connect(SOCKET sock, SOCKADDR *addr, int len)
     nonblock = 0;
     return ioctlsocket(sock,FIONBIO,&nonblock);
 }
+#ifndef MICLINK_ADB_SHARED_PORT
+#define MICLINK_ADB_SHARED_PORT 5037
+#endif
 static char usb_serial[128];
-static int usb_port;
-/* No shell. Only validated serial and numeric ports enter this command line.
- * adb.exe is resolved from PATH by SearchPath, never downloaded or installed. */
+static int usb_port, adb_server_port;
+static char adb_exe[MAX_PATH];
+static HANDLE adb_job, adb_server;
+
+/* Own only the processes launched by this adapter, never an existing ADB service.
+ * Suspended creation closes the gap between process launch and job assignment. */
+static int adb_spawn(char *command, STARTUPINFOA *si, PROCESS_INFORMATION *pi)
+{
+    if (!CreateProcessA(adb_exe, command, NULL, NULL, TRUE,
+                        CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, NULL, si, pi)) return 0;
+    if (!AssignProcessToJobObject(adb_job, pi->hProcess) || ResumeThread(pi->hThread) == (DWORD)-1) {
+        TerminateProcess(pi->hProcess, 1);
+        WaitForSingleObject(pi->hProcess, 1000);
+        CloseHandle(pi->hThread); CloseHandle(pi->hProcess);
+        return 0;
+    }
+    return 1;
+}
+static int adb_listening(int port)
+{
+    SOCKET sock; SOCKADDR_IN addr; u_long nonblock = 1;
+    fd_set wr; struct timeval tv = {0, 100000};
+    int err = 1, len = sizeof(err), result;
+    sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) return 0;
+    memset(&addr, 0, sizeof(addr)); addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); addr.sin_port = htons((u_short)port);
+    ioctlsocket(sock, FIONBIO, &nonblock);
+    result = connect(sock, (SOCKADDR*)&addr, sizeof(addr));
+    if (result) {
+        FD_ZERO(&wr); FD_SET(sock, &wr);
+        if (WSAGetLastError() == WSAEWOULDBLOCK && select(0, NULL, &wr, NULL, &tv) > 0)
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&err, &len);
+    } else err = 0;
+    closesocket(sock);
+    return err == 0;
+}
+static int adb_prepare(void)
+{
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit;
+    STARTUPINFOA si; PROCESS_INFORMATION pi; SECURITY_ATTRIBUTES sa;
+    SOCKET reserve; SOCKADDR_IN addr; int len = sizeof(addr); BOOL exclusive = TRUE;
+    char command[1024]; HANDLE nullio; DWORD started, found;
+    if (cancelled) return 0;
+    found = SearchPathA(NULL, "adb.exe", NULL, MAX_PATH, adb_exe, NULL);
+    if (!found || found >= MAX_PATH) return 0;
+    adb_job = CreateJobObjectA(NULL, NULL);
+    if (!adb_job) return 0;
+    memset(&limit, 0, sizeof(limit));
+    limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!SetInformationJobObject(adb_job, JobObjectExtendedLimitInformation, &limit, sizeof(limit))) return 0;
+    /* A pre-existing default server is outside our job and remains untouched. */
+    if (adb_listening(MICLINK_ADB_SHARED_PORT)) {
+        adb_server_port = MICLINK_ADB_SHARED_PORT;
+        return 1;
+    }
+    reserve = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (reserve == INVALID_SOCKET) return 0;
+    memset(&addr, 0, sizeof(addr)); addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    setsockopt(reserve, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char*)&exclusive, sizeof(exclusive));
+    if (bind(reserve, (SOCKADDR*)&addr, sizeof(addr)) ||
+        getsockname(reserve, (SOCKADDR*)&addr, &len)) { closesocket(reserve); return 0; }
+    adb_server_port = ntohs(addr.sin_port);
+    closesocket(reserve);
+    memset(&sa, 0, sizeof(sa)); sa.nLength = sizeof(sa); sa.bInheritHandle = TRUE;
+    nullio = CreateFileA("NUL", GENERIC_READ | GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+    if (nullio == INVALID_HANDLE_VALUE) return 0;
+    memset(&si, 0, sizeof(si)); si.cb = sizeof(si); si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = si.hStdOutput = si.hStdError = nullio;
+    snprintf(command, sizeof(command), "\"%s\" -L tcp:127.0.0.1:%d server nodaemon", adb_exe, adb_server_port);
+    if (!adb_spawn(command, &si, &pi)) { CloseHandle(nullio); return 0; }
+    CloseHandle(nullio); CloseHandle(pi.hThread); adb_server = pi.hProcess;
+    started = GetTickCount();
+    while (!cancelled && GetTickCount() - started < 6000) {
+        if (WaitForSingleObject(adb_server, 0) != WAIT_TIMEOUT) return 0;
+        if (adb_listening(adb_server_port)) return 1;
+        Sleep(25);
+    }
+    return 0;
+}
+/* Explicit socket overrides ambient ADB settings; no shell or global kill-server.
+ * Command children join the same job, including any daemon they might spawn. */
 static int adb_run(const char *args, char *out, int cap)
 {
-    char exe[MAX_PATH], command[1024];
+    char command[1024];
     STARTUPINFOA si; PROCESS_INFORMATION pi; SECURITY_ATTRIBUTES sa;
     HANDLE rd, wr; DWORD n = 0, code = 1;
     int cleanup = strstr(args, "--remove") != NULL;
-    if (!SearchPathA(NULL, "adb.exe", NULL, MAX_PATH, exe, NULL)) return 0;
+    if (!adb_job || !adb_server_port || cap < 1) return 0;
     memset(&sa, 0, sizeof(sa)); sa.nLength = sizeof(sa); sa.bInheritHandle = TRUE;
     if (!CreatePipe(&rd, &wr, &sa, 0)) return 0;
     SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
     memset(&si, 0, sizeof(si)); si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES; si.hStdOutput = wr; si.hStdError = wr;
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    snprintf(command, sizeof(command), "\"%s\" %s", exe, args);
-    if (!CreateProcessA(exe, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        CloseHandle(rd); CloseHandle(wr); return 0;
-    }
+    snprintf(command, sizeof(command), "\"%s\" -L tcp:127.0.0.1:%d %s", adb_exe, adb_server_port, args);
+    if (!adb_spawn(command, &si, &pi)) { CloseHandle(rd); CloseHandle(wr); return 0; }
     CloseHandle(wr);
     {
         DWORD start = GetTickCount();
@@ -65,7 +147,6 @@ static int adb_run(const char *args, char *out, int cap)
         }
     }
     GetExitCodeProcess(pi.hProcess, &code);
-    /* Peek avoids waiting for adb server descendants retaining the pipe. */
     { DWORD available = 0;
       if (PeekNamedPipe(rd, NULL, 0, NULL, &available, NULL) && available)
           ReadFile(rd, out, available < (DWORD)(cap-1) ? available : (DWORD)(cap-1), &n, NULL);
@@ -76,12 +157,20 @@ static int adb_run(const char *args, char *out, int cap)
 }
 void transport_cleanup(void)
 {
-    if (usb_port) {
+    if (usb_port && adb_listening(adb_server_port)) {
         char args[256], ignored[512];
         snprintf(args, sizeof(args), "-s %s forward --remove tcp:%d", usb_serial, usb_port);
         adb_run(args, ignored, sizeof(ignored));
-        usb_port = 0;
     }
+    usb_port = 0; usb_serial[0] = 0;
+    /* Last handle closes on normal cleanup OR parent termination. Existing shared
+     * ADB servers were never assigned to this job and cannot be killed here. */
+    if (adb_job) { CloseHandle(adb_job); adb_job = NULL; }
+    if (adb_server) {
+        WaitForSingleObject(adb_server, 1000);
+        CloseHandle(adb_server); adb_server = NULL;
+    }
+    adb_server_port = 0; adb_exe[0] = 0;
 }
 SOCKET transport_connect(int mode, const char *endpoint, int port, char *error, int cap)
 {
@@ -104,7 +193,7 @@ SOCKET transport_connect(int mode, const char *endpoint, int port, char *error, 
         SOCKADDR_IN addr;
         if (mode == 3) {
             char args[256], result[1024], serial[128]; int i; char *end;
-            if (!adb_run("start-server",result,sizeof(result))) goto adb_error;
+            if (!adb_prepare()) goto adb_error;
             /* Resolve exactly one USB device to a serial, then use -s for setup AND cleanup. */
             if (!strcmp(endpoint,"auto") || !endpoint[0]) {
                 if (!adb_run("-d get-serialno", serial, sizeof(serial))) goto adb_error;

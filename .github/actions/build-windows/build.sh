@@ -96,4 +96,5 @@ fi
 python3 .github/scripts/ci.py run --seconds 900 -- bash client/tools/build_opus.sh
 (cd client && python3 tools/pack_driver.py --empty && bash build.sh)
 bash client/monitor/build.sh
+bash client/tools/build_adb_tests.sh
 python3 .github/scripts/ci.py stage --kind windows

@@ -40,6 +40,12 @@ runs:
     run: |
       python client/tools/test_stream_transport.py dist/womic.exe
       if ($LASTEXITCODE -ne 0) { throw "Stream transport regression failed" }
+  - name: ADB process ownership and exit cleanup
+    shell: pwsh
+    if: ${{ inputs.mode == 'verify' }}
+    run: |
+      python client/tools/test_adb_lifecycle.py dist/test_adb_lifecycle.exe dist/test_adb_fixture.exe
+      if ($LASTEXITCODE -ne 0) { throw "ADB lifecycle regression failed" }
   - name: 0. 环境自检（python / 系统信息）
     run: python .github/scripts/ci.py run --seconds 600 -- pwsh -NoProfile -File .github/actions/windows-runtime/steps.ps1 -Stage s2
     shell: pwsh
