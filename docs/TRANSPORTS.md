@@ -149,3 +149,12 @@ oversized replies in HELLO errors. A native-executable fixture tests early peer 
 
 This addresses a confirmed ordering defect. Whether it is the sole cause of the
 reported physical Bluetooth failure remains subject to the new package's device test.
+
+Follow-up: the reporter confirmed using the previous CI release APK, rather than a
+local build of the later source fix. This matches the package/source discrepancy.
+[CI 40663752768](https://github.com/1-1-2/WKB_test/actions/runs/40663752768)
+passes: Android debug/release builds with app unit tests (including LoopbackRelay),
+both emulator protocol/ADB-stream runs, and Windows runtime checks.
+[Windows CI 40664700217](https://github.com/1-1-2/WKB_test/actions/runs/40664700217)
+also passes with delayed-frame-header and explicit early-EOF diagnostic fixtures.
+Neither run has a physical Bluetooth radio. Device confirmation is still required.
