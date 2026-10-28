@@ -1,41 +1,42 @@
-# Windows 客户端端到端验证
+# 当前版本自动验证记录
 
-> 本文汇总 Windows CI 验证结论，最新一次整理后回归为 2026-10-27。工作流和源码持续变化时，以仓库根 README 与当前 workflow 为准。
+本页以 **MicOpen 本仓库可访问的新运行**为依据。迁移前运行和私人历史资料不作为当前版本的验收入口，也不把已失效的运行链接改写成另一个仓库的链接。
 
-## 2026-10-27 整理后复核
+## 2026-10-29 · 本仓库完整 CI
 
-Windows 端到端运行 40447139766 的交叉编译与真实 Windows 验证均通过，覆盖驱动安装、SYSTEM/标准用户会话 0 录音、GUI 和输入控件。标准用户交互会话录音仍为 `UNSUPPORTED`，没有计作通过。
+[CI 40735612451](https://github.com/1-1-2/MicOpen/actions/runs/40735612451) 全部成功，对应业务代码提交 `edc3956450446b6eae97253b4832cf8147acab6d`。后续发布文档更新不改变该次验证的应用代码。
 
-同一代码快照还通过了 Android 构建与模拟器闭环 和 Tailscale 双机联调。测试快照为 `303267d5461775cf6c702eb163029defc52d3265`，文件树为 `97688eaad8f7b2160cfb878e45e28bbdefd1733b`；后续更新仅涉及文档与截图。双机首轮在 MinGW 安装阶段三次超时，重跑失败作业后成功，未修改产品代码。
+| 范围 | 结果与证据 |
+|---|---|
+| 基础检查、协议测试 | 通过。 |
+| Android debug / R8 release 构建 | 通过，包含 app 单测、三 ABI、非调试 release 与压缩信息检查。 |
+| 两种 APK 的模拟器验证 | 均通过，包含界面、传统协议及真实 ADB 转发的流式会话、停止与重连。 |
+| Windows x64 构建 | 通过，含体积、导入表与资源检查；公开安装器无内嵌第三方驱动。 |
+| ADB 生命周期 | Windows 原生六项通过：正常清理、连接失败、取消、直接退出、强制结束，以及保留预先存在的共享服务。测试使用不接触 USB 的 ADB 进程替身，验证的是实际 Windows Job Object 与进程回收。 |
+| 流式协议 | 真实客户端的分片、慢帧头、旧能力拒绝、长度越界和提前关闭检查通过。 |
+| 监听模块与界面 | DSP、WASAPI worker、监听窗口和主窗口检查通过。 |
+| 官方驱动基线 | 9/9 解压与外部目录复制检查通过，安装后系统状态和 status=0 门禁通过。 |
+| SYSTEM / 标准用户会话 0 录音 | 通过，录得 288000 B，主峰 1 kHz。 |
+| 标准用户交互会话录音（G2） | `UNSUPPORTED`，未计作通过。 |
 
-## 2026-10-27 工作流改造复核
+安装器首次原始回执为 4，随后通过独立系统状态和设备就绪检查；不把原始非零值自动当作权限失败，也不把“INF 已安装”当作音频已可用。
 
-全量回归 40491670551 使用共享组件完成 Windows 验证、Android 模拟器闭环及双机音频取证。公开构建包改为强制空驱动包，Windows runner 现场获取并核验官方夹具；原生解压 9/9 与外部目录复制 18/18 均通过。外部目录路径因此覆盖了原先未被内嵌包测试触及的窄／宽字符串格式错误，现已修复并加入回归。
+[针对 ADB 修复的先行 Windows 验证 40734552650](https://github.com/1-1-2/MicOpen/actions/runs/40734552650) 同样通过。当前完整 CI 为发布依据；无需依赖迁移前仓库仍然存在。
 
-安装器首次回执可能为设备尚未就绪的 4；回执原样保留，后续独立检查驱动文件、注册表及 `--status=0`，再执行实际录音。不能把首个非零回执预先归为 UAC，也不能只看“INF 已安装”就认定设备可用。G2 标准用户交互会话仍为 UNSUPPORTED。
+## 实机反馈与自动化的边界
 
-## 覆盖范围
+用户已确认 Wi-Fi、手机热点、蓝牙和有线 ADB / USB 的基本链路可用。自动化新增验证本工具启动的 ADB 进程能随退出回收、共享服务不被误杀；它不替代不同手机、USB 拔插、蓝牙适配器与长时间运行的实机复核。
 
-| 场景 | 结果 | 能证明什么 |
-|---|---|---|
-| Windows 客户端与驱动安装器构建 | 通过 | 目标架构编译、资源打包和导入表检查完成 |
-| 官方驱动安装与设备就绪 | 通过 | CI Windows runner 上驱动安装器能安装并检测目标设备 |
-| SYSTEM 会话音频探针 | 通过 | `e2e_probe` 录得 288000 B，主频为 1 kHz |
-| GUI 冒烟 | 通过 | 窗口可启动，关键控件和状态断言通过 |
-| 本项目 Android app ↔ Windows 客户端双机联调 | 通过 | 跨网控制/媒体链路与音频取证见双机 workflow |
+官方 WO Mic App / Client 互操作、真实采集音质和小时级稳定性没有因本轮 CI 成功而自动变成通过。交互式 Lab、跨 runner 双机音频与 WSS 调试接入未在本轮重跑，所需仓库环境变量也未在本轮配置。
 
-对应自动化入口是 [CI Windows 任务](../../.github/workflows/ci.yml)。CI artifact 由 GitHub Actions 按运行编号保存；此报告不保留 runner 的临时路径或账号凭据。
+## 复现与报告
 
-## 结果边界
+从 Actions 选择 `CI`，使用 `task=verify,target=both` 可复核两端；只验证 Windows 可选 `target=windows`。CI 附件包含来源、哈希、选定日志与自动截图，保留期见[工作流说明](../../.github/workflows/README.md)。私人交接包另保留本轮报告和 ADB 测试日志，避免附件过期后失去本地证据。
 
-这些结果来自托管 Windows runner 和模拟器/CI 联调环境，不能证明每种个人电脑、手机 ROM 或驱动状态都一致。以下事项仍待人工验证：
+ADB 生命周期可在 Windows 使用已编译的测试工具运行：
 
-- Android app 与官方 WO Mic Windows Client 互操作；
-- 真实 Android 手机上的录音质量、前台服务保活与设备兼容性；
-- 小时级连续推流、长时间网络抖动和恢复表现。
+```powershell
+python client/tools/test_adb_lifecycle.py client/build/test_adb_lifecycle.exe client/build/test_adb_fixture.exe
+```
 
-Android 人工互操作流程见 [`android-interop-checklist.md`](android-interop-checklist.md)。
-
-## 重跑方式
-
-在 GitHub Actions 页面选择 `CI` workflow 的 Windows 验证任务 并手动运行，或使用已授权的 GitHub CLI。凭据由 CLI/平台凭据管理器处理；不要将 PAT 写入命令参数、脚本或日志。运行后先确认 job 到达 Windows runner，再按失败步骤区分 runner 环境故障与客户端行为。
+测试工具由 `bash client/tools/build_adb_tests.sh` 交叉编译；它们不会作为应用或 Google ADB 随 Release 分发。实机逐项记录见[人工检查清单](android-interop-checklist.md)。

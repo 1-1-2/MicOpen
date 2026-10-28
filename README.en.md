@@ -72,7 +72,7 @@ See the [monitoring guide](client/monitor/README.md) for modules, delay adjustme
 | Troubleshoot | Copy Windows event logs; use Android's 440 Hz test tone to check the audio path. |
 | Make it yours | Light/dark Windows UI; Android system theme, preset palettes, Android 12+ dynamic colors and AMOLED black. |
 
-Wi-Fi, phone hotspot, Bluetooth and wired ADB / USB all have user-reported working results on physical devices. CI covers both Android build variants, emulator ADB forwarding and Windows protocol/driver checks—not every device or long session. See the [release record and validation scope](docs/RELEASES.md).
+Wi-Fi, phone hotspot, Bluetooth and wired ADB / USB all have user-reported working results on physical devices. [CI in this repository](https://github.com/1-1-2/MicOpen/actions/runs/40735612451) passes both Android variants, emulator ADB forwarding, Windows protocol/driver checks and ADB exit cleanup. This does not cover every device or long session. See the [release record and validation scope](docs/RELEASES.md).
 
 > [!IMPORTANT]
 > **About Windows security prompts**
@@ -85,11 +85,11 @@ Wi-Fi, phone hotspot, Bluetooth and wired ADB / USB all have user-reported worki
 
 **[Go to MicOpen Releases →](https://github.com/1-1-2/MicOpen/releases)**
 
-Source, issue reports and releases now live together in [`1-1-2/MicOpen`](https://github.com/1-1-2/MicOpen). Release `v0.1.1` offers separate downloads and a combined bundle. See the [release record](docs/RELEASES.md) for changes.
+Source, issue reports and releases now live together in [`1-1-2/MicOpen`](https://github.com/1-1-2/MicOpen). Release `v0.1.2` offers separate downloads and a combined bundle. See the [release record](docs/RELEASES.md) for changes.
 
-- **Android APK**: `MicOpen-Android-v0.1.1.apk`. Install it, grant microphone access, and allow foreground-service notifications when prompted.
-- **Windows x64 ZIP**: `MicOpen-Windows-x64-v0.1.1.zip`. Extract the entire archive and run `womic.exe`. Keep its monitoring DLLs, driver utility and license files together.
-- **Android + Windows bundle**: `MicOpen-v0.1.1-Android-Windows.zip`, with both apps, licenses and corresponding-source materials.
+- **Android APK**: `MicOpen-Android-v0.1.2.apk`. Install it, grant microphone access, and allow foreground-service notifications when prompted.
+- **Windows x64 ZIP**: `MicOpen-Windows-x64-v0.1.2.zip`. Extract the entire archive and run `womic.exe`. Keep its monitoring DLLs, driver utility and license files together.
+- **Android + Windows bundle**: `MicOpen-v0.1.2-Android-Windows.zip`, with both apps, licenses and corresponding-source materials.
 - **Checksums**: `SHA256SUMS.txt`. Compare the downloads' SHA-256 hashes. A match establishes agreement with the manifest, not a security certification.
 
 **Before you connect:**

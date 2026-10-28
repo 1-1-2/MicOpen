@@ -72,7 +72,7 @@ Windows 端提供输入增益、扩展增益和一键静音。打开「监听实
 | 排查与复现 | Windows 运行事件可复制；Android 440 Hz 调试音可帮助检查链路。 |
 | 外观与习惯 | Windows 浅色／深色；Android 跟随系统、预设配色、Android 12+ 动态取色与 AMOLED 纯黑。 |
 
-Wi-Fi、手机热点、蓝牙和有线 ADB / USB 均已有用户实机可用反馈。CI 覆盖两种 Android 构建、模拟器 ADB 转发及 Windows 协议／驱动检查，不代表所有设备和长时间场景都已验证。详见[发布记录与验证范围](docs/RELEASES.md)。
+Wi-Fi、手机热点、蓝牙和有线 ADB / USB 均已有用户实机可用反馈。[本仓库 CI](https://github.com/1-1-2/MicOpen/actions/runs/40735612451)已通过两种 Android 构建、模拟器 ADB 转发、Windows 协议／驱动及 ADB 退出清理检查；这些不代表所有设备和长时间场景都已验证。详见[发布记录与验证范围](docs/RELEASES.md)。
 
 > [!IMPORTANT]
 > **关于 Windows 的安全提示**
@@ -85,11 +85,11 @@ Wi-Fi、手机热点、蓝牙和有线 ADB / USB 均已有用户实机可用反�
 
 **[前往 MicOpen Releases →](https://github.com/1-1-2/MicOpen/releases)**
 
-源码、问题反馈与正式发布统一在 [`1-1-2/MicOpen`](https://github.com/1-1-2/MicOpen)。`v0.1.1` 提供独立安装包和两端合集，更新内容见[发布记录](docs/RELEASES.md)。
+源码、问题反馈与正式发布统一在 [`1-1-2/MicOpen`](https://github.com/1-1-2/MicOpen)。`v0.1.2` 提供独立安装包和两端合集，更新内容见[发布记录](docs/RELEASES.md)。
 
-- **Android APK**：`MicOpen-Android-v0.1.1.apk`。安装后授予麦克风权限，按系统提示允许前台服务通知。
-- **Windows x64 ZIP**：`MicOpen-Windows-x64-v0.1.1.zip`。完整解压，运行 `womic.exe`；保留同目录的监听 DLL、安装器与许可文件。
-- **安卓／Windows 合集**：`MicOpen-v0.1.1-Android-Windows.zip`，一次下载两端及对应许可、源码材料。
+- **Android APK**：`MicOpen-Android-v0.1.2.apk`。安装后授予麦克风权限，按系统提示允许前台服务通知。
+- **Windows x64 ZIP**：`MicOpen-Windows-x64-v0.1.2.zip`。完整解压，运行 `womic.exe`；保留同目录的监听 DLL、安装器与许可文件。
+- **安卓／Windows 合集**：`MicOpen-v0.1.2-Android-Windows.zip`，一次下载两端及对应许可、源码材料。
 - **校验清单**：`SHA256SUMS.txt`。核对下载文件的 SHA-256；一致只说明文件与清单一致，不是安全认证。
 
 **先准备好这些：**

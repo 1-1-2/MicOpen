@@ -30,7 +30,7 @@
 
 | 想做的事 | 入口与内容 |
 |---|---|
-| 判断现有证据能说明什么 | [Windows 验证报告](verification/windows-e2e-report.md) · [连接适配验证记录](TRANSPORTS.md#verification-record-2026-10-28)。 |
+| 判断现有证据能说明什么 | [Windows 验证报告](verification/windows-e2e-report.md) · [连接适配验证记录](TRANSPORTS.md#verification)。 |
 | 在真实设备上补验 | [人工互操作清单](verification/android-interop-checklist.md)：记录版本、音质、恢复与长时间运行。 |
 | 从本地跑 Android 检查 | [验证入口](../android/verify/README.md) · [协议闭环工具](../android/verify/integration/README.md)。 |
 | 触发构建、复核或远程调试 | [CI / Lab 使用说明](../.github/workflows/README.md)：网页、API、产物、暂停点与退出。 |

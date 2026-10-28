@@ -204,9 +204,9 @@ flowchart TD
 
 这里的 `udp-relay.py` 是 Linux runner 上处理模拟器 NAT 的小工具，与公共 **Upterm Relay** 无关。控制连接最终为双向 TCP；箭头表示发起方向。端口是当前 workflow 的默认值。
 
-已复查正式双机运行 40494338474：完整日志记录 UDP 转接目标为对端 tailnet 地址，转发 **496 包、78373 字节、send_errors=0**；Windows 录音检测到 **440 Hz** 并判定通过。测试音用于自动验收，不代表真实手机麦克风采集已实测。
+迁移前的双机测试数据仅保留在私人历史资料中，旧运行不作为当前仓库的可访问证据。本轮未重跑双机场景，也未配置交互 Lab / 双机所需的环境变量，不将它计为本次验收通过。当前本仓库的普通 Android / Windows CI 结果见[验证报告](../../docs/verification/windows-e2e-report.md)。
 
-该记录证明 tailnet 上跨 runner 的 TCP/UDP 链路工作，不证明两台 GitHub 托管 VM 原生内网互通；此前没有独立测过绕开 tailnet 的私网/公网 UDP 直连。[GitHub 托管 runner](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners)按 job 分配独立环境，不能因同一工作流或猜测同机房就假设共享可路由局域网。当前日志也不足以认定这一轮 WireGuard 底层一定是直连或 DERP。UDP 故障先检查 tailnet 对端发现、访问策略、接口防火墙和模拟器转接统计，再检查采集/解码；不要用 Upterm 的 SSH 成功代替媒体验证。
+双机链路仍需单独验证 TCP 与 UDP，不能因 SSH 可连接便认定媒体可达。GitHub 两个托管 job 不应被假定处在可直连局域网；排查时应看节点发现、访问策略、防火墙与模拟器转接统计。
 
 ## 实时输出与隐私
 
@@ -257,10 +257,4 @@ Windows 构建强制 `pack_driver.py --empty`，并检查资源和 EXE 中是否
 | `pwsh`、UTF-8、管道退出码 | 旧编码及 tee 返回码曾掩盖真正失败；不以“日志有成功文字”代替退出码和系统状态 |
 | 原生驱动解压、安装状态、录音与 GUI | 各自验证不同层次，不能互相替代；SYSTEM／标准用户会话矩阵继续保留 |
 
-逐步骤旧位置、新脚本阶段和预算见[迁移对照](../actions/migration-map.json)。公共组件见 [Actions 模块说明](../actions/README.md)，通用工具见 [脚本说明](../scripts/README.md)。本轮全量回归见运行 40491670551：Android、Windows 与双机音频联调通过；WSS 原生 SSH、SFTP、日志开关和退出码见运行 40490290865。G2 仍为 UNSUPPORTED。
-
-## Android 双版本构建
-
-每次 Android 构建同时生成 debug 和 release，置于同一个 `build-android-run-attempt` 附件的 `debug/`、`release/` 目录。release 启用 R8 和资源裁剪，`release/mapping.txt` 用于对应版本的崩溃还原，`release/release-info.json` 记录 APK 大小、DEX 大小、ABI、调试标志和签名指纹。自动 CI 以 matrix 分别验证两种 APK，报告名称包含版本以免覆盖。
-
-Lab 的 `android_variant` 控制 installed/verify 场景安装哪种 APK，默认 release；built 场景始终交付两种。双机场景默认使用 release。CI 的 release 使用显式测试签名，分发私钥不上传到 runner；整理版只收录本地固定发布密钥签名的 R8 release。
+逐步骤旧位置、新脚本阶段和预算见[迁移对照](../actions/migration-map.json)。公共组件见 [Actions 模块说明](../actions/README.md)，通用工具见 [脚本说明](../scripts/README.md)。本仓库本轮 [CI 40735612451](https://github.com/1-1-2/MicOpen/actions/runs/40735612451) 的 Android / Windows 构建与运行验证均通过；交互 Lab、WSS 接入和双机音频场景未在本轮重跑。G2 仍为 `UNSUPPORTED`，不计作通过。

@@ -2,7 +2,26 @@
 
 [项目首页](../README.md) · [正式下载](https://github.com/1-1-2/MicOpen/releases)
 
+## v0.1.2 · 2026-10-29
+
+修复 Windows 退出后遗留本工具所启动 ADB 进程的问题。已有共享 ADB 服务继续复用；本工具新建的服务使用独立端口并纳入 Windows Job Object，正常关闭、失败、取消或强制结束时回收自身进程。不会按进程名误杀其他工具使用的 ADB。
+
+本版本以 [MicOpen CI 40735612451](https://github.com/1-1-2/MicOpen/actions/runs/40735612451) 的新构建和完整验证为依据，业务代码为 `edc3956`。Windows 六项 ADB 生命周期检查、驱动／协议／监听／GUI 检查，以及 Android debug / R8 release 构建与两种模拟器运行均通过；G2 仍为 `UNSUPPORTED`。最新范围见[验证报告](verification/windows-e2e-report.md)，不再依赖迁移前运行作为当前证据。
+
+| 文件 | 内容 |
+|---|---|
+| `MicOpen-Android-v0.1.2.apk` | 本仓库新构建的 R8 release，以原固定分发密钥重签；签名、三 ABI、内容一致性和 16 KiB 对齐检查通过。 |
+| `MicOpen-Windows-x64-v0.1.2.zip` | 含 ADB 清理修复的 Windows 客户端、监听 DLL、驱动管理工具、许可与对应源码。 |
+| `MicOpen-v0.1.2-Android-Windows.zip` | 两端合集，内容与独立下载一致。 |
+| `SHA256SUMS.txt` | 三个公开下载文件的 SHA-256。 |
+
+USB 仍需外置 Google Platform-Tools；Windows 仍需官方 WO Mic 驱动。升级前若已有旧版遗留的共享 ADB，在确认其他工具未使用时手动结束一次，再测试新版；预先存在的共享服务会保留。
+
+发行标签为 `v0.1.2`；Android 组件代码没有业务变化，其内部版本仍为 `0.1.0` / code `1`。保持原分发证书，可覆盖同签名已安装包。监听处理仅作用于本地副本，SpeexDSP AEC 仍为实验功能。蓝牙监听失效后可能仍显示等待连接的已知状态问题保留于历史收尾记录。
+
 ## v0.1.1 · 2026-10-29
+
+> 本节为历史发行记录；其中迁移前 CI 编号不作为当前版本验证依据。
 
 源码、问题反馈、CI 与正式发布统一到 `1-1-2/MicOpen`。默认中文 README，顶部提供完整英文版。
 
