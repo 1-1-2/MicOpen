@@ -20,6 +20,8 @@ android {
     namespace = "com.miclink.open"
     // Android 17 (API 37)：Compose 1.12 / core-ktx 1.19 / lifecycle 2.11 要求
     compileSdk = 37
+    // 与构建组件安装的 platforms;android-37.0 精确对应；不依赖 runner 预装的旧 android-37 别名。
+    compileSdkMinor = 0
 
     defaultConfig {
         applicationId = "com.miclink.open"
