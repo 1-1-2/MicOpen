@@ -1,6 +1,13 @@
 package com.miclink.open.ui.screen
 
 import android.os.SystemClock
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -184,6 +191,25 @@ fun ConnectPage(
                 running = state.isRunning,
                 onStart = onStartClicked,
                 onStopRequest = { vm.requestStopConfirmation() }
+            )
+        }
+
+        SectionCard {
+            val context = LocalContext.current
+            val prefs = remember { context.getSharedPreferences("transport", android.content.Context.MODE_PRIVATE) }
+            var bluetooth by remember { mutableStateOf(prefs.getBoolean("bluetooth", false)) }
+            Text("连接方式", style = MaterialTheme.typography.titleSmall)
+            HintText("Wi-Fi：同一局域网。USB：开启USB调试并授权电脑，电脑端选择USB。")
+            TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }, enabled = !state.isRunning) {
+                Text("手机热点直连 · 打开网络设置")
+            }
+            HintText("电脑连接本机热点后，填写手机热点接口的IP；不固定假设为192.168.43.1。")
+            LabeledSwitchRow(
+                title = "启用蓝牙传输",
+                description = "先在系统设置中配对电脑并开启蓝牙；启动服务时申请附近设备权限。更改后下次启动生效。",
+                checked = bluetooth,
+                enabled = !state.isRunning,
+                onCheckedChange = { bluetooth = it; prefs.edit().putBoolean("bluetooth", it).apply() }
             )
         }
 

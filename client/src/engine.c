@@ -17,6 +17,7 @@
  * 依赖：ws2_32（系统自带）。Opus 静态优先（见 opusdec.c）。
  */
 #include "app.h"
+#include "transport.h"
 #include "monitor.h"
 #include "devio.h"
 #include "opusdec.h"
@@ -36,6 +37,8 @@
 #define DEV_FRAME_BYTES  (DEV_SAMPLES_20MS * 2)  /* 1920 */
 
 static volatile LONG g_run;
+static int g_transport;
+void eng_set_transport(int mode) { if (!g_run) g_transport = mode; }
 static HANDLE        g_thread;
 static SOCKET        g_tcp = INVALID_SOCKET, g_udp = INVALID_SOCKET;
 /* R-38w 对账通道：旁路 UDP（media_port+1）。只在收到探针时回 report，
@@ -296,6 +299,7 @@ static int do_handshake(int rate_idx)
 
     /* 101：payload[0]=4 表示 UDP 头格式 C；其余 5 字节原样复刻官方 6.3 */
     unsigned char hello[6] = { 0x04, 0x06, 0x03, 0x00, 0x00, 0x00 };
+    if (g_transport >= 2) hello[5] = 0x53;
     if (!msg_send(101, hello, 6)) { strcpy(g_st.last_error, "101 发送失败"); return 0; }
     if (!msg_recv(&type, rsp, sizeof(rsp), &len, 6000)) { strcpy(g_st.last_error, "101 无应答"); return 0; }
     if (type != 101 || len < 2) { sprintf(g_st.last_error, "101 应答异常 type=%u len=%d", type, len); return 0; }
@@ -305,6 +309,9 @@ static int do_handshake(int rate_idx)
     if ((rsp[1] & (unsigned char)~1u) != 4) {
         sprintf(g_st.last_error, "对端头格式=%u（预期 4）", rsp[1]);
         return 0;
+    }
+    if (g_transport >= 2 && (len < 3 || !(rsp[2] & 2))) {
+        strcpy(g_st.last_error, "手机端不支持流式音频，请更新 Android 应用"); return 0;
     }
     if (len >= 2 && (rsp[1] & 1)) elog("对端支持回执（cap=1），旁路对账通道可用");
     elog("101 hello 成功：头格式 C（variant=4）");
@@ -476,10 +483,10 @@ static void on_udp_frame(const unsigned char *buf, int n)
 static unsigned __stdcall worker(void *arg)
 {
     WSADATA wsa;
-    SOCKADDR_IN sa, local;
+    SOCKADDR_IN local;
     DWORD last_hb = 0, last_stat = 0;
     uint64_t prev_bytes = 0;
-    unsigned char type, pl[512];
+    unsigned char type, pl[MAX_PKT];
     int len;
     char host[64], *colon;
     int port = 8125;
@@ -547,7 +554,7 @@ static unsigned __stdcall worker(void *arg)
     g_echo_state = 0;
     g_echo_probes = 0;
     g_echo_warned = 0;
-    if (g_st.media_port > 0 && g_st.media_port < 65535) {
+    if (g_transport < 2 && g_st.media_port > 0 && g_st.media_port < 65535) {
         SOCKADDR_IN sa2;
         g_side = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (g_side != INVALID_SOCKET) {
@@ -568,23 +575,9 @@ static unsigned __stdcall worker(void *arg)
 
     /* 2) 再连 TCP（port 已在上面校验过 1..65535，这里的 u_short 转换是恒等映射，
      *    不再是截断兜底） */
-    memset(&sa, 0, sizeof(sa));
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons((u_short)port);
-    if (InetPtonA(AF_INET, host, &sa.sin_addr) != 1) {
-        struct hostent *he = gethostbyname(host);
-        if (!he) { strcpy(g_st.last_error, "地址解析失败"); g_st.state = ST_ERROR; goto out; }
-        memcpy(&sa.sin_addr, he->h_addr_list[0], 4);
-    }
-    g_tcp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (g_tcp == INVALID_SOCKET) { strcpy(g_st.last_error, "TCP socket 失败"); g_st.state = ST_ERROR; goto out; }
-    elog("正在连接 %s:%d …", host, port);
-    if (connect(g_tcp, (SOCKADDR *)&sa, sizeof(sa)) != 0) {
-        sprintf(g_st.last_error, "连接失败 WSA=%d", WSAGetLastError());
-        g_st.state = ST_ERROR;
-        goto out;
-    }
-    { BOOL nb = TRUE; setsockopt(g_tcp, IPPROTO_TCP, TCP_NODELAY, (char *)&nb, sizeof(nb)); }
+    g_tcp = transport_connect(g_transport, host, port, g_st.last_error, sizeof(g_st.last_error));
+    if (g_tcp == INVALID_SOCKET) { g_st.state = ST_ERROR; goto out; }
+    { DWORD timeout = 6000; setsockopt(g_tcp, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)); }
 
     g_st.state = ST_HANDSHAKE;
     if (!do_handshake(g_rate_idx)) { g_st.state = ST_ERROR; goto out; }
@@ -656,6 +649,7 @@ static unsigned __stdcall worker(void *arg)
                     g_st.state = ST_ERROR;
                     break;
                 }
+                if (type == 200 && g_transport >= 2) on_udp_frame(pl, len);
                 if (type == 0 && len >= 5) {      /* 手机端错误串：00 len 01 ascii */
                     char err[128] = { 0 };
                     int cp = len - 5 < 127 ? len - 5 : 127;
@@ -682,6 +676,10 @@ static unsigned __stdcall worker(void *arg)
         }
         if (!g_got_media && !g_fw_hint_shown &&
             (int)(now - g_start_at) > 5000) {
+            if (g_transport >= 2) {
+                g_fw_hint_shown = 1;
+                elog_err("已连接但没有音频：检查手机采集权限、后台运行及USB/蓝牙链路");
+            } else {
             wchar_t exe[MAX_PATH];
             char exeA[MAX_PATH * 3];
             g_fw_hint_shown = 1;
@@ -692,6 +690,7 @@ static unsigned __stdcall worker(void *arg)
                      "本程序的 UDP 入站。可执行下方命令放行（需管理员）。");
             elog("netsh advfirewall firewall add rule name=\"MicLink\" dir=in "
                  "action=allow program=\"%s\" enable=yes", exeA);
+            }
         }
         if (now - last_hb >= 1000) {              /* 105 心跳 1s/次；对端无应答 */
             msg_send(105, NULL, 0);
@@ -716,6 +715,7 @@ out:
         msg_send(104, NULL, 0);                   /* 主动停止推流 */
         closesocket(g_tcp); g_tcp = INVALID_SOCKET;
     }
+    transport_cleanup();
     if (g_udp != INVALID_SOCKET) { closesocket(g_udp); g_udp = INVALID_SOCKET; }
     if (g_side != INVALID_SOCKET) { closesocket(g_side); g_side = INVALID_SOCKET; }
     WSACleanup();
@@ -843,6 +843,7 @@ int eng_start(const char *hostport, int ctrl_port, int rate_idx, int buffer_ms, 
         elog("未检测到 \\\\.\\WOMic：%s（可点“安装驱动”）", devio_last_error());
     }
 
+    transport_prepare();
     g_run = 1;
     g_thread = (HANDLE)_beginthreadex(NULL, 0, worker, (void *)(intptr_t)g_rate_idx, 0, NULL);
     if (!g_thread) { g_run = 0; return 0; }
@@ -853,8 +854,10 @@ void eng_stop(void)
 {
     if (!g_run) return;
     InterlockedExchange(&g_run, 0);
+    transport_cancel();
+    if (g_tcp != INVALID_SOCKET) shutdown(g_tcp, SD_BOTH);
     if (g_thread) {
-        WaitForSingleObject(g_thread, 3000);
+        WaitForSingleObject(g_thread, INFINITE);
         CloseHandle(g_thread);
         g_thread = NULL;
     }

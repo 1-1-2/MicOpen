@@ -35,6 +35,11 @@ runs:
       if ($LASTEXITCODE -ne 0) { throw "Monitor worker test failed" }
       python client/monitor/test_ui.py dist/womic.exe
       if ($LASTEXITCODE -ne 0) { throw "Monitor GUI test failed" }
+  - name: Stream media protocol (fragmentation, legacy refusal, length bound)
+    shell: pwsh
+    run: |
+      python client/tools/test_stream_transport.py dist/womic.exe
+      if ($LASTEXITCODE -ne 0) { throw "Stream transport regression failed" }
   - name: 0. 环境自检（python / 系统信息）
     run: python .github/scripts/ci.py run --seconds 600 -- pwsh -NoProfile -File .github/actions/windows-runtime/steps.ps1 -Stage s2
     shell: pwsh

@@ -123,7 +123,7 @@ class MainActivity : ComponentActivity() {
             // 音量档位 / 静音态即时推送（D-18：运行中可调，见 MicCaptureService.updateVolume）
             vm.pushVolume(service)
             // 传输方式实读（D-16 诚实性：真实网络类型，不写死「Wi-Fi」）
-            vm.onTransportChanged(transportLabel(this@MainActivity))
+            vm.onTransportChanged(service?.activeTransport() ?: transportLabel(this@MainActivity))
             service?.let { vm.onListeningAddress(it.listeningAddress()) }
             mainHandler.postDelayed(this, UI_REFRESH_INTERVAL_MS)
         }

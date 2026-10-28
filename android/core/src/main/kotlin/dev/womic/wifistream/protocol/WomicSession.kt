@@ -49,6 +49,8 @@ class WomicSession(private val host: SessionHost) {
         private set
     var sampleRate: Int = SampleRates.TABLE[SampleRates.DEFAULT_INDEX]
         private set
+    var streamMedia: Boolean = false
+        private set
     var mediaPort: Int = -1
         private set
 
@@ -82,7 +84,8 @@ class WomicSession(private val host: SessionHost) {
             return
         }
         udpFormat = UdpFormat.fromVariant(variant)
-        replies.add(buildHelloReply(Status.OK))
+        streamMedia = frame.payload.size == 6 && frame.payload[5] == 0x53.toByte()
+        replies.add(buildHelloReply(Status.OK, cap = if (streamMedia) 2 else HELLO_CAP_RECONCILE))
     }
 
     private fun onConfig(frame: TcpFrame) {

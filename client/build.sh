@@ -97,6 +97,7 @@ echo "==> windres"
 # ---------------------------------------------------------------- 源清单
 APP_SRC=(
     src/main.c
+    src/transport.c
     src/engine.c
     src/monitor_ui.c
     src/devio.c
@@ -114,7 +115,7 @@ APP_SRC=(
     src/drvbridge.c
 )
 APP_LIBS=(
-    -lgdi32 -luser32 -lws2_32 -luxtheme -ldwmapi -lshell32 -lole32 -lwinmm
+    -lgdi32 -luser32 -lws2_32 -lbthprops -luxtheme -ldwmapi -lshell32 -lole32 -lwinmm
     -lsetupapi -lcrypt32 -lnewdev -ladvapi32 -lcomctl32 -luuid
 )
 # 安装器：菜单/参数解析 + 安装逻辑 + 驱动包解压 + 设备句柄探测（L1 判据）。

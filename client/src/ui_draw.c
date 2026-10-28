@@ -972,8 +972,8 @@ void ui_draw_conn_card(HDC dc)
     /* 传输方式标签 + 四段 segmented（D-03：仅 Wi-Fi 已实现，其余可见禁用） */
     {
         RECT lr = { r.left + ui_pad(), r.top + t_tlab, r.right - ui_pad(), r.top + t_tlab + sd(15) };
-        static const wchar_t *lb[4] = { L"Wi-Fi", L"Wi-Fi 直连", L"蓝牙", L"USB" };
-        int en[4] = { 1, 0, 0, 0 };
+        static const wchar_t *lb[4] = { L"Wi-Fi", L"热点直连", L"蓝牙", L"USB" };
+        int en[4] = { !g_ui.running, !g_ui.running, !g_ui.running, !g_ui.running };
         RECT frame = { g_lo.seg_trans[0].left, g_lo.seg_trans[0].top,
                        g_lo.seg_trans[3].right, g_lo.seg_trans[0].bottom };
         ui_text(dc, lr, L"传输方式", ui_font(11, FW_NORMAL, 0), g_th.text_dim,

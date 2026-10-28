@@ -7,6 +7,7 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include "app.h"
+#include "transport.h"
 #include "monitor.h"
 #include "ui_draw.h"
 #include "ui_layout.h"
@@ -91,6 +92,7 @@ static int connect_session(int manual)
         int cp = 8125, pr, media = 0, port_defaulted = 0;
         GetWindowTextW(g_ui.edit_host, host, 64);
         WideCharToMultiByte(CP_UTF8, 0, host, -1, hostA, sizeof(hostA), NULL, NULL);
+        if (!hostA[0] && g_ui.transport == 3) strcpy(hostA, "auto");
         if (!hostA[0]) {
             ui_log_add("请先输入手机地址", 1);
             g_dirty = 1;
@@ -141,6 +143,7 @@ static int connect_session(int manual)
          * 保留既有的「只做协议与统计、不出声」诊断模式，并把话说清楚。 */
         if (g_ui.drv.state != DRV_READY && manual)
             ui_log_add("提示：驱动未就绪，将只做协议与统计，不出声", 0);
+        eng_set_transport(g_ui.transport);
         eng_set_media_port(media);
         g_ui.running = eng_start(hostA, cp, rate_idx_of(g_ui.seg_rate),
                                  buf_ms_of(g_ui.buf_idx), g_ui.gain_db10);
@@ -300,9 +303,24 @@ void ui_on_click(int id, int x, int y)
     default: break;
     }
     /* D-03：传输方式仅 Wi-Fi 已实现，其余段可见但禁用（点了不响应） */
-    if (id == ID_TRANS0 && g_ui.transport != 0) {
-        g_ui.transport = 0;
-        ui_log_add("传输方式已切回 Wi-Fi", 0);
+    if (id >= ID_TRANS0 && id <= ID_TRANS3 && !g_ui.running) {
+        g_ui.transport = id - ID_TRANS0;
+        if (g_ui.transport == 3) SetWindowTextW(g_ui.edit_host,L"");
+        if (g_ui.transport == 2) {
+            TransportDevice devices[32];
+            int count = transport_paired_devices(devices,32), i;
+            HMENU menu = CreatePopupMenu(); POINT point;
+            for(i=0;i<count;i++) AppendMenuW(menu,MF_STRING,i+1,devices[i].name);
+            if(count) {
+                int choice;
+                GetCursorPos(&point);
+                choice=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,point.x,point.y,0,g_ui.hwnd,NULL);
+                if(choice>0 && choice<=count) SetWindowTextA(g_ui.edit_host,devices[choice-1].address);
+            } else ui_log_add("未找到已配对蓝牙设备，请先在系统设置中配对手机",1);
+            DestroyMenu(menu);
+        }
+        static const char *hints[] = {"同一局域网：输入手机IP", "手机开启热点，电脑连入后填写手机热点IP", "先配对并在手机启用蓝牙传输；填写12位蓝牙地址（不含冒号）", "需要PATH中的adb.exe及USB调试授权；地址留空自动选择，或填序列号"};
+        ui_log_add(hints[g_ui.transport], 0);
     }
     if (id >= ID_RATE0 && id <= ID_RATE2 && !g_ui.running) g_ui.seg_rate = id - ID_RATE0;
     if (id >= ID_BUF0 && id <= ID_BUF2 && !g_ui.running) g_ui.buf_idx = id - ID_BUF0;

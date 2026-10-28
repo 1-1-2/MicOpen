@@ -58,6 +58,7 @@ const char *cli_help_text(void)
     "  womic.exe <IP> [port]                 # 位置参数简写（兼容旧用法）\n"
     "\n"
     "选项:\n"
+    "  --transport wifi|hotspot|bluetooth|usb\n"
     "  --host <IP>            手机在局域网里的地址；--connect 时必填\n"
     "  --port <n>             TCP 控制端口，默认 8125\n"
     "  --media-port <n>       UDP 媒体端口，默认由本机随机分配。\n"
@@ -257,6 +258,17 @@ int cli_parse(CliArgs *a, int argc, wchar_t **argv)
         if (!_wcsicmp(s, L"dark")) { a->dark = 1; a->light = 0; a->theme_set = 1; continue; }
         if (!_wcsicmp(s, L"light")) { a->light = 1; a->dark = 0; a->theme_set = 1; continue; }
 
+        if (!_wcsicmp(s, L"transport")) {
+            if (!need_value(argc, argv, i)) return 0;
+            const wchar_t *t = argv[++i];
+            if (!_wcsicmp(t,L"wifi")) a->transport=0;
+            else if (!_wcsicmp(t,L"hotspot")) a->transport=1;
+            else if (!_wcsicmp(t,L"bluetooth")) a->transport=2;
+            else if (!_wcsicmp(t,L"usb")) a->transport=3;
+            else if (!_wcsicmp(t,L"tcp")) a->transport=4;
+            else { g_parse_err="未知传输方式"; return 0; }
+            continue;
+        }
         if (!_wcsicmp(s, L"host")) {
             if (!need_value(argc, argv, i)) return 0;
             a->host_pos = argv[++i]; continue;
@@ -509,7 +521,7 @@ int cli_run(CliArgs *a)
     if (a->status) return do_status(a);
     if (a->install || a->uninstall) return do_driver_op(a);
 
-    if (a->connect && !a->host_pos) {
+    if (a->connect && !a->host_pos && a->transport != 3) {
         cli_ensure_console(1);
         out("--connect 需要 --host <IP>（或位置参数给出地址）\n");
         cli_print_help();
@@ -522,7 +534,9 @@ int cli_run(CliArgs *a)
         EngineStats st;
         int i;
         cli_ensure_console(1);
-        WideCharToMultiByte(CP_UTF8, 0, a->host_pos, -1, host, sizeof(host), NULL, NULL);
+        if (a->host_pos) WideCharToMultiByte(CP_UTF8, 0, a->host_pos, -1, host, sizeof(host), NULL, NULL);
+        else strcpy(host, "auto");
+        eng_set_transport(a->transport);
         if (a->driver_pack) drv_set_external_pack(a->driver_pack);
         drv_detect(&g_ui.drv, 1);
         if (a->media_port > 0) {
@@ -575,6 +589,7 @@ int cli_run(CliArgs *a)
 
 void cli_apply_to_ui(const CliArgs *a)
 {
+    g_ui.transport = a->transport == 4 ? 0 : a->transport;
     if (a->host_pos) SetWindowTextW(g_ui.edit_host, a->host_pos);
     if (a->media_port > 0 && g_ui.edit_media) {
         wchar_t buf[16];

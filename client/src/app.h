@@ -190,6 +190,7 @@ typedef struct {
 } EngineStats;
 
 /* 引擎线程生命周期 */
+void eng_set_transport(int mode);
 int  eng_start(const char *host, int ctrl_port, int rate_idx, int buffer_ms, int gain);
 void eng_stop(void);
 /* 回收「worker 已自行结束」的会话资源（线程句柄 / 设备 / 解码器），
@@ -255,6 +256,7 @@ void singleinst_shutdown(void);
 /* ------------------------------------------------------------- CLI */
 typedef struct {
     const wchar_t *host_pos;  /* --host 的原始（宽字符）值 */
+    int         transport;
     int         port;         /* --port，默认 8125 */
     int         media_port;   /* --media-port，0 = 随机分配（默认） */
     int         rate;         /* --rate 48000/16000/8000 → rate_idx 2/1/0 */

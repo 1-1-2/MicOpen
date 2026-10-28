@@ -237,6 +237,9 @@ class MicCaptureService : Service() {
     private var watchdogThread: Thread? = null
     @Volatile
     private var connection: Socket? = null
+    private var bluetoothTransport: BluetoothTransport? = null
+    @Volatile private var streamConnection: Socket? = null
+    @Volatile private var streamWriter: ((ByteArray) -> Unit)? = null
 
     /** 当前连接的会话状态机（:core 纯逻辑，无 socket）。 */
     @Volatile
@@ -259,7 +262,7 @@ class MicCaptureService : Service() {
     @Volatile
     private var encoder: OpusEncoder? = null
     @Volatile
-    private var udpSender: UdpSender? = null
+    private var udpSender: MediaSender? = null
 
     /**
      * R-38a 对账链路（旁路 UDP，`media_port + 1`）。独立 socket、独立线程：
@@ -435,6 +438,10 @@ class MicCaptureService : Service() {
     fun negotiatedCodec(): Int = session?.codec ?: Codec.OPUS
 
     /** 已发送包数（UI 轮询显示）。 */
+    fun activeTransport(): String? = streamConnection?.let {
+        if (bluetoothTransport?.owns(it) == true) "蓝牙" else "USB / TCP 音频流"
+    }
+
     fun packetsSent(): Long = udpSender?.packetsSent ?: 0L
 
     /** 已发送字节数。 */
@@ -564,6 +571,9 @@ class MicCaptureService : Service() {
             return
         }
         serverSocket = sock
+        if (getSharedPreferences("transport", MODE_PRIVATE).getBoolean("bluetooth", false)) {
+            bluetoothTransport = BluetoothTransport(this, controlPort) { message -> mainHandler.post { listener?.onMessage(message) } }.also { it.start() }
+        }
 
         // 5) accept 循环
         isRunning = true
@@ -578,6 +588,8 @@ class MicCaptureService : Service() {
     /** 停止服务并释放全部资源（可重复调用）。 */
     private fun stopCapture(state: String, reason: String) {
         // 采集链路
+        bluetoothTransport?.close()
+        bluetoothTransport = null
         stopStreaming("服务停止")
 
         // 连接与服务器
@@ -705,10 +717,14 @@ class MicCaptureService : Service() {
                 val frames = decoder.feed(buf, n)
                 for (frame in frames) {
                     sess.onFrame(frame)
+                    if (sess.streamMedia && streamConnection !== client) {
+                        streamConnection = client
+                        streamWriter = { bytes -> synchronized(output) { output.write(bytes); output.flush() } }
+                    }
                     // 先写应答（协议顺序：PC 收到 status 才认为请求完成）
                     val replies = sess.drainReplies()
                     for (r in replies) {
-                        output.write(r)
+                        synchronized(output) { output.write(r); output.flush() }
                     }
                     if (replies.isNotEmpty()) {
                         output.flush()
@@ -720,12 +736,13 @@ class MicCaptureService : Service() {
                     }
                 }
             }
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             closeReason = "连接异常：${e.message}"
         } finally {
             // 看门狗按连接归属收尾：只停自己这条连接的看门狗，绝不碰新会话的
             watchdog?.interrupt()
             // 带上本条连接自己的 socket：清理只允许作用于自己的连接（见 teardownConnection）
+            if (streamConnection === client) { streamConnection = null; streamWriter = null }
             teardownConnection(closeReason, client)
         }
     }
@@ -870,7 +887,11 @@ class MicCaptureService : Service() {
         notifyState(STATE_STARTING, "正在启动推流…")
 
         // 1) UDP：目标 = PC 客户端地址 + CONFIG 协商的媒体端口
-        val sender = UdpSender()
+        val writer = streamWriter
+        val owner = connection
+        val sender: MediaSender = if (writer != null && streamConnection === owner)
+            StreamMediaSender(writer) { try { owner?.close() } catch (_: IOException) {} }
+        else UdpSender()
         if (!sender.open(peer, port)) {
             fail(sender.lastError ?: "UDP 打开失败")
             return
@@ -919,7 +940,7 @@ class MicCaptureService : Service() {
         //     独立 socket / 独立线程，任何失败只记日志，推流照常。
         reconcileLink?.close()
         val reconcilePort = port + RECONCILE_PORT_OFFSET
-        if (reconcilePort in 1..65535) {
+        if (sender is UdpSender && reconcilePort in 1..65535) {
             reconcileLink = ReconcileLink(
                 peerHost = peer,
                 peerPort = reconcilePort,

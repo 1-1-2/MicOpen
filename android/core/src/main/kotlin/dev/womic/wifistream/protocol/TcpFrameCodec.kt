@@ -31,6 +31,7 @@ class FrameDecoder {
         while (b.size - off >= 5) {
             val type = b[off].toInt() and 0xFF
             val length = readU32BE(b, off + 1)
+            require(length in 0..2048) { "Invalid control frame length: $length" }
             if (b.size - off - 5 < length) break // wait for more bytes
             val payload = b.copyOfRange(off + 5, off + 5 + length)
             out.add(TcpFrame(type, payload))

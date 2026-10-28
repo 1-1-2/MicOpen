@@ -22,7 +22,7 @@ import java.net.UnknownHostException
  *     **不让异常冒泡到采集线程**，否则一次网络抖动就会中断整个采集；
  *   - 连续失败达到阈值后由调用方决定是否停止（本类只负责上报 failureStreak）。
  */
-class UdpSender {
+class UdpSender : MediaSender {
 
     companion object {
         private const val TAG = "UdpSender"
@@ -41,25 +41,25 @@ class UdpSender {
 
     /** 最近一次错误信息；null 表示一切正常。 */
     @Volatile
-    var lastError: String? = null
+    override var lastError: String? = null
         private set
 
     /** 连续发送失败次数（成功后清零）。 */
     @Volatile
-    var failureStreak: Int = 0
+    override var failureStreak: Int = 0
         private set
 
     /** 已成功发送的包数。 */
     @Volatile
-    var packetsSent: Long = 0L
+    override var packetsSent: Long = 0L
         private set
 
     /** 已成功发送的字节数（含 32 字节头部）。 */
     @Volatile
-    var bytesSent: Long = 0L
+    override var bytesSent: Long = 0L
         private set
 
-    val isOpen: Boolean
+    override val isOpen: Boolean
         get() = socket != null && targetAddress != null
 
     /**
@@ -70,7 +70,7 @@ class UdpSender {
      * @return true 成功
      */
     @Synchronized
-    fun open(host: String, port: Int): Boolean {
+    override fun open(host: String, port: Int): Boolean {
         close()
         lastError = null
         failureStreak = 0
@@ -126,7 +126,7 @@ class UdpSender {
      * @param length 有效长度（<= data.size）
      * @return true 发送成功
      */
-    fun send(data: ByteArray, length: Int): Boolean {
+    override fun send(data: ByteArray, length: Int): Boolean {
         val sock = socket
         val address = targetAddress
         if (sock == null || address == null) {
@@ -171,7 +171,7 @@ class UdpSender {
 
     /** 关闭 socket，可重复调用。 */
     @Synchronized
-    fun close() {
+    override fun close() {
         val sock = socket
         socket = null
         targetAddress = null
@@ -185,7 +185,7 @@ class UdpSender {
     }
 
     /** 目标地址的可读形式（UI 展示用）。 */
-    fun targetDescription(): String {
+    override fun targetDescription(): String {
         val address = targetAddress
         return if (address == null) "<未连接>" else "${address.hostAddress}:$targetPort"
     }
