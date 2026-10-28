@@ -248,14 +248,33 @@ static int msg_send(unsigned char type, const unsigned char *pl, uint32_t len)
 }
 
 /* 收满 n 字节（带超时） */
+static char g_receive_detail[128];
 static int recv_exact(unsigned char *b, int n, int timeout_ms)
 {
     int got = 0;
     DWORD t0 = GetTickCount();
     while (got < n) {
-        if ((int)(GetTickCount() - t0) > timeout_ms) return 0;
-        int r = recv(g_tcp, (char *)b + got, n - got, 0);
-        if (r <= 0) return 0;
+        fd_set rf;
+        struct timeval tv;
+        int remain = timeout_ms - (int)(GetTickCount() - t0), ready, r;
+        if (remain <= 0) {
+            snprintf(g_receive_detail, sizeof(g_receive_detail), "接收超时（%d/%d B）", got, n);
+            return 0;
+        }
+        FD_ZERO(&rf); FD_SET(g_tcp, &rf);
+        tv.tv_sec = remain / 1000; tv.tv_usec = (remain % 1000) * 1000;
+        ready = select(0, &rf, NULL, NULL, &tv);
+        if (ready <= 0) {
+            if (!ready) snprintf(g_receive_detail, sizeof(g_receive_detail), "接收超时（%d/%d B）", got, n);
+            else snprintf(g_receive_detail, sizeof(g_receive_detail), "等待接收失败 WSA=%d", WSAGetLastError());
+            return 0;
+        }
+        r = recv(g_tcp, (char *)b + got, n - got, 0);
+        if (r <= 0) {
+            if (!r) snprintf(g_receive_detail, sizeof(g_receive_detail), "对端已关闭连接（%d/%d B）", got, n);
+            else snprintf(g_receive_detail, sizeof(g_receive_detail), "接收失败 WSA=%d（%d/%d B）", WSAGetLastError(), got, n);
+            return 0;
+        }
         got += r;
     }
     return 1;
@@ -269,7 +288,7 @@ static int msg_recv(unsigned char *type, unsigned char *pl, int cap, int *len, i
     *type = h[0];
     uint32_t l = ((uint32_t)h[1] << 24) | ((uint32_t)h[2] << 16) |
                  ((uint32_t)h[3] << 8) | h[4];
-    if (l > (uint32_t)cap) return 0;
+    if (l > (uint32_t)cap) { snprintf(g_receive_detail, sizeof(g_receive_detail), "应答长度异常：%u B", (unsigned)l); return 0; }
     *len = (int)l;
     if (l && !recv_exact(pl, (int)l, timeout_ms)) return 0;
     return 1;
@@ -301,7 +320,7 @@ static int do_handshake(int rate_idx)
     unsigned char hello[6] = { 0x04, 0x06, 0x03, 0x00, 0x00, 0x00 };
     if (g_transport >= 2) hello[5] = 0x53;
     if (!msg_send(101, hello, 6)) { strcpy(g_st.last_error, "101 发送失败"); return 0; }
-    if (!msg_recv(&type, rsp, sizeof(rsp), &len, 6000)) { strcpy(g_st.last_error, "101 无应答"); return 0; }
+    if (!msg_recv(&type, rsp, sizeof(rsp), &len, 6000)) { snprintf(g_st.last_error, sizeof(g_st.last_error), "101 握手失败：%s", g_receive_detail); return 0; }
     if (type != 101 || len < 2) { sprintf(g_st.last_error, "101 应答异常 type=%u len=%d", type, len); return 0; }
     if (rsp[0] != 0) { sprintf(g_st.last_error, "对端拒绝 hello，status=%u", rsp[0]); return 0; }
     /* R-38w：bit0 现在兼作"支持回执"标志（官方端恒为 0，不影响兼容）。
@@ -577,7 +596,7 @@ static unsigned __stdcall worker(void *arg)
      *    不再是截断兜底） */
     g_tcp = transport_connect(g_transport, host, port, g_st.last_error, sizeof(g_st.last_error));
     if (g_tcp == INVALID_SOCKET) { g_st.state = ST_ERROR; goto out; }
-    { DWORD timeout = 6000; setsockopt(g_tcp, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)); }
+    if (g_transport == 2) elog("蓝牙 RFCOMM 已连接，开始 101 握手");
 
     g_st.state = ST_HANDSHAKE;
     if (!do_handshake(g_rate_idx)) { g_st.state = ST_ERROR; goto out; }

@@ -40,6 +40,7 @@ def exercise(exe, scenario):
                         assert head[0] == expected
                         if expected == 101:
                             assert payload[-1] == 0x53
+                            if scenario == 'closed': return
                             peer.sendall(frame(101,bytes([0,4,0 if scenario=='legacy' else 2])))
                             if scenario == 'legacy': return
                         else: peer.sendall(frame(expected,b'\0'))
@@ -70,9 +71,11 @@ def exercise(exe, scenario):
         assert 'OK' in text, text
         import re
         assert re.search(r'帧=[1-9]\d*',text), text
-    else: assert p.returncode!=0, (scenario,p.stdout)
+    else:
+        assert p.returncode!=0, (scenario,p.stdout)
+        if scenario == 'closed': assert '对端已关闭连接' in p.stdout.decode('utf-8', errors='replace'), p.stdout
     print('PASS stream transport:',scenario)
 
 
 if __name__=='__main__':
-    for case in ('media','legacy','oversize'): exercise(sys.argv[1],case)
+    for case in ('media','legacy','oversize','closed'): exercise(sys.argv[1],case)

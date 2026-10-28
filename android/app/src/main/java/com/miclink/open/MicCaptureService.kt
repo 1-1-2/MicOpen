@@ -664,6 +664,7 @@ class MicCaptureService : Service() {
             try {
                 val client = sock.accept()
                 if (connectionMode == ConnectionMode.BLUETOOTH && bluetoothTransport?.owns(client) != true) {
+                    android.util.Log.w(TAG, "拒绝非蓝牙转接连接：内部来源端口=${client.port}")
                     client.close()
                     continue
                 }

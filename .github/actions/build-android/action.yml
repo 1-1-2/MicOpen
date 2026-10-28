@@ -13,7 +13,7 @@ runs:
     shell: bash
     working-directory: android
     # CI 不持有分发私钥；release 是非 debuggable 的 R8 构建，使用显式测试签名。
-    run: python3 ../.github/scripts/ci.py run --seconds 1500 -- ./gradlew :app:assembleDebug :app:assembleRelease -PmiclinkTestSigning=true --no-daemon
+    run: python3 ../.github/scripts/ci.py run --seconds 1500 -- ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease -PmiclinkTestSigning=true --no-daemon
   - name: Verify release optimization and signing
     shell: bash
     run: python3 .github/scripts/android-release.py
