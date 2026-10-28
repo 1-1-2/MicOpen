@@ -55,7 +55,8 @@ if [ "$ok" != "1" ]; then
 fi
 
 mkdir -p "$EXTRACT_DIR"
-tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR"
+# 容器中的 root 不一定能映射上游 tar 的 UID；源码构建不需要恢复上游文件属主。
+tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR" --no-same-owner
 SRC="$(find "$EXTRACT_DIR" -mindepth 1 -maxdepth 1 -type d -print -quit)"
 if [ -z "$SRC" ]; then
     echo "::error::opus 压缩包未生成顶层源码目录"

@@ -58,7 +58,7 @@ runs:
       stream_logs: ${{ inputs.stream_logs }}
       public_key: ${{ inputs.public_key }}
       ssh_transport: ${{ inputs.ssh_transport }}
-  - name: UI screenshots (5 screens + control asserts)
+  - name: UI screenshots (6 screens + control asserts)
     run: python .github/scripts/ci.py run --seconds 300 -- bash .github/actions/android-runtime/steps.sh s9
     shell: bash
     if: ${{ inputs.mode == 'verify' }}

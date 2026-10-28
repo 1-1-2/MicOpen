@@ -34,6 +34,7 @@ CI 的 `task` 为 `verify`（默认）或 `build`；`target` 为 `auto`（默认
 |---|---|---|
 | `scenario` | `base` | `base/toolchain/built/installed/verify/dual`，见上表 |
 | `target` | `windows` | `windows/android/linux/both`；`linux` 仅基础与工具场景，`dual` 自动选择两端 |
+| `android_variant` | `release` | installed/verify 场景选择 release 或 debug；不影响同时构建两者 |
 | `artifact_run_id` | `0`（文本） | 0 表示本次构建；指定运行编号可复用符合新清单格式的构建包 |
 | `pause_at` | `ready` | 单端 verify 的 ready 对应测试开始前；还支持下述暂停点 |
 | `session_minutes` | `20` | 环境就绪后的操作时长，整数 1–120 分钟；准备阶段另计 |

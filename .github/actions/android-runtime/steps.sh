@@ -54,7 +54,7 @@ bash ../.github/scripts/install-app.sh
 exit 0
 fi
 
-# android.yml / integration-test / UI screenshots (5 screens + control asserts)
+# android.yml / integration-test / UI screenshots (6 screens + control asserts)
 
 if [ "$stage" = "s9" ]; then
 bash ../.github/scripts/ui-capture.sh "$GITHUB_WORKSPACE/probe-results/ui-screenshots"
