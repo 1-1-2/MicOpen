@@ -109,3 +109,5 @@ python3 android/verify/integration/pc_client.py --hold-seconds 12
 构建参数、依赖版本和驱动包的完整说明见 [`BUILD.md`](BUILD.md)；人工互操作限制见 [`android-interop-checklist.md`](verification/android-interop-checklist.md)。
 
 需要选择构建或交互场景时，按[CI／Lab 使用说明](../.github/workflows/README.md)操作。
+
+上述 debug 安装流程供源码开发调试。CI 同时构建和验证 debug/release；整理版只收录启用 R8 的 release。分发签名、资源裁剪和输出路径见[构建说明](BUILD.md)。界面的“调试音”功能与 APK 构建类型无关。

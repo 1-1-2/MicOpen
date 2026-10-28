@@ -26,8 +26,8 @@ Android 端提供音源、输入设备及系统音效控制；Windows 端提供�
 # 仓库根目录：准备 Android 的 Opus 源码
 bash .github/scripts/fetch-opus.sh
 
-# Android 调试 APK
-(cd android && ./gradlew :app:assembleDebug)
+# Android debug 与 R8 release（分发签名见 docs/BUILD.md）
+(cd android && ./gradlew :app:assembleDebug :app:assembleRelease)
 
 # Linux 上交叉编译 Windows 客户端
 (cd client && ./build.sh)
