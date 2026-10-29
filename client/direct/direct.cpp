@@ -24,6 +24,7 @@ using namespace Windows::Devices::Enumeration;
 using namespace Windows::Devices::WiFiDirect;
 namespace {
 constexpr wchar_t className[] = L"MicLink.WiFiDirect.Selector.v1";
+std::optional<bool> aepFlag(DeviceInformation const& target,wchar_t const* key);
 struct PairPrompt {
     DevicePairingRequestedEventArgs args{nullptr};
     Deferral deferral{nullptr};
@@ -65,6 +66,7 @@ void selectDevice(Picker& p) {
     if (i<0 || i>=(LRESULT)p.drawnIds.size()) return;
     auto selected=std::find_if(p.devices.begin(),p.devices.end(),[&](auto const& d){return d.Id()==p.drawnIds[(size_t)i];});
     if (selected==p.devices.end()) return;
+    if (aepFlag(*selected,L"System.Devices.Aep.IsPresent")==false) return;
     p.choice=*selected; p.done=true;
 }
 void refresh(Picker& p) {
@@ -75,13 +77,16 @@ void refresh(Picker& p) {
     p.drawnIds.clear();
     SendMessageW(p.list, LB_RESETCONTENT, 0, 0);
     for (auto const& d : p.devices) {
+        // The system also enumerates cached paired endpoints. An explicitly
+        // absent endpoint must not masquerade as a newly discovered phone.
+        if (aepFlag(d,L"System.Devices.Aep.IsPresent")==false) continue;
         auto i = p.drawnIds.size(); p.drawnIds.push_back(d.Id());
         SendMessageW(p.list, LB_ADDSTRING, 0, (LPARAM)d.Name().c_str());
         if (d.Id()==selected) SendMessageW(p.list, LB_SETCURSEL, i, 0);
     }
     EnableWindow(p.button,SendMessageW(p.list,LB_GETCURSEL,0,0)!=LB_ERR);
     p.drawn = p.revision;
-    SetWindowTextW(p.status, p.devices.empty()
+    SetWindowTextW(p.status, p.drawnIds.empty()
         ? L"正在搜索附近设备…\n请在手机选择无线直连并启动。"
         : L"点击手机名称完成选择。\n首次连接时还需在手机确认配对。");
 }
@@ -340,7 +345,10 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
     auto paired=aepFlag(target,L"System.Devices.Aep.IsPaired");
     auto canPair=aepFlag(target,L"System.Devices.Aep.CanPair");
     bool isPaired=paired.value_or(target.Pairing().IsPaired());
-    p->pairingState=hstring(L"端点已配对=")+flagName(paired)+L"，可配对="+flagName(canPair);
+    auto present=aepFlag(target,L"System.Devices.Aep.IsPresent");
+    p->pairingState=hstring(L"端点已配对=")+flagName(paired)+L"，可配对="+flagName(canPair)+L"，在场="+flagName(present);
+    if (present==false)
+        throw hresult_error(HRESULT_FROM_WIN32(ERROR_DEVICE_NOT_CONNECTED),L"所选设备已不在场，请重新搜索并选择手机");
     if (!isPaired) {
         p->stage=L"系统配对";
         ULONGLONG started=GetTickCount64();
