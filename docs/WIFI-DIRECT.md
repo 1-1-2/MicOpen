@@ -33,7 +33,9 @@ Android 不再在启动时调用 `createGroup()`，不会接管已有直连组�
 
 ## 验证与参考
 
-新方向的双端构建、原生取消/确认窗口、组归属保护及既有协议回归需要通过 CI。云端检查无法证明无线网卡与两台手机之间的实体发现、配对和音频可用；旧分支的 CI 成功不作为新方向的验证结论。
+应用提交 `0bb8491` 已通过 [CI 40874849894](https://github.com/1-1-2/MicOpen/actions/runs/40874849894)，10 个任务全部成功：包括双端构建、原生等待窗口的取消／关闭／允许／拒绝、Android 组归属保护单元测试、既有协议、Windows 回归及 debug／R8 release 的应用验证。命令行首次启动也支持无 IP 的 `--transport direct --connect`。
+
+云端检查无法证明无线网卡与两台手机之间的实体发现、配对和音频可用；这些仍待作者验收。旧分支的 CI 成功不作为新方向的验证结论。
 
 - [Android P2P 搜索与连接](https://developer.android.com/develop/connectivity/wifi/wifi-direct)
 - [Microsoft Wi-Fi Direct advertiser 示例](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/WiFiDirect/cs/Scenario1_Advertiser.xaml.cs)
