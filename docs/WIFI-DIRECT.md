@@ -51,4 +51,4 @@ Android 不再在启动时调用 `createGroup()`，不会接管已有直连组�
 
 `ERROR=0` 是通用内部错误，不能直接当作定位或权限失败。新版记录提交失败的阶段和耗时；Windows 的日志回调扩展记录广播启动、收到请求、用户允许/拒绝、配对条件满足及 IPv4 端点就绪，不记录 PIN。旧版 Windows 没有这些阶段事件，因此旧日志“没有收到请求行”不能证明系统一定没收到请求。独立 DLL 保持监听 ABI 3，新增可选日志导出，不变更音频协议。
 
-本轮构建与回归状态待 CI 写回，仍不创建 Release。参考：[AOSP STOP_DISCOVERY](https://android.googlesource.com/platform/prebuilts/fullsdk/sources/android-30/+/refs/heads/androidx-core-release/com/android/server/wifi/p2p/WifiP2pServiceImpl.java#1838)、[Android discoverPeers / connect](https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pManager)。
+本轮应用提交 `f24630d` 已通过 [CI 40880223069](https://github.com/1-1-2/MicOpen/actions/runs/40880223069) 的双端构建、Android 单元测试、原生窗口与日志回调测试。采用 build 任务，没有重跑全套模拟器和 Windows 端到端验收，实体连接仍待作者复测，不创建 Release。参考：[AOSP STOP_DISCOVERY](https://android.googlesource.com/platform/prebuilts/fullsdk/sources/android-30/+/refs/heads/androidx-core-release/com/android/server/wifi/p2p/WifiP2pServiceImpl.java#1838)、[Android discoverPeers / connect](https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pManager)。
