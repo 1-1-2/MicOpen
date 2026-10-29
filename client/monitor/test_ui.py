@@ -94,6 +94,7 @@ def capture_window(hwnd, name):
         out = Path('probe-results/screenshots'); out.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(png)
         print(f'PASS screenshot {name}: {width}x{height}')
+        return width, height, rgba
     finally:
         g.DeleteObject(bmp); g.DeleteDC(dc); u.ReleaseDC(None, screen)
 
@@ -165,26 +166,27 @@ try:
     u.GetWindowTextW(field, value, len(value))
     assert value.value == '192.168.7.42', 'theme switch changed input text'
     assert u.SendMessageW(field, 0x00B0, 0, 0) == (7 << 16 | 3), 'theme switch changed selection'
-    # Regression: making the address field read-only changes its parent color
-    # notification to WM_CTLCOLORSTATIC. It must use the same themed surface.
-    g.GetBkColor.argtypes = [w.HDC]; g.GetBkColor.restype = w.DWORD
+    # Compare actual rendered pixels. HDC values cannot be sent between the
+    # Python test process and the client process for a color query.
     for label, x in [('light', client.right - 258), ('dark', client.right - 194)]:
         position = (24 << 16) | x
         u.SendMessageW(main, 0x201, 1, position)
         u.SendMessageW(main, 0x202, 0, position)
-        dc = u.GetDC(field)
-        try:
-            u.SendMessageW(field, 0x00CF, 0, 0)  # EM_SETREADONLY(false)
-            assert u.SendMessageW(main, 0x0133, dc, field)  # WM_CTLCOLOREDIT
-            editable_color = g.GetBkColor(dc)
-            u.SendMessageW(field, 0x00CF, 1, 0)
-            assert u.SendMessageW(main, 0x0138, dc, field)  # WM_CTLCOLORSTATIC
-            assert g.GetBkColor(dc) == editable_color, 'read-only address lost theme'
-            if label == 'dark': assert editable_color != 0xffffff, 'dark field became white'
-        finally:
-            u.ReleaseDC(field, dc)
-        time.sleep(.2)
-        capture_window(main, 'gui-readonly-' + label + '.png')
+        main_rect, field_rect = w.RECT(), w.RECT()
+        assert u.GetWindowRect(main, c.byref(main_rect))
+        assert u.GetWindowRect(field, c.byref(field_rect))
+        backgrounds = []
+        for readonly in [False, True]:
+            u.SendMessageW(field, 0x00CF, int(readonly), 0)  # EM_SETREADONLY
+            time.sleep(.2)
+            width, height, pixels = capture_window(main, f'gui-{"readonly" if readonly else "editable"}-{label}.png')
+            px = field_rect.left - main_rect.left + 2
+            py = field_rect.top - main_rect.top + 2
+            assert 0 <= px < width and 0 <= py < height
+            offset = (py * width + px) * 4
+            backgrounds.append(tuple(pixels[offset:offset+3]))
+        assert backgrounds[0] == backgrounds[1], ('read-only address lost theme', label, backgrounds)
+        if label == 'dark': assert backgrounds[1] != (255,255,255), 'dark field became white'
         u.SendMessageW(field, 0x00CF, 0, 0)
     print('PASS main address read-only/editable surface matches in both themes')
     u.PostMessageW(main, 0x8003, 0, 0)  # WM_APP + 3

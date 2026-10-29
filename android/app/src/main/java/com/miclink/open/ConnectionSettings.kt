@@ -9,20 +9,20 @@ import android.widget.Toast
 /** Settings navigation only; never changes or stops an active transport. */
 object ConnectionSettings {
     fun open(context: Context, mode: ConnectionMode) {
-        // AOSP defines this action, but does not expose it as a public SDK
-        // constant. OEMs may omit it. Resolve by launching, then fall back to
-        // public Wi-Fi settings; never hardcode a vendor component/fragment.
+        // Public Android SDK has no portable Wi-Fi Direct settings/picker
+        // intent. Keep this entry honest and use the public WLAN settings.
+        // Discovery/listen is owned by our transport, not by this settings UI.
         val actions = when (mode) {
-            ConnectionMode.DIRECT -> listOf("android.settings.WIFI_P2P_SETTINGS", Settings.ACTION_WIFI_SETTINGS)
+            ConnectionMode.DIRECT -> listOf(Settings.ACTION_WIFI_SETTINGS)
             ConnectionMode.WIFI -> listOf(Settings.ACTION_WIFI_SETTINGS)
             ConnectionMode.BLUETOOTH -> listOf(Settings.ACTION_BLUETOOTH_SETTINGS)
             ConnectionMode.USB -> listOf(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
         }
-        for ((index, action) in actions.withIndex()) {
+        for (action in actions) {
             try {
                 context.startActivity(Intent(action))
-                if (mode == ConnectionMode.DIRECT && index > 0)
-                    Toast.makeText(context, "此系统未提供直连设置入口，请在 WLAN 设置中查找 WLAN 直连", Toast.LENGTH_LONG).show()
+                if (mode == ConnectionMode.DIRECT)
+                    Toast.makeText(context, "如需系统直连面板，请在 WLAN 设置中查找 WLAN 直连", Toast.LENGTH_LONG).show()
                 return
             } catch (_: ActivityNotFoundException) {
                 // Try the next portable entry point.

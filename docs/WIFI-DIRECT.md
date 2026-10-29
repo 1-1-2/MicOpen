@@ -16,7 +16,7 @@
 | 部分 | 责任 |
 |---|---|
 | Android `WifiDirectTransport` | 检查硬件与 Wi-Fi、创建并拥有 P2P 组、观察状态、交还实际组所有者地址、停止时移除本工具的组。发现已有 P2P 组时拒绝接管。 |
-| Windows `client/direct` | 独立 Windows SDK C++/WinRT DLL；有设备发现/选择窗口，通过系统 PBC 配对，返回实际本地/远端 IPv4，持有会话到传输结束。 |
+| Windows `client/direct` | 独立 Windows SDK C++/WinRT DLL；有设备发现/选择窗口，通过系统 PBC 或 PIN 配对，返回实际本地/远端 IPv4，持有会话到传输结束。 |
 | `transport.c` | 从 EXE 同目录加载版本化 C ABI；TCP 绑定实际 Direct 本地地址，负责取消与关闭适配器。没有猜测固定网关。 |
 | 音频层 | 复用原 TCP 控制 + UDP 媒体、Opus、增益、监听和虚拟驱动。Android 控制监听只绑定 P2P 地址。 |
 
@@ -60,7 +60,7 @@ Wi-Fi Direct 仍有组所有者和组客户端，并非无中心网状网络。�
 - 绑定组接口的实际 IPv4；不能把新系统可能匿名化的组所有者地址直接当成本机监听地址。
 - Windows 把选择设备和建立会话分开：选择「无线直连」立即搜索、点选名称、再点主界面「连接」。设备栏只读并沿用当前主题；搜索窗口支持取消、关闭和超时。
 - 配对参数改为 Invitation，并通过官方 `GetDevicePairingKinds()` 对应 Push Button / Display PIN / Provide PIN。失败信息保留状态码和所请求的方式（`-1` 表示未收到配对方式回调），不自动删除配对或静默反复重试。
-- Android 的「打开对应设置」位于「准备」标题同行，运行期间保持可用。Wi-Fi → WLAN 设置，蓝牙 → 蓝牙设置，USB → 开发者选项。直连优先尝试 AOSP 的直连设置 action；该 action 不是公共 SDK 保证，厂商缺省或限制时退回 WLAN 设置并提示查找直连入口。普通 Wi-Fi 浮动面板不是通用的直连设备列表。
+- Android 的「打开对应设置」位于「准备」标题同行，运行期间保持可用。Wi-Fi → WLAN 设置，蓝牙 → 蓝牙设置，USB → 开发者选项。直连打开公开的 WLAN 设置并提示查找里面的 WLAN 直连入口；没有依赖未经公共 SDK 保证的系统组件名或 settings action。普通 Wi-Fi 浮动面板不是通用的直连设备列表。
 
 这些修改针对代码中已经确认的缺项，状态 19 的具体设备原因仍需新包实测，不能把 CI 成功当成无线配对成功。下一轮优先确认：手机留在 MicLink 内能否被发现；手机是否弹出确认或 PIN；Windows 的状态及配对方式。
 
