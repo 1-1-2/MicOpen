@@ -79,3 +79,13 @@ Wi-Fi Direct 仍有组所有者和组客户端，并非无中心网状网络。�
 补充反馈：手机未出现系统确认，在系统 WLAN 直连页尝试加入电脑也失败，Windows 偶发 `0x80070002`。该 HRESULT 不能独自证明安装目录缺文件；新日志标出「解析所选设备标识／系统配对／建立直连会话」等失败阶段，设备记录为空时明确拒绝并提示重新选择。当前流程仍由手机建组、电脑主动加入，未实现手机系统页主动连接电脑的反向接入。
 
 鼠标位于展开的 Windows 日志面板（含标题和工具栏）时滚轮只滚日志，面板外滚右栏。Android 默认跟随最新日志；手动翻阅后暂停跟随，20 秒未滚动时回到最新，暂停更新期间不自动跳转。
+
+### 第三轮反馈：Huawei JSN-AL00a / Android 10
+
+手机已创建组且始终 `clients=0`；电脑已经选择设备，Windows 的 `ConfirmOnly` 回调已提交，但 `PairAsync` 在 781ms 后返回 19。日志总等待约 11 秒，不能把它全部称为配对等待时间。手机邻居的 `AVAILABLE` 和 WPS 能力只证明发现，不证明收到入组请求。没有证据说明用户漏点了手机确认。
+
+这轮显式请求并使用 `System.Devices.Aep.IsPaired/CanPair` 属性，避免仅依赖默认属性袋判断配对。只有通用 `Failed` 返回时才重新查询：必须得到新查询的明确已配对值，才能尝试打开会话；拒绝、认证失败、取消等结果仍立即结束。打开会话沿用微软 connector 示例的无附加配对参数重载，并要求连接状态为 Connected 且有真实 IPv4 端点。此修改覆盖已知状态不一致情况，尚不能证明是本机状态 19 的根因或已解决实体入组。
+
+手机系统返回空设备名时显示明确的名称缺失提示。手机日志改为标题同行三个短按钮「清除／暂停（继续）／复制」，删除长篇跟随说明；「长按可复制」放在原有卡片底部内边距中，不增加单独一行高度。
+
+参考：[设备端点属性](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/device-information-properties)、[微软示例状态问题 #1399](https://github.com/microsoft/Windows-universal-samples/issues/1399)、[官方 connector](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/WiFiDirect/cs/Scenario2_Connector.xaml.cs)。本轮继续不创建 Release。

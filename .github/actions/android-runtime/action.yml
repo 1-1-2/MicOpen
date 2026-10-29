@@ -62,6 +62,10 @@ runs:
     run: python .github/scripts/ci.py run --seconds 300 -- bash .github/actions/android-runtime/steps.sh s9
     shell: bash
     if: ${{ inputs.mode == 'verify' }}
+  - name: Compact log header at normal and enlarged font sizes
+    run: python .github/scripts/ci.py run --seconds 180 -- python android/verify/log_ui.py
+    shell: bash
+    if: ${{ inputs.mode == 'verify' }}
   - name: Interop closed loop (pc_client.py, retry once)
     run: python .github/scripts/ci.py run --seconds 360 -- bash .github/actions/android-runtime/steps.sh s11
     shell: bash

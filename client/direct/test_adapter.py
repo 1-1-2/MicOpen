@@ -64,6 +64,17 @@ print('PASS Wi-Fi Direct ABI / invalid arguments / cancellation / repeated calls
 
 if len(sys.argv) > 2:
     fixture = ctypes.CDLL(str(pathlib.Path(sys.argv[2]).resolve()))
+    fixture.ml_direct_test_pairing_policy.argtypes = [ctypes.c_int, ctypes.c_int]
+    fixture.ml_direct_test_pairing_policy.restype = ctypes.c_int
+    # Only successful results or Failed+fresh positive AEP state can advance.
+    # In particular, a stale paired flag never overrides refusal/cancellation.
+    for state in range(20):
+        for fresh in (0, 1):
+            expected = state in (0, 3) or (state == 19 and fresh == 1)
+            assert bool(fixture.ml_direct_test_pairing_policy(state, fresh)) == expected, (state, fresh)
+    for unknown in (-1, 20, 100):
+        assert not fixture.ml_direct_test_pairing_policy(unknown, 1)
+    print('PASS Direct fresh paired-state recovery preserves all rejection/cancellation boundaries')
     fixture.ml_direct_test_wait.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_uint, ctypes.c_uint]
     fixture.ml_direct_test_wait.restype = ctypes.c_int
     user32 = ctypes.WinDLL('user32', use_last_error=True)

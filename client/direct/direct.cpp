@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "direct.h"
+#include "pairing_policy.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Devices.Enumeration.h>
@@ -14,6 +15,7 @@
 #include <cstdio>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 using namespace winrt;
@@ -45,6 +47,7 @@ struct Picker {
     std::atomic_bool accepted{false};
     std::atomic_long pairingError{0};
     wchar_t const* stage = L"初始化";
+    hstring pairingState;
     DeviceInformation choice{nullptr};
     ULONGLONG deadline = GetTickCount64() + 120000;
     ~Picker() {
@@ -259,7 +262,8 @@ void advertise(Session& session,Picker& p) {
 }
 DeviceInformation discover(std::shared_ptr<Picker> const& p) {
     p->stage=L"搜索设备";
-    auto watcher=DeviceInformation::CreateWatcher(WiFiDirectDevice::GetDeviceSelector(WiFiDirectDeviceSelectorType::AssociationEndpoint));
+    auto watcher=DeviceInformation::CreateWatcher(WiFiDirectDevice::GetDeviceSelector(WiFiDirectDeviceSelectorType::AssociationEndpoint),
+        {L"System.Devices.Aep.IsPaired",L"System.Devices.Aep.CanPair",L"System.Devices.Aep.IsPresent"});
     auto added=watcher.Added(auto_revoke,[p](auto const&,DeviceInformation const& d) noexcept {
         try {std::lock_guard lock(p->mutex);
             auto i=std::find_if(p->devices.begin(),p->devices.end(),[&](auto const& v){return v.Id()==d.Id();});
@@ -299,6 +303,22 @@ const wchar_t* pairingStatus(DevicePairingResultStatus status) {
     default:return L"系统未完成配对";
     }
 }
+std::optional<bool> aepFlag(DeviceInformation const& target,wchar_t const* key) {
+    if (!target) return std::nullopt;
+    auto props=target.Properties();
+    if (!props.HasKey(key)) return std::nullopt;
+    auto value=props.Lookup(key).try_as<IPropertyValue>();
+    if (!value || value.Type()!=PropertyType::Boolean) return std::nullopt;
+    return value.GetBoolean();
+}
+wchar_t const* flagName(std::optional<bool> flag) {
+    return !flag.has_value()?L"未知":*flag?L"是":L"否";
+}
+DeviceInformation resolveDevice(Picker& p,hstring const& id) {
+    return await(p,DeviceInformation::CreateFromIdAsync(id,
+        {L"System.Devices.Aep.IsPaired",L"System.Devices.Aep.CanPair",L"System.Devices.Aep.IsPresent"},
+        DeviceInformationKind::AssociationEndpoint));
+}
 void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInformation const& target,
                    char* remote,int rcap,char* local,int lcap) {
     p->stage=L"读取设备配对信息";
@@ -317,7 +337,11 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
     auto kinds=DevicePairingKinds::None;
     for (auto method:params.PreferenceOrderedConfigurationMethods())
         kinds=kinds|WiFiDirectConnectionParameters::GetDevicePairingKinds(method);
-    if (!target.Pairing().IsPaired()) {
+    auto paired=aepFlag(target,L"System.Devices.Aep.IsPaired");
+    auto canPair=aepFlag(target,L"System.Devices.Aep.CanPair");
+    bool isPaired=paired.value_or(target.Pairing().IsPaired());
+    p->pairingState=hstring(L"端点已配对=")+flagName(paired)+L"，可配对="+flagName(canPair);
+    if (!isPaired) {
         p->stage=L"系统配对";
         ULONGLONG started=GetTickCount64();
         auto custom=target.Pairing().Custom();
@@ -334,16 +358,35 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
             catch (...) {p->pairingError=E_FAIL;p->aborted=true;}
         });
         auto result=await(*p,custom.PairAsync(kinds,DevicePairingProtectionLevel::Default,params));
+        auto pairElapsed=GetTickCount64()-started;
         pairing.revoke();p->pendingPin.reset();
-        if (result.Status()!=DevicePairingResultStatus::Paired && result.Status()!=DevicePairingResultStatus::AlreadyPaired)
+        bool freshlyPaired=false;
+        if (result.Status()==DevicePairingResultStatus::Failed) {
+            p->stage=L"复核系统配对状态";
+            try {
+                auto fresh=resolveDevice(*p,target.Id());
+                auto freshFlag=aepFlag(fresh,L"System.Devices.Aep.IsPaired");
+                freshlyPaired=freshFlag.value_or(false);
+                p->pairingState=p->pairingState+L"，失败后复核已配对="+flagName(freshFlag);
+            } catch (hresult_canceled const&) {throw;}
+            catch (hresult_error const& error) {
+                p->pairingState=p->pairingState+L"，复核错误="+to_hstring(error.code().value);
+            }
+        }
+        p->stage=L"系统配对";
+        if (!mic_direct_pairing_allows_session(result.Status(),freshlyPaired))
             throw hresult_error(E_FAIL,hstring(pairingStatus(result.Status()))+L"，状态="+to_hstring((int)result.Status())+
                 L"；过程=Invitation，方式="+to_hstring(p->ceremony.load())+
                 L"，确认已提交="+(p->accepted.load()?L"是":L"否")+
-                L"，耗时="+to_hstring(GetTickCount64()-started)+L"ms。尚未进入音频握手；请同时检查两端系统配对提示。");
+                L"，耗时="+to_hstring(pairElapsed)+L"ms。尚未进入音频握手。");
     }
     p->stage=L"建立直连会话";
-    session.device=await(*p,WiFiDirectDevice::FromIdAsync(target.Id(),params));
+    // Pairing settings were applied above. Reuse the resulting profile as in
+    // Microsoft's connector sample, rather than requesting Invitation twice.
+    session.device=await(*p,WiFiDirectDevice::FromIdAsync(target.Id()));
     if (!session.device) throw hresult_error(E_FAIL,L"无法建立无线直连会话");
+    if (session.device.ConnectionStatus()!=WiFiDirectConnectionStatus::Connected)
+        throw hresult_error(E_FAIL,L"配对记录已存在，但无线直连链路尚未建立");
     p->stage=L"读取直连地址";
     for (auto const& pair:session.device.GetConnectionEndpointPairs()) {
         auto r=to_string(pair.RemoteHostName().CanonicalName()),l=to_string(pair.LocalHostName().CanonicalName());
@@ -354,10 +397,11 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
 void report(Picker const& p,char* error,int cap) noexcept {
     try {throw;} catch (hresult_canceled const&) {snprintf(error,cap,"无线直连已取消或超时");}
     catch (hresult_error const& e) {
-        auto text=to_string(e.message()),stage=to_string(p.stage);
+        auto text=to_string(e.message()),stage=to_string(p.stage),state=to_string(p.pairingState);
         char const* hint=e.code()==HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)
             ? "；设备记录或关联可能已失效，请重新搜索并选择手机" : "";
-        snprintf(error,cap,"无线直连[%s]：%s%s (0x%08X)",stage.c_str(),text.c_str(),hint,(unsigned)e.code().value);
+        snprintf(error,cap,"无线直连[%s]：%s%s%s%s (0x%08X)",stage.c_str(),text.c_str(),hint,
+            state.empty()?"":"；",state.c_str(),(unsigned)e.code().value);
     }
     catch (...) {snprintf(error,cap,"无线直连初始化失败，请检查系统及网卡支持");}
 }
@@ -393,7 +437,7 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_connect(volatile LONG* 
         init_apartment(apartment_type::single_threaded);session->apartment=true;
         createPicker(p);advertise(*session,*p);
         p->stage=L"解析所选设备标识";
-        auto target=await(*p,DeviceInformation::CreateFromIdAsync(to_hstring(id),nullptr,DeviceInformationKind::AssociationEndpoint));
+        auto target=resolveDevice(*p,to_hstring(id));
         connectDevice(*session,p,target,remote,rcap,local,lcap);return session.release();
     } catch (...) {report(*p,error,cap);return nullptr;}
 }
@@ -410,6 +454,9 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_open(volatile LONG* can
     } catch (...) {report(*p,error,cap);return nullptr;}
 }
 #ifdef MICLINK_DIRECT_TEST
+extern "C" __declspec(dllexport) int __cdecl ml_direct_test_pairing_policy(int status,int fresh) {
+    return mic_direct_pairing_allows_session(static_cast<DevicePairingResultStatus>(status),fresh!=0);
+}
 // Native window/pump/cancellation fixture; no radio required.
 extern "C" __declspec(dllexport) int __cdecl ml_direct_test_wait(volatile LONG* cancel,unsigned timeout,unsigned mode) {
     auto p=std::make_shared<Picker>();p->cancel=cancel;UiScope ui{p};

@@ -172,7 +172,8 @@ class WifiDirectTransport(
                             if (!delivered) handler.postDelayed({ if (!closed) inspect() }, 300)
                             return@requestGroupInfo
                         }
-                        deviceName = group.owner?.deviceName ?: "本手机"
+                        deviceName = group.owner?.deviceName?.takeIf { it.isNotBlank() }
+                            ?: "本手机（系统未返回名称）"
                         val wasConnected = connectedPeer
                         connectedPeer = group.clientList.isNotEmpty()
                         log("group owner=${info.isGroupOwner} clients=${group.clientList.size}")
@@ -183,7 +184,7 @@ class WifiDirectTransport(
                             ready(address)
                             if (closed) return@requestGroupInfo
                             log("group ready interface=${group.`interface`} clients=${group.clientList.size}")
-                            message("无线直连已就绪：在电脑搜索并选择 ${group.owner?.deviceName ?: "本手机"}，确认配对后连接")
+                            message("无线直连已就绪：在电脑搜索并选择 $deviceName，确认配对后连接")
                             makeVisible()
                         } else if (wasConnected && !connectedPeer) {
                             visibleRequested = false
