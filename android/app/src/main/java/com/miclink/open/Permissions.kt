@@ -36,6 +36,10 @@ object Permissions {
         if (Build.VERSION.SDK_INT >= 31 && ConnectionMode.read(context) == ConnectionMode.BLUETOOTH) {
             required.add(Manifest.permission.BLUETOOTH_CONNECT)
         }
+        if (ConnectionMode.read(context) == ConnectionMode.DIRECT) {
+            required.add(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES
+                else Manifest.permission.ACCESS_FINE_LOCATION)
+        }
         return required.filter {
             ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -58,6 +62,9 @@ object Permissions {
     fun nameOf(permission: String): String = when (permission) {
         Manifest.permission.RECORD_AUDIO -> "麦克风（RECORD_AUDIO）"
         Manifest.permission.POST_NOTIFICATIONS -> "通知（POST_NOTIFICATIONS）"
+        Manifest.permission.NEARBY_WIFI_DEVICES -> "附近的 Wi-Fi 设备"
+        Manifest.permission.ACCESS_FINE_LOCATION -> "定位（无线直连发现设备所需）"
+        Manifest.permission.BLUETOOTH_CONNECT -> "附近的蓝牙设备"
         else -> permission
     }
 }

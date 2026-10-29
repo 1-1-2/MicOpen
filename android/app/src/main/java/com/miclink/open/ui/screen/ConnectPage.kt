@@ -125,7 +125,7 @@ fun ConnectPage(
             HintText(mode.preparation)
             val settingsAction = when (mode) {
                 ConnectionMode.WIFI -> Settings.ACTION_WIFI_SETTINGS
-                ConnectionMode.HOTSPOT -> Settings.ACTION_WIRELESS_SETTINGS
+                ConnectionMode.DIRECT -> Settings.ACTION_WIFI_SETTINGS
                 ConnectionMode.BLUETOOTH -> Settings.ACTION_BLUETOOTH_SETTINGS
                 ConnectionMode.USB -> Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS
             }
@@ -147,7 +147,7 @@ fun ConnectPage(
                     container = badgeContainer
                 )
                 Spacer(Modifier.weight(1f))
-                val address = if (mode.localOnly) "无需填写 IP" else state.listeningAddress.ifBlank {
+                val address = if (!mode.needsAddress) "无需填写 IP" else state.listeningAddress.ifBlank {
                     stringResource(R.string.home_value_unknown)
                 }
                 // 无障碍标签在组合层取（semantics lambda 不是 @Composable 上下文）

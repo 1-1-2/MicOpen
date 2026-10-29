@@ -92,7 +92,7 @@ static int connect_session(int manual)
         int cp = 8125, pr, media = 0, port_defaulted = 0;
         GetWindowTextW(g_ui.edit_host, host, 64);
         WideCharToMultiByte(CP_UTF8, 0, host, -1, hostA, sizeof(hostA), NULL, NULL);
-        if (!hostA[0] && g_ui.transport == 3) strcpy(hostA, "auto");
+        if (g_ui.transport == 1 || (!hostA[0] && g_ui.transport == 3)) strcpy(hostA, "auto");
         if (!hostA[0]) {
             ui_log_add("请先输入手机地址", 1);
             g_dirty = 1;
@@ -305,7 +305,8 @@ void ui_on_click(int id, int x, int y)
     /* Connection adapters may be changed only while idle. */
     if (id >= ID_TRANS0 && id <= ID_TRANS3 && !g_ui.running) {
         g_ui.transport = id - ID_TRANS0;
-        if (g_ui.transport == 3) SetWindowTextW(g_ui.edit_host,L"");
+        if (g_ui.transport == 3 || g_ui.transport == 1) SetWindowTextW(g_ui.edit_host,L"");
+        EnableWindow(g_ui.edit_host, g_ui.transport != 1);
         if (g_ui.transport == 2) {
             TransportDevice devices[32];
             int count = transport_paired_devices(devices,32), i;
@@ -319,7 +320,7 @@ void ui_on_click(int id, int x, int y)
             } else ui_log_add("未找到已配对蓝牙设备，请先在系统设置中配对手机",1);
             DestroyMenu(menu);
         }
-        static const char *hints[] = {"同一局域网：输入手机IP", "手机开启热点，电脑连入后填写手机热点IP", "先配对并在手机启用蓝牙传输；填写12位蓝牙地址（不含冒号）", "需要PATH中的adb.exe及USB调试授权；地址留空自动选择，或填序列号"};
+        static const char *hints[] = {"同一路由器或电脑加入手机热点：填写手机IP", "手机选择无线直连并启动；点击连接搜索手机，按系统提示确认配对，无需填写IP", "先配对并在手机启用蓝牙传输；填写12位蓝牙地址（不含冒号）", "需要PATH中的adb.exe及USB调试授权；地址留空自动选择，或填序列号"};
         ui_log_add(hints[g_ui.transport], 0);
     }
     if (id >= ID_RATE0 && id <= ID_RATE2 && !g_ui.running) g_ui.seg_rate = id - ID_RATE0;
@@ -732,7 +733,8 @@ static void on_forwarded(const wchar_t *cmdline)
             g_ui.transport = a.transport == 4 ? 0 : a.transport;
             _snwprintf(port, 16, L"%d", a.port); port[15] = 0;
             SetWindowTextW(g_ui.edit_port, port);
-            if (a.transport == 3 && !a.host_pos) SetWindowTextW(g_ui.edit_host, L"");
+            if ((a.transport == 3 && !a.host_pos) || a.transport == 1) SetWindowTextW(g_ui.edit_host, L"");
+            EnableWindow(g_ui.edit_host, a.transport != 1);
         }
         if (a.host_pos) SetWindowTextW(g_ui.edit_host, a.host_pos);
         if (a.media_port > 0 && g_ui.edit_media) {

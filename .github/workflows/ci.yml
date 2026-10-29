@@ -128,10 +128,19 @@ jobs:
         path: _public/report/
         retention-days: 7
         if-no-files-found: error
+  build-direct:
+    needs: [plan, checks]
+    if: needs.plan.outputs.windows == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+    - *id001
+    - uses: ./.github/actions/build-direct
   build-windows:
     needs:
     - plan
     - checks
+    - build-direct
     if: needs.plan.outputs.windows == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -180,6 +189,7 @@ jobs:
     - verify-android
     - build-windows
     - verify-windows
+    - build-direct
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

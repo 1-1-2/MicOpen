@@ -106,8 +106,16 @@ jobs:
     steps:
     - *id001
     - uses: ./.github/actions/build-android
-  build-windows:
+  build-direct:
     needs: plan
+    if: needs.plan.outputs.windows == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+    - *id001
+    - uses: ./.github/actions/build-direct
+  build-windows:
+    needs: [plan, build-direct]
     if: needs.plan.outputs.windows == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35

@@ -3,6 +3,10 @@ description: Linux 交叉构建；只上传无内嵌第三方驱动的应用和�
 runs:
   using: composite
   steps:
+  - uses: actions/download-artifact@v8
+    with:
+      name: build-direct-${{ github.run_id }}-${{ github.run_attempt }}
+      path: client/build
   - name: Build Windows (bounded toolchain and Opus)
     shell: bash
     run: bash "$GITHUB_ACTION_PATH/build.sh"

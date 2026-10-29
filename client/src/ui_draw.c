@@ -972,7 +972,7 @@ void ui_draw_conn_card(HDC dc)
     /* Four connection adapters; selection is locked during a session. */
     {
         RECT lr = { r.left + ui_pad(), r.top + t_tlab, r.right - ui_pad(), r.top + t_tlab + sd(15) };
-        static const wchar_t *lb[4] = { L"Wi-Fi", L"热点直连", L"蓝牙", L"USB" };
+        static const wchar_t *lb[4] = { L"Wi-Fi", L"无线直连", L"蓝牙", L"USB" };
         int en[4] = { !g_ui.running, !g_ui.running, !g_ui.running, !g_ui.running };
         RECT frame = { g_lo.seg_trans[0].left, g_lo.seg_trans[0].top,
                        g_lo.seg_trans[3].right, g_lo.seg_trans[0].bottom };
@@ -982,7 +982,7 @@ void ui_draw_conn_card(HDC dc)
     }
 
     /* 手机 IP / 控制端口 / 媒体端口（C-06，可编辑） */
-    draw_input(dc, g_lo.ed_host, g_ui.transport == 2 ? L"蓝牙地址（12位）" : g_ui.transport == 3 ? L"设备序列号（留空自动）" : L"手机 IP");
+    draw_input(dc, g_lo.ed_host, g_ui.transport == 1 ? L"点击连接搜索手机，无需 IP" : g_ui.transport == 2 ? L"蓝牙地址（12位）" : g_ui.transport == 3 ? L"设备序列号（留空自动）" : L"手机 IP（路由器 / 手机热点）");
     draw_input(dc, g_lo.ed_port, L"控制端口");
     draw_input(dc, g_lo.ed_media, L"媒体端口（留空 = 随机）");
 

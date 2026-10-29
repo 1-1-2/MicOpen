@@ -1,5 +1,6 @@
 /* Connection adapters only; no audio, protocol or driver dependencies. */
 #include "transport.h"
+#include "../direct/direct.h"
 #include <ws2tcpip.h>
 #include <ws2bth.h>
 #include <windows.h>
@@ -9,6 +10,37 @@
 #include <stdlib.h>
 
 static volatile LONG cancelled;
+static HMODULE direct_module;
+static void *direct_session;
+static MicDirectClose direct_close;
+
+/* Load from our executable directory only. The optional adapter cannot affect
+ * the existing Wi-Fi / Bluetooth / USB paths when absent or unsupported. */
+static int direct_open(char *remote, char *local, char *error, int cap)
+{
+    wchar_t path[MAX_PATH], *slash;
+    MicDirectOpen open;
+    unsigned (__cdecl *abi)(void);
+    if (!direct_module) {
+        DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
+        if (!n || n >= MAX_PATH) return 0;
+        slash = wcsrchr(path, L'\\');
+        if (!slash || slash - path + 23 >= MAX_PATH) return 0;
+        wcscpy(slash + 1, L"miclink-direct.dll");
+        direct_module = LoadLibraryExW(path, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+    }
+    if (!direct_module) {
+        snprintf(error,cap,"缺少无线直连模块：请将 miclink-direct.dll 与客户端放在同一目录"); return 0;
+    }
+    abi = (unsigned (__cdecl *)(void))GetProcAddress(direct_module,"ml_direct_abi");
+    open = (MicDirectOpen)GetProcAddress(direct_module,"ml_direct_open");
+    direct_close = (MicDirectClose)GetProcAddress(direct_module,"ml_direct_close");
+    if (!abi || abi()!=1 || !open || !direct_close) {
+        snprintf(error,cap,"无线直连模块版本不匹配，请更新完整客户端"); return 0;
+    }
+    direct_session = open(&cancelled, remote, 16, local, 16, error, cap);
+    return direct_session != NULL;
+}
 void transport_cancel(void) { InterlockedExchange(&cancelled, 1); }
 void transport_prepare(void) { InterlockedExchange(&cancelled, 0); }
 static int bounded_connect(SOCKET sock, SOCKADDR *addr, int len)
@@ -157,6 +189,7 @@ static int adb_run(const char *args, char *out, int cap)
 }
 void transport_cleanup(void)
 {
+    if (direct_session && direct_close) { direct_close(direct_session); direct_session = NULL; }
     if (usb_port && adb_listening(adb_server_port)) {
         char args[256], ignored[512];
         snprintf(args, sizeof(args), "-s %s forward --remove tcp:%d", usb_serial, usb_port);
@@ -191,6 +224,11 @@ SOCKET transport_connect(int mode, const char *endpoint, int port, char *error, 
         if (sock != INVALID_SOCKET && bounded_connect(sock, (SOCKADDR*)&addr, sizeof(addr)) == 0) return sock;
     } else {
         SOCKADDR_IN addr;
+        char direct_remote[16], direct_local[16] = {0};
+        if (mode == 1) {
+            if (!direct_open(direct_remote, direct_local, error, cap)) return INVALID_SOCKET;
+            endpoint = direct_remote;
+        }
         if (mode == 3) {
             char args[256], result[1024], serial[128]; int i; char *end;
             if (!adb_prepare()) goto adb_error;
@@ -217,6 +255,15 @@ SOCKET transport_connect(int mode, const char *endpoint, int port, char *error, 
             memcpy(&addr.sin_addr,he->h_addr_list[0],4);
         }
         sock=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+        if (sock!=INVALID_SOCKET && mode==1) {
+            SOCKADDR_IN source;
+            memset(&source,0,sizeof(source)); source.sin_family=AF_INET;
+            InetPtonA(AF_INET,direct_local,&source.sin_addr);
+            if (bind(sock,(SOCKADDR*)&source,sizeof(source))) {
+                snprintf(error,cap,"无法绑定无线直连接口 WSA=%d",WSAGetLastError());
+                closesocket(sock); return INVALID_SOCKET;
+            }
+        }
         if(sock!=INVALID_SOCKET && bounded_connect(sock,(SOCKADDR*)&addr,sizeof(addr))==0) {
             BOOL yes=TRUE; setsockopt(sock,IPPROTO_TCP,TCP_NODELAY,(char*)&yes,sizeof(yes)); return sock;
         }

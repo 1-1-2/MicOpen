@@ -238,6 +238,7 @@ class MicCaptureService : Service() {
     @Volatile
     private var connection: Socket? = null
     private var bluetoothTransport: BluetoothTransport? = null
+    private var directTransport: WifiDirectTransport? = null
     private var connectionMode = ConnectionMode.WIFI
     @Volatile private var streamConnection: Socket? = null
     @Volatile private var streamWriter: ((ByteArray) -> Unit)? = null
@@ -565,6 +566,16 @@ class MicCaptureService : Service() {
 
         // 4) TCP 控制服务器（手机 = server，等 PC 客户端连入）
         connectionMode = ConnectionMode.read(this)
+        if (connectionMode == ConnectionMode.DIRECT) {
+            isRunning = true
+            val adapter = WifiDirectTransport(this,
+                ready = { address -> openServer(address) },
+                message = { text -> postMessage(text); updateNotification(text) },
+                failed = { text -> fail(text) })
+            directTransport = adapter
+            adapter.start()
+            return
+        }
         if (connectionMode == ConnectionMode.BLUETOOTH) {
             val enabled = try {
                 getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter?.isEnabled == true
@@ -574,7 +585,14 @@ class MicCaptureService : Service() {
                 return
             }
         }
+        openServer(null)
+    }
+
+    /** Direct binds only to the actual group-owner address, never a guessed gateway. */
+    private fun openServer(directAddress: InetAddress?) {
         val sock = try {
+            if (directAddress != null) ServerSocket(controlPort, 1, directAddress)
+            else
             if (connectionMode.localOnly) ServerSocket(controlPort, 1, java.net.InetAddress.getByName("127.0.0.1"))
             else ServerSocket(controlPort)
         } catch (e: IOException) {
@@ -600,6 +618,8 @@ class MicCaptureService : Service() {
     /** 停止服务并释放全部资源（可重复调用）。 */
     private fun stopCapture(state: String, reason: String) {
         // 采集链路
+        directTransport?.close()
+        directTransport = null
         bluetoothTransport?.close()
         bluetoothTransport = null
         stopStreaming("服务停止")

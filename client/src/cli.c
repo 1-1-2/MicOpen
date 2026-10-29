@@ -58,7 +58,9 @@ const char *cli_help_text(void)
     "  womic.exe <IP> [port]                 # 位置参数简写（兼容旧用法）\n"
     "\n"
     "选项:\n"
-    "  --transport wifi|hotspot|bluetooth|usb\n"
+    "  --transport wifi|direct|bluetooth|usb\n"
+    "      wifi: 同一路由器或手机热点；hotspot 是 wifi 的兼容别名\n"
+    "      direct: 真正 Wi-Fi Direct，打开设备选择窗口，无需 --host\n"
     "  --host <IP>            手机在局域网里的地址；--connect 时必填\n"
     "  --port <n>             TCP 控制端口，默认 8125\n"
     "  --media-port <n>       UDP 媒体端口，默认由本机随机分配。\n"
@@ -262,7 +264,8 @@ int cli_parse(CliArgs *a, int argc, wchar_t **argv)
             if (!need_value(argc, argv, i)) return 0;
             const wchar_t *t = argv[++i];
             if (!_wcsicmp(t,L"wifi")) a->transport=0;
-            else if (!_wcsicmp(t,L"hotspot")) a->transport=1;
+            else if (!_wcsicmp(t,L"hotspot")) a->transport=0;
+            else if (!_wcsicmp(t,L"direct")) a->transport=1;
             else if (!_wcsicmp(t,L"bluetooth")) a->transport=2;
             else if (!_wcsicmp(t,L"usb")) a->transport=3;
             else if (!_wcsicmp(t,L"tcp")) a->transport=4;
@@ -521,7 +524,7 @@ int cli_run(CliArgs *a)
     if (a->status) return do_status(a);
     if (a->install || a->uninstall) return do_driver_op(a);
 
-    if (a->connect && !a->host_pos && a->transport != 3) {
+    if (a->connect && !a->host_pos && a->transport != 3 && a->transport != 1) {
         cli_ensure_console(1);
         out("--connect 需要 --host <IP>（或位置参数给出地址）\n");
         cli_print_help();

@@ -52,7 +52,7 @@ def stage(kind):
         # 强制空包的构建门禁，与接收端现场获取的官方夹具完全分离。
         if (ROOT/'client/res/drvpkg.bin').read_bytes()!=b'MICLDRV1'+struct.pack('<II',1,0):raise ValueError('public installer must use --empty')
         files=[ROOT/'client/build/womic.exe',ROOT/'client/build/womic-drvinst.exe']
-        files += [ROOT/'client/build'/name for name in ['miclink-ringout.dll','miclink-speex.dll','test_monitor_dsp.exe','test_monitor_host.exe','test_adb_lifecycle.exe','test_adb_fixture.exe','RingOut-GPL-3.0.txt','SpeexDSP-COPYING.txt','monitor-source.tar.gz','speexdsp-1.2.1.tar.gz']]
+        files += [ROOT/'client/build'/name for name in ['miclink-direct.dll','miclink-ringout.dll','miclink-speex.dll','test_monitor_dsp.exe','test_monitor_host.exe','test_adb_lifecycle.exe','test_adb_fixture.exe','RingOut-GPL-3.0.txt','SpeexDSP-COPYING.txt','monitor-source.tar.gz','speexdsp-1.2.1.tar.gz']]
         license_files=[ROOT/'client/monitor/README.md',ROOT/'client/monitor/TEST-LICENSE.md']
         files += license_files
         for p in files:
