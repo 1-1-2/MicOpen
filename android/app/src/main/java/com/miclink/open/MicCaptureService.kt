@@ -240,6 +240,7 @@ class MicCaptureService : Service() {
     private var bluetoothTransport: BluetoothTransport? = null
     private var directTransport: WifiDirectTransport? = null
     private var directHint = ""
+    fun directDiscoverable(): Boolean = directTransport?.isDiscoverable == true && !isConnected()
     private var connectionMode = ConnectionMode.WIFI
     @Volatile private var streamConnection: Socket? = null
     @Volatile private var streamWriter: ((ByteArray) -> Unit)? = null

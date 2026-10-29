@@ -47,6 +47,7 @@ data class MainUiState(
     val state: String = MicCaptureService.STATE_IDLE,
     val detail: String = "",
     val listeningAddress: String = "",
+    val directDiscoverable: Boolean = false,
     /** 本回推流会话开始时刻（SystemClock.elapsedRealtime；0 = 无会话，时长显示「—」）。 */
     val sessionStartElapsedMs: Long = 0L,
     /** 网络传输方式（ConnectivityManager 实读；空 = 未知，UI 显示「—」）。 */
@@ -403,18 +404,20 @@ class MainViewModel : ViewModel() {
         if (svc == null) {
             // 服务断开（停止/崩溃）：清会话时长与协商采样率，不显示上一会话的残留值
             if (uiState.sessionStartElapsedMs != 0L || uiState.negotiatedSampleRate != 0 ||
-                uiState.reconcileStatus != ReconcileStatus.IDLE
+                uiState.reconcileStatus != ReconcileStatus.IDLE || uiState.directDiscoverable
             ) {
                 uiState = uiState.copy(
                     sessionStartElapsedMs = 0L,
                     negotiatedSampleRate = 0,
                     reconcileStatus = ReconcileStatus.IDLE,
-                    reconcileLossPermille = null
+                    reconcileLossPermille = null,
+                    directDiscoverable = false
                 )
             }
             return
         }
         uiState = uiState.copy(
+            directDiscoverable = svc.directDiscoverable(),
             packets = svc.packetsSent(),
             bytes = svc.bytesSent(),
             failures = svc.sendFailures(),

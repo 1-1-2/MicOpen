@@ -13,32 +13,71 @@ static volatile LONG cancelled;
 static HMODULE direct_module;
 static void *direct_session;
 static MicDirectClose direct_close;
+static unsigned direct_abi;
 
-/* Load from our executable directory only. The optional adapter cannot affect
- * the existing Wi-Fi / Bluetooth / USB paths when absent or unsupported. */
-static int direct_open(char *remote, char *local, char *error, int cap)
+static INIT_ONCE direct_once = INIT_ONCE_STATIC_INIT;
+static MicDirectDevice direct_selected;
+static HWND direct_owner;
+static MicDirectTheme direct_theme;
+/* Load once from the executable directory, including concurrent picker/engine
+ * callers. Failure stays local to Direct and never affects other transports. */
+static BOOL CALLBACK load_direct(PINIT_ONCE once, PVOID arg, PVOID *context)
 {
     wchar_t path[MAX_PATH], *slash;
-    MicDirectOpen open;
-    unsigned (__cdecl *abi)(void);
-    if (!direct_module) {
-        DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
-        if (!n || n >= MAX_PATH) return 0;
-        slash = wcsrchr(path, L'\\');
-        if (!slash || slash - path + 23 >= MAX_PATH) return 0;
-        wcscpy(slash + 1, L"miclink-direct.dll");
-        direct_module = LoadLibraryExW(path, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+    DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
+    (void)once; (void)arg; (void)context;
+    if (!n || n >= MAX_PATH) return TRUE;
+    slash = wcsrchr(path, L'\\');
+    if (!slash || slash - path + 23 >= MAX_PATH) return TRUE;
+    wcscpy(slash + 1, L"miclink-direct.dll");
+    direct_module = LoadLibraryExW(path, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (direct_module) {
+        unsigned (__cdecl *abi)(void)=(unsigned (__cdecl *)(void))GetProcAddress(direct_module,"ml_direct_abi");
+        direct_abi=abi?abi():0;
+        direct_close=(MicDirectClose)GetProcAddress(direct_module,"ml_direct_close");
     }
+    return TRUE;
+}
+static int direct_available(char *error, int cap)
+{
+    InitOnceExecuteOnce(&direct_once, load_direct, NULL, NULL);
     if (!direct_module) {
         snprintf(error,cap,"缺少无线直连模块：请将 miclink-direct.dll 与客户端放在同一目录"); return 0;
     }
-    abi = (unsigned (__cdecl *)(void))GetProcAddress(direct_module,"ml_direct_abi");
-    open = (MicDirectOpen)GetProcAddress(direct_module,"ml_direct_open");
-    direct_close = (MicDirectClose)GetProcAddress(direct_module,"ml_direct_close");
-    if (!abi || abi()!=1 || !open || !direct_close) {
+    if (direct_abi!=MIC_DIRECT_ABI || !direct_close) {
         snprintf(error,cap,"无线直连模块版本不匹配，请更新完整客户端"); return 0;
     }
-    direct_session = open(&cancelled, remote, 16, local, 16, error, cap);
+    return 1;
+}
+int transport_pick_direct(volatile LONG *cancel, HWND owner, int x, int y,
+    const MicDirectTheme *theme, MicDirectDevice *device, char *error, int cap)
+{
+    MicDirectPick pick;
+    if (!direct_available(error,cap)) return 0;
+    pick = (MicDirectPick)GetProcAddress(direct_module,"ml_direct_pick");
+    if (!pick) { snprintf(error,cap,"无线直连模块缺少设备选择接口"); return 0; }
+    return pick(cancel,owner,x,y,theme,device,error,cap);
+}
+void transport_select_direct(const MicDirectDevice *device, HWND owner, const MicDirectTheme *theme)
+{
+    memset(&direct_selected,0,sizeof(direct_selected));
+    if (device) direct_selected=*device;
+    direct_owner=owner;
+    if (theme) direct_theme=*theme;
+}
+static int direct_open(char *remote, char *local, char *error, int cap)
+{
+    if (!direct_available(error,cap)) return 0;
+    if (direct_selected.id[0]) {
+        MicDirectConnect open = (MicDirectConnect)GetProcAddress(direct_module,"ml_direct_connect");
+        if (!open) { snprintf(error,cap,"无线直连模块缺少连接接口"); return 0; }
+        direct_session = open(&cancelled,direct_selected.id,direct_owner,&direct_theme,remote,16,local,16,error,cap);
+    } else {
+        /* CLI has no prior UI selection; retain its one-shot discovery flow. */
+        MicDirectOpen open = (MicDirectOpen)GetProcAddress(direct_module,"ml_direct_open");
+        if (!open) return 0;
+        direct_session = open(&cancelled,remote,16,local,16,error,cap);
+    }
     return direct_session != NULL;
 }
 void transport_cancel(void) { InterlockedExchange(&cancelled, 1); }

@@ -29,6 +29,68 @@
 Ui g_ui;
 static int g_dirty;              /* 有交互产生、需要重绘 */
 static CliArgs g_args;
+/* The selector owns no audio session. Its cancel token is separate from the
+ * engine token so switching modes cannot cancel a later connection. */
+typedef struct {
+    HANDLE thread;
+    volatile LONG cancel;
+    HWND owner;
+    POINT point;
+    MicDirectTheme theme;
+    MicDirectDevice device;
+    char error[512];
+    int result, discard;
+} DirectSelection;
+static DirectSelection *g_direct_picker;
+static MicDirectDevice g_direct_choice;
+static wchar_t g_hosts[4][64] = { L"192.168.1.100", L"", L"", L"" };
+static MicDirectTheme direct_ui_theme(void)
+{
+    MicDirectTheme t = {g_th.card,g_th.sunken,g_th.text,g_th.text_dim,g_th.accent,g_ui.dark};
+    return t;
+}
+static DWORD WINAPI pick_direct_worker(void *arg)
+{
+    DirectSelection *work=(DirectSelection *)arg;
+    work->result=transport_pick_direct(&work->cancel,work->owner,work->point.x,work->point.y,
+                                      &work->theme,&work->device,work->error,sizeof(work->error));
+    /* Results are consumed only after thread completion by the main timer. */
+    return 0;
+}
+static void cancel_direct_picker(void)
+{
+    if (g_direct_picker) {
+        g_direct_picker->discard=1;
+        InterlockedExchange(&g_direct_picker->cancel,1);
+    }
+}
+static void start_direct_picker(void)
+{
+    DirectSelection *work;
+    if (g_direct_picker || g_ui.running) return;
+    work=(DirectSelection *)calloc(1,sizeof(*work));
+    if (!work) return;
+    work->owner=g_ui.hwnd;GetCursorPos(&work->point);work->theme=direct_ui_theme();
+    work->thread=CreateThread(NULL,0,pick_direct_worker,work,0,NULL);
+    if (!work->thread) {free(work);ui_log_add("无法启动无线直连搜索",1);return;}
+    g_direct_picker=work;
+    ui_log_add("正在搜索附近的直连设备，点击手机名称完成选择",0);
+}
+static void reap_direct_picker(void)
+{
+    DirectSelection *work=g_direct_picker;
+    if (!work || WaitForSingleObject(work->thread,0)!=WAIT_OBJECT_0) return;
+    if (!work->discard && g_ui.transport==1 && !g_ui.running) {
+        if (work->result) {
+            g_direct_choice=work->device;
+            SetWindowTextW(g_ui.edit_host,g_direct_choice.name);
+            ui_log_add("已选择直连手机，点击连接；再次点击无线直连可重新选择",0);
+        } else if (work->error[0]) ui_log_add(work->error,1);
+        g_dirty=1;
+    }
+    CloseHandle(work->thread);free(work);g_direct_picker=NULL;
+}
+
 
 /* ---------------------------------------------------------------- 日志 */
 static void eng_log_cb(const char *line, int kind)
@@ -86,6 +148,12 @@ static int read_edit_text(HWND h, wchar_t *buf, int cap)
 static int connect_session(int manual)
 {
     if (g_ui.running) return 0;
+    if (g_ui.transport==1 && !g_args.connect && !g_direct_choice.id[0]) {
+        start_direct_picker();
+        ui_log_add("请先在搜索列表中选择手机，再点击连接",0);
+        return 0;
+    }
+    cancel_direct_picker();
     {
         wchar_t host[64] = { 0 }, port[32] = { 0 }, mp[32] = { 0 };
         char hostA[96];
@@ -143,6 +211,10 @@ static int connect_session(int manual)
          * 保留既有的「只做协议与统计、不出声」诊断模式，并把话说清楚。 */
         if (g_ui.drv.state != DRV_READY && manual)
             ui_log_add("提示：驱动未就绪，将只做协议与统计，不出声", 0);
+        if (g_ui.transport==1) {
+            MicDirectTheme theme=direct_ui_theme();
+            transport_select_direct(g_direct_choice.id[0]?&g_direct_choice:NULL,g_ui.hwnd,&theme);
+        }
         eng_set_transport(g_ui.transport);
         eng_set_media_port(media);
         g_ui.running = eng_start(hostA, cp, rate_idx_of(g_ui.seg_rate),
@@ -304,9 +376,15 @@ void ui_on_click(int id, int x, int y)
     }
     /* Connection adapters may be changed only while idle. */
     if (id >= ID_TRANS0 && id <= ID_TRANS3 && !g_ui.running) {
+        if (g_ui.transport != id - ID_TRANS0) cancel_direct_picker();
+        if (g_ui.transport != 1) GetWindowTextW(g_ui.edit_host,g_hosts[g_ui.transport],64);
         g_ui.transport = id - ID_TRANS0;
-        if (g_ui.transport == 3 || g_ui.transport == 1) SetWindowTextW(g_ui.edit_host,L"");
-        EnableWindow(g_ui.edit_host, g_ui.transport != 1);
+        SetWindowTextW(g_ui.edit_host,g_ui.transport==1?g_direct_choice.name:g_hosts[g_ui.transport]);
+        SendMessageW(g_ui.edit_host,EM_SETREADONLY,g_ui.transport==1,0);
+        if (g_ui.transport == 1) {
+            reap_direct_picker();
+            start_direct_picker();
+        }
         if (g_ui.transport == 2) {
             TransportDevice devices[32];
             int count = transport_paired_devices(devices,32), i;
@@ -320,7 +398,7 @@ void ui_on_click(int id, int x, int y)
             } else ui_log_add("未找到已配对蓝牙设备，请先在系统设置中配对手机",1);
             DestroyMenu(menu);
         }
-        static const char *hints[] = {"同一路由器或电脑加入手机热点：填写手机IP", "手机选择无线直连并启动；点击连接搜索手机，按系统提示确认配对，无需填写IP", "先配对并在手机启用蓝牙传输；填写12位蓝牙地址（不含冒号）", "需要PATH中的adb.exe及USB调试授权；地址留空自动选择，或填序列号"};
+        static const char *hints[] = {"同一路由器或电脑加入手机热点：填写手机IP", "手机选择无线直连并启动；选择手机后点击连接，再次点击无线直连可重新搜索，无需IP", "先配对并在手机启用蓝牙传输；填写12位蓝牙地址（不含冒号）", "需要PATH中的adb.exe及USB调试授权；地址留空自动选择，或填序列号"};
         ui_log_add(hints[g_ui.transport], 0);
     }
     if (id >= ID_RATE0 && id <= ID_RATE2 && !g_ui.running) g_ui.seg_rate = id - ID_RATE0;
@@ -451,6 +529,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_TIMER: {
         EngineStats st;
+        reap_direct_picker();
         int was = g_ui.running;
         DWORD now = GetTickCount();
         eng_snapshot(&st);
@@ -662,6 +741,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(hwnd, NULL, FALSE);
         return 0;
 
+    case WM_CTLCOLORSTATIC: /* read-only / disabled EDIT uses STATIC coloring */
     case WM_CTLCOLOREDIT: {
         HDC dc = (HDC)wp;
         SetTextColor(dc, g_th.text);
@@ -713,6 +793,9 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         g_ui.rc_armed = 0;                    /* R-27：关窗口不重连 */
         g_ui.autorec = 0;
         KillTimer(hwnd, 1);
+        cancel_direct_picker();
+        if (g_direct_picker && WaitForSingleObject(g_direct_picker->thread,5000)==WAIT_OBJECT_0)
+            reap_direct_picker();
         eng_stop();
         monitor_shutdown();
         devio_close();
@@ -739,7 +822,7 @@ static void on_forwarded(const wchar_t *cmdline)
             _snwprintf(port, 16, L"%d", a.port); port[15] = 0;
             SetWindowTextW(g_ui.edit_port, port);
             if ((a.transport == 3 && !a.host_pos) || a.transport == 1) SetWindowTextW(g_ui.edit_host, L"");
-            EnableWindow(g_ui.edit_host, a.transport != 1);
+            SendMessageW(g_ui.edit_host,EM_SETREADONLY,a.transport==1,0);
         }
         if (a.host_pos) SetWindowTextW(g_ui.edit_host, a.host_pos);
         if (a.media_port > 0 && g_ui.edit_media) {

@@ -15,7 +15,7 @@ dll.ml_direct_open.restype = ctypes.c_void_p
 dll.ml_direct_open.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_void_p,
     ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
 dll.ml_direct_close.argtypes = [ctypes.c_void_p]
-assert dll.ml_direct_abi() == 1
+assert dll.ml_direct_abi() == 2
 dll.ml_direct_close(None)
 assert not dll.ml_direct_open(None, None, 0, None, 0, None, 0)
 
@@ -29,6 +29,27 @@ def cancelled_open():
     remote.value = b'unchanged'
     assert not dll.ml_direct_open(ctypes.byref(cancel), remote, 1, local, 16, error, 512)
     assert remote.value == b'unchanged'
+
+# Discovery and connection are separate ABI operations. Both must reject bad
+# inputs and pre-cancellation without opening a window or touching a radio.
+class Device(ctypes.Structure):
+    _fields_ = [('id', ctypes.c_char * 2048), ('name', ctypes.c_wchar * 248)]
+dll.ml_direct_pick.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_void_p,
+    ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(Device), ctypes.c_void_p, ctypes.c_int]
+dll.ml_direct_pick.restype = ctypes.c_int
+dll.ml_direct_connect.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_char_p,
+    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int,
+    ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+dll.ml_direct_connect.restype = ctypes.c_void_p
+cancel = ctypes.c_long(1)
+device = Device()
+remote, local, error = (ctypes.create_string_buffer(n) for n in [16, 16, 512])
+assert not dll.ml_direct_pick(None, None, 0, 0, None, None, None, 0)
+assert not dll.ml_direct_pick(ctypes.byref(cancel), None, 0, 0, None, ctypes.byref(device), error, 512)
+assert not device.id and '取消' in error.value.decode('utf-8')
+assert not dll.ml_direct_connect(ctypes.byref(cancel), b'fake-peer', None, None, remote, 16, local, 16, error, 512)
+assert not remote.value and not local.value and '取消' in error.value.decode('utf-8')
+assert not dll.ml_direct_connect(ctypes.byref(cancel), b'', None, None, remote, 16, local, 16, error, 512)
 
 errors = []
 def run():

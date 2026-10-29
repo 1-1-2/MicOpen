@@ -1,12 +1,11 @@
 package com.miclink.open.ui.screen
 
 import android.os.SystemClock
+import com.miclink.open.ConnectionSettings
 import com.miclink.open.ConnectionMode
 import androidx.compose.material3.RadioButton
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
-import android.content.Intent
-import android.provider.Settings
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +22,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
@@ -30,7 +30,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -121,21 +123,23 @@ fun ConnectPage(
                     }
                 }
             }
-            Text("准备：${mode.title}", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("准备：${mode.title}", style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = { ConnectionSettings.open(context, mode) }) {
+                    Text("打开对应设置")
+                }
+            }
             HintText(mode.preparation)
             if (mode == ConnectionMode.DIRECT && state.isRunning && state.detail.isNotBlank()) {
-                HintText(state.detail)
+                if (state.directDiscoverable) DirectWaitingHint(state.detail)
+                else HintText(state.detail)
             }
-            val settingsAction = when (mode) {
-                ConnectionMode.WIFI -> Settings.ACTION_WIFI_SETTINGS
-                ConnectionMode.DIRECT -> Settings.ACTION_WIFI_SETTINGS
-                ConnectionMode.BLUETOOTH -> Settings.ACTION_BLUETOOTH_SETTINGS
-                ConnectionMode.USB -> Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS
-            }
-            TextButton(onClick = {
-                try { context.startActivity(Intent(settingsAction)) }
-                catch (_: android.content.ActivityNotFoundException) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
-            }, enabled = !state.isRunning) { Text("打开系统设置") }
             HintText(if (state.isRunning) "当前使用${mode.title}。更换方式请先停止。"
                 else "2. 准备完成后点击下方“启动”，等待 Windows 连接。")
         }
@@ -615,5 +619,27 @@ private fun ConnectPagePreview() {
             scrollState = ScrollState(0),
             onStartClicked = {}
         )
+    }
+}
+
+/** Animate only after the transport receives an actual listen/discovery ACK. */
+@Composable
+private fun DirectWaitingHint(text: String) {
+    var step by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(450)
+            step = (step + 1) % 4
+        }
+    }
+    val tokens = LocalMicLinkTokens.current
+    Row(verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = text }) {
+        Text("●", color = tokens.accent, fontSize = 10.sp)
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = tokens.text2,
+            modifier = Modifier.weight(1f))
+        Text("·".repeat(step + 1).padEnd(4), fontFamily = FontFamily.Monospace,
+            color = tokens.text2)
     }
 }
