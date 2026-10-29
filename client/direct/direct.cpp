@@ -283,10 +283,17 @@ std::optional<bool> aepFlag(DeviceInformation const& target,wchar_t const* key) 
 wchar_t const* flagName(std::optional<bool> flag) {
     return !flag.has_value()?L"未知":*flag?L"是":L"否";
 }
-DeviceInformation resolveDevice(Picker& p,hstring const& id) {
-    return await(p,DeviceInformation::CreateFromIdAsync(id,
-        {L"System.Devices.Aep.IsPaired",L"System.Devices.Aep.CanPair",L"System.Devices.Aep.IsPresent"},
-        DeviceInformationKind::AssociationEndpoint));
+DeviceInformation resolveDevice(Picker& p,DeviceInformation const& target) {
+    // The inbound request supplies both an identity and its namespace (Kind).
+    // Do not reinterpret a DeviceInterface ID as an AssociationEndpoint ID.
+    if (target.Kind()==DeviceInformationKind::Unknown)
+        return await(p,DeviceInformation::CreateFromIdAsync(target.Id(),
+            {L"System.Devices.Aep.IsPaired",L"System.Devices.Aep.CanPair",L"System.Devices.Aep.IsPresent"}));
+    return await(p,DeviceInformation::CreateFromIdAsync(target.Id(),
+        {L"System.Devices.Aep.IsPaired",L"System.Devices.Aep.CanPair",L"System.Devices.Aep.IsPresent"},target.Kind()));
+}
+const wchar_t* procedureName(WiFiDirectPairingProcedure procedure) {
+    return procedure==WiFiDirectPairingProcedure::GroupOwnerNegotiation?L"GroupOwnerNegotiation":L"Invitation";
 }
 void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInformation const& target,
                    char* remote,int rcap,char* local,int lcap) {
@@ -297,9 +304,10 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
     SetWindowTextW(p->status,L"正在配对与连接… 请查看手机上的确认提示。");
     WiFiDirectConnectionParameters params;
     params.GroupOwnerIntent(15);
-    // Windows already owns the advertised group; handle the chosen phone
-    // using the official advertiser pairing flow, without legacy SoftAP.
-    params.PreferredPairingProcedure(WiFiDirectPairingProcedure::Invitation);
+    // Android initiates with PBC. Let the initiating peer choose the method
+    // through GO negotiation, rather than forcing an Invitation in response.
+    // Keep Windows' GO preference; this changes no audio client/server roles.
+    params.PreferredPairingProcedure(WiFiDirectPairingProcedure::GroupOwnerNegotiation);
     params.PreferenceOrderedConfigurationMethods().Append(WiFiDirectConfigurationMethod::PushButton);
     params.PreferenceOrderedConfigurationMethods().Append(WiFiDirectConfigurationMethod::DisplayPin);
     params.PreferenceOrderedConfigurationMethods().Append(WiFiDirectConfigurationMethod::ProvidePin);
@@ -310,10 +318,11 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
     auto canPair=aepFlag(target,L"System.Devices.Aep.CanPair");
     bool isPaired=paired.value_or(target.Pairing().IsPaired());
     auto present=aepFlag(target,L"System.Devices.Aep.IsPresent");
-    p->pairingState=hstring(L"端点已配对=")+flagName(paired)+L"，可配对="+flagName(canPair)+L"，在场="+flagName(present);
+    p->pairingState=hstring(L"记录类型=")+to_hstring((int)target.Kind())+L"，端点已配对="+flagName(paired)+L"，可配对="+flagName(canPair)+L"，在场="+flagName(present);
     if (!isPaired) {
         p->stage=L"系统配对";
         ULONGLONG started=GetTickCount64();
+        emitStage("无线直连：系统配对开始，过程=GroupOwnerNegotiation；请按两端实际提示确认");
         auto custom=target.Pairing().Custom();
         auto pairing=custom.PairingRequested(auto_revoke,[p](auto const&,DevicePairingRequestedEventArgs const& e) noexcept {
             try {
@@ -334,26 +343,27 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
         if (result.Status()==DevicePairingResultStatus::Failed) {
             p->stage=L"复核系统配对状态";
             try {
-                auto fresh=resolveDevice(*p,target.Id());
+                auto fresh=resolveDevice(*p,target);
                 auto freshFlag=aepFlag(fresh,L"System.Devices.Aep.IsPaired");
                 freshlyPaired=freshFlag.value_or(false);
                 p->pairingState=p->pairingState+L"，失败后复核已配对="+flagName(freshFlag);
             } catch (hresult_canceled const&) {throw;}
             catch (hresult_error const& error) {
-                p->pairingState=p->pairingState+L"，复核错误="+to_hstring(error.code().value);
+                wchar_t code[12]{};swprintf_s(code,L"0x%08X",(unsigned)error.code().value);
+                p->pairingState=p->pairingState+L"，设备记录复核错误="+code;
             }
         }
         p->stage=L"系统配对";
         if (!mic_direct_pairing_allows_session(result.Status(),freshlyPaired))
             throw hresult_error(E_FAIL,hstring(pairingStatus(result.Status()))+L"，状态="+to_hstring((int)result.Status())+
-                L"；过程=Invitation，方式="+to_hstring(p->ceremony.load())+
+                L"；过程="+procedureName(params.PreferredPairingProcedure())+L"，方式="+to_hstring(p->ceremony.load())+
                 L"，确认已提交="+(p->accepted.load()?L"是":L"否")+
                 L"，耗时="+to_hstring(pairElapsed)+L"ms。尚未进入音频握手。");
     }
     emitStage("无线直连：系统配对条件已满足，正在建立会话");
     p->stage=L"建立直连会话";
     // Pairing settings were applied above. Reuse the resulting profile as in
-    // Microsoft's connector sample, rather than requesting Invitation twice.
+    // Microsoft's sample, without starting a second pairing operation.
     session.device=await(*p,WiFiDirectDevice::FromIdAsync(target.Id()));
     if (!session.device) throw hresult_error(E_FAIL,L"无法建立无线直连会话");
     p->stage=L"读取直连地址";

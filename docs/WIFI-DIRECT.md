@@ -52,3 +52,15 @@ Android 不再在启动时调用 `createGroup()`，不会接管已有直连组�
 `ERROR=0` 是通用内部错误，不能直接当作定位或权限失败。新版记录提交失败的阶段和耗时；Windows 的日志回调扩展记录广播启动、收到请求、用户允许/拒绝、配对条件满足及 IPv4 端点就绪，不记录 PIN。旧版 Windows 没有这些阶段事件，因此旧日志“没有收到请求行”不能证明系统一定没收到请求。独立 DLL 保持监听 ABI 3，新增可选日志导出，不变更音频协议。
 
 本轮应用提交 `f24630d` 已通过 [CI 40880223069](https://github.com/1-1-2/MicOpen/actions/runs/40880223069) 的双端构建、Android 单元测试、原生窗口与日志回调测试。采用 build 任务，没有重跑全套模拟器和 Windows 端到端验收，实体连接仍待作者复测，不创建 Release。参考：[AOSP STOP_DISCOVERY](https://android.googlesource.com/platform/prebuilts/fullsdk/sources/android-30/+/refs/heads/androidx-core-release/com/android/server/wifi/p2p/WifiP2pServiceImpl.java#1838)、[Android discoverPeers / connect](https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pManager)。
+
+## 21:39 两次系统配对失败与搜索提示调整
+
+HUAWEI JSN-AL00a / Android 10 的两轮记录已确认：手机 connect 被系统接受，Windows 的入站请求事件触发，用户在电脑允许。此前连接前停止搜索造成的提交问题已经跨过；现在 Windows 的 PairAsync 分别约 30093 / 30078 ms 返回通用 Failed(19)，未到 FromIdAsync、IPv4 和音频握手。这个状态并非 API 明确返回的 AuthenticationTimeout，不能仅凭耗时断言唯一底层原因。
+
+本轮兼容性调整：Windows 从强制 Invitation 改为 GroupOwnerNegotiation，与手机主动 PBC 连接及[微软示例默认选项](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/WiFiDirect/shared/ConnectionSettingsPanel.xaml)一致；Windows 的 GO 意向仍为 15，音频角色不变，不自动尝试第二种配对方式，也不绕过系统配对失败。Invitation 并非普遍错误，但不再在这条手机主动发起的实验路径中强制指定它。
+
+失败后的设备信息复核改为沿用请求提供的 Kind，不再把所有 ID 固定当作 AssociationEndpoint；Unknown 使用系统默认重载。日志记录 Kind，并将复核错误显示为十六进制。此前 -2147024894 是 0x80070002，发生在配对失败后的设备记录查询；不能据此认定缺少应用或驱动文件，也不能保证它一定是 Kind 不匹配，失败后记录消失同样可能导致查询失败。
+
+手机搜索动画移到“选择电脑”卡片标题下面，显示“正在搜索电脑，请在下面选择电脑”；正在连接时停止显示搜索动画，改为实际连接进度。准备区不重复展示这段动态状态。
+
+本轮 CI 状态待写回；实体配对仍待作者验证，不创建 Release。参见 [PairingProcedure 的两个过程](https://learn.microsoft.com/en-us/uwp/api/windows.devices.wifidirect.wifidirectpairingprocedure)与 [DeviceInformation 的 ID / Kind](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/device-information-properties)。
