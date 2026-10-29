@@ -5,7 +5,7 @@ Source, issues, CI and releases: [1-1-2/MicOpen](https://github.com/1-1-2/MicOpe
 ## Design and references
 
 - **Wi-Fi (LAN or phone hotspot):** the phone listens for control connections; media uses the existing UDP format. Windows either joins the same router or the phone's SoftAP and enters the actual phone address. Old Android `HOTSPOT` preferences and the Windows `--transport hotspot` alias map to Wi-Fi.
-- **Wi-Fi Direct (development, physical acceptance pending):** Android creates its own P2P group through `WifiP2pManager`. Windows discovers association endpoints, lets the user select a phone, pairs through the public WinRT API, and gets both endpoint addresses from `GetConnectionEndpointPairs`. Legacy advertisement is disabled; no ordinary phone/Windows hotspot is started. See [Direct design, build and acceptance](WIFI-DIRECT.md).
+- **Wi-Fi Direct (development, physical acceptance pending):** Windows advertises an autonomous P2P group and listens for requests. Android discovers peers and connects to the selected PC. Windows confirms the requesting phone and gets the endpoint addresses from `GetConnectionEndpointPairs`. Legacy advertisement is disabled; no ordinary phone/Windows hotspot is started. See [Direct design, build and acceptance](WIFI-DIRECT.md).
 - **USB:** ADB forwards a private local TCP port to the installed app. No server binary is pushed. Selection and forwarding cleanup follow the lifecycle documented by [scrcpy](https://github.com/Genymobile/scrcpy/blob/master/doc/develop.md).
 - **Bluetooth:** secure paired RFCOMM, following the [Android API](https://developer.android.com/develop/connectivity/bluetooth/connect-bluetooth-devices) and [Microsoft Winsock example](https://github.com/microsoft/Windows-classic-samples/blob/main/Samples/Win7Samples/netds/winsock/bluetooth/bthcxn.cpp). Pairing stays in system settings; Windows enumerates paired devices without a new radio inquiry.
 
@@ -32,7 +32,7 @@ Choose a method on Android **before** tapping Start. Leave the phone waiting, th
 | Method | Windows CLI / preparation |
 |---|---|
 | Wi-Fi | `womic.exe --transport wifi --host <phone-ip> --connect` |
-| Wi-Fi Direct | Start Direct on Android, then `womic.exe --transport direct --connect`. Select the phone in the discovery window and confirm pairing on the phone; no `--host` needed. |
+| Wi-Fi Direct | Run `womic.exe --transport direct --connect` to wait. Start Direct on Android, select the PC there, then approve the phone on Windows; no `--host` needed. |
 | USB | `womic.exe --transport usb --connect`; optionally `--host <usb-serial>`. Empty / auto selects exactly one USB device. Enable USB debugging and authorize this PC. |
 | Bluetooth | Pair in system settings, enable Bluetooth and nearby-device permission on Android, then select the paired phone in Windows. CLI accepts a 12-digit hexadecimal address without separators. |
 

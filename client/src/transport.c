@@ -16,7 +16,6 @@ static MicDirectClose direct_close;
 static unsigned direct_abi;
 
 static INIT_ONCE direct_once = INIT_ONCE_STATIC_INIT;
-static MicDirectDevice direct_selected;
 static HWND direct_owner;
 static MicDirectTheme direct_theme;
 /* Load once from the executable directory, including concurrent picker/engine
@@ -49,35 +48,17 @@ static int direct_available(char *error, int cap)
     }
     return 1;
 }
-int transport_pick_direct(volatile LONG *cancel, HWND owner, int x, int y,
-    const MicDirectTheme *theme, MicDirectDevice *device, char *error, int cap)
+void transport_configure_direct(HWND owner, const MicDirectTheme *theme)
 {
-    MicDirectPick pick;
-    if (!direct_available(error,cap)) return 0;
-    pick = (MicDirectPick)GetProcAddress(direct_module,"ml_direct_pick");
-    if (!pick) { snprintf(error,cap,"无线直连模块缺少设备选择接口"); return 0; }
-    return pick(cancel,owner,x,y,theme,device,error,cap);
-}
-void transport_select_direct(const MicDirectDevice *device, HWND owner, const MicDirectTheme *theme)
-{
-    memset(&direct_selected,0,sizeof(direct_selected));
-    if (device) direct_selected=*device;
     direct_owner=owner;
     if (theme) direct_theme=*theme;
 }
 static int direct_open(char *remote, char *local, char *error, int cap)
 {
     if (!direct_available(error,cap)) return 0;
-    if (direct_selected.id[0]) {
-        MicDirectConnect open = (MicDirectConnect)GetProcAddress(direct_module,"ml_direct_connect");
-        if (!open) { snprintf(error,cap,"无线直连模块缺少连接接口"); return 0; }
-        direct_session = open(&cancelled,direct_selected.id,direct_owner,&direct_theme,remote,16,local,16,error,cap);
-    } else {
-        /* CLI has no prior UI selection; retain its one-shot discovery flow. */
-        MicDirectOpen open = (MicDirectOpen)GetProcAddress(direct_module,"ml_direct_open");
-        if (!open) return 0;
-        direct_session = open(&cancelled,remote,16,local,16,error,cap);
-    }
+    MicDirectListen listen = (MicDirectListen)GetProcAddress(direct_module,"ml_direct_listen");
+    if (!listen) {snprintf(error,cap,"无线直连模块缺少等待接口");return 0;}
+    direct_session = listen(&cancelled,direct_owner,&direct_theme,remote,16,local,16,error,cap);
     return direct_session != NULL;
 }
 void transport_cancel(void) { InterlockedExchange(&cancelled, 1); }
@@ -293,18 +274,30 @@ SOCKET transport_connect(int mode, const char *endpoint, int port, char *error, 
             if(!he) { snprintf(error,cap,"地址解析失败"); return INVALID_SOCKET; }
             memcpy(&addr.sin_addr,he->h_addr_list[0],4);
         }
-        sock=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
-        if (sock!=INVALID_SOCKET && mode==1) {
-            SOCKADDR_IN source;
-            memset(&source,0,sizeof(source)); source.sin_family=AF_INET;
-            InetPtonA(AF_INET,direct_local,&source.sin_addr);
-            if (bind(sock,(SOCKADDR*)&source,sizeof(source))) {
-                snprintf(error,cap,"无法绑定无线直连接口 WSA=%d",WSAGetLastError());
-                closesocket(sock); return INVALID_SOCKET;
-            }
-        }
-        if(sock!=INVALID_SOCKET && bounded_connect(sock,(SOCKADDR*)&addr,sizeof(addr))==0) {
-            BOOL yes=TRUE; setsockopt(sock,IPPROTO_TCP,TCP_NODELAY,(char*)&yes,sizeof(yes)); return sock;
+        {
+            DWORD started=GetTickCount();int last_error=0;
+            do {
+                sock=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+                if (sock!=INVALID_SOCKET && mode==1) {
+                    SOCKADDR_IN source;
+                    memset(&source,0,sizeof(source));source.sin_family=AF_INET;
+                    InetPtonA(AF_INET,direct_local,&source.sin_addr);
+                    if (bind(sock,(SOCKADDR*)&source,sizeof(source))) {
+                        snprintf(error,cap,"无法绑定无线直连接口 WSA=%d",WSAGetLastError());
+                        closesocket(sock);return INVALID_SOCKET;
+                    }
+                }
+                if (sock!=INVALID_SOCKET && bounded_connect(sock,(SOCKADDR*)&addr,sizeof(addr))==0) {
+                    BOOL yes=TRUE;setsockopt(sock,IPPROTO_TCP,TCP_NODELAY,(char*)&yes,sizeof(yes));return sock;
+                }
+                last_error=WSAGetLastError();
+                if (sock!=INVALID_SOCKET) closesocket(sock);
+                sock=INVALID_SOCKET;
+                if (mode!=1 || cancelled || last_error!=WSAECONNREFUSED || GetTickCount()-started>=5000) break;
+                /* L2 can be ready before Android has bound its control server. */
+                Sleep(100);
+            } while (!cancelled);
+            WSASetLastError(last_error);
         }
     }
     snprintf(error,cap,"连接失败 WSA=%d",WSAGetLastError());

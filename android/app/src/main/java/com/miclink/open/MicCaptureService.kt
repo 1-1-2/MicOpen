@@ -240,7 +240,11 @@ class MicCaptureService : Service() {
     private var bluetoothTransport: BluetoothTransport? = null
     private var directTransport: WifiDirectTransport? = null
     private var directHint = ""
-    fun directDiscoverable(): Boolean = directTransport?.isDiscoverable == true && !isConnected()
+    fun directSearching(): Boolean = directTransport?.isDiscovering == true && !isConnected()
+    fun directPeers(): List<DirectPeer> = directTransport?.peers.orEmpty()
+    fun directConnecting(): Boolean = directTransport?.isConnecting == true
+    fun connectDirectPeer(id: String) { directTransport?.connect(id) }
+    fun refreshDirectPeers() { directTransport?.discover() }
     private var connectionMode = ConnectionMode.WIFI
     @Volatile private var streamConnection: Socket? = null
     @Volatile private var streamWriter: ((ByteArray) -> Unit)? = null
@@ -388,7 +392,6 @@ class MicCaptureService : Service() {
     fun currentState(): String = when {
         isStreaming -> STATE_STREAMING
         isConnected() -> STATE_CONNECTED
-        isRunning && connectionMode == ConnectionMode.DIRECT && serverSocket == null -> STATE_STARTING
         isRunning -> STATE_LISTENING
         lastError != null -> STATE_ERROR
         else -> STATE_IDLE
@@ -599,7 +602,7 @@ class MicCaptureService : Service() {
         openServer(null)
     }
 
-    /** Direct binds only to the actual group-owner address, never a guessed gateway. */
+    /** Direct binds to the phone's group interface, even while Windows is GO. */
     private fun openServer(directAddress: InetAddress?) {
         val sock = try {
             if (directAddress != null) ServerSocket(controlPort, 1, directAddress)

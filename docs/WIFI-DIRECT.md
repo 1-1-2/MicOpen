@@ -1,91 +1,42 @@
-# 无线直连 · 开发与实机验收
+# 无线直连 · 手机选择电脑
 
-当前分支新增真正的 **Wi-Fi Direct**，尚未完成用户实机验收，**不发布新 Release**。既有 Wi-Fi、手机热点、蓝牙、USB 的实机反馈不作为新 Direct 的验收证据。
+实验分支 `feat/wifi-direct-phone-initiated`，**尚待实体设备验收，不创建 Release**。旧的手机建组实现保留在 `feat/wifi-direct`，本分支不同时提供两个方向的切换开关。
 
-## 怎么连接
+## 操作
 
-1. 手机保持 Wi-Fi 开启，选择「无线直连」，点击「启动」，授予附近 Wi-Fi 设备权限。Android 12L 及更早版本需要定位权限；系统提示时检查定位开关。不用开启手机热点。
-2. 等手机显示直连已就绪及本机设备名。Windows 选择「无线直连」后，自动在鼠标旁打开搜索窗口；点击手机名称完成选择，回到主界面点击「连接」。
-3. 首次连接按两端系统提示确认配对。控制端口仍应一致，默认 8125；不用填写 IP。电脑随后沿用现有音频协议连接。
-4. 再次点击「无线直连」可以重新选择手机；取消搜索后保留上一次选择。断线后点击「连接」重试；不会通过自动重连反复弹出搜索窗口。更换手机连接方式前先停止。
+1. 电脑开启 Wi-Fi，在 MicLink 选择「无线直连」，点击「等待连接」。等待窗口显示本机名称；名称以系统提供给手机的列表为准。
+2. 手机选择「无线直连」，点击「启动」。在连接页的「选择电脑」列表点选电脑；无结果时点「重新搜索」。Android 13+ 需附近 Wi-Fi 权限，旧系统还需定位权限及定位开关。
+3. 电脑核对请求中的手机名称，点击「允许连接」。拒绝后继续等待其他请求；停止等待或关闭窗口会结束此轮。若系统需要 PIN 或确认，按两端实际提示操作。
+4. 手机加入电脑的组、取得自己的 IPv4 后，原有控制与音频会话自动继续。两端控制端口仍需一致，默认 8125；不用输入 IP，不开启普通热点。
 
-路由器和手机热点统一在「Wi-Fi」项下，仍填写实际手机 IP。`--transport hotspot` 保留为 `wifi` 的兼容别名，不会触发 Direct。旧 Android 的 `HOTSPOT` 设置也迁移到普通 Wi-Fi。
+列表是系统发现的附近 P2P 设备，可能包含其他软件或设备；目前没有宣称已经按 MicLink 服务过滤。请按电脑等待窗口与系统名称核对选择。
 
-## 实现与边界
+## 角色与边界
 
-| 部分 | 责任 |
-|---|---|
-| Android `WifiDirectTransport` | 检查硬件与 Wi-Fi、创建并拥有 P2P 组、观察状态、交还实际组所有者地址、停止时移除本工具的组。发现已有 P2P 组时拒绝接管。 |
-| Windows `client/direct` | 独立 Windows SDK C++/WinRT DLL；有设备发现/选择窗口，通过系统 PBC 或 PIN 配对，返回实际本地/远端 IPv4，持有会话到传输结束。 |
-| `transport.c` | 从 EXE 同目录加载版本化 C ABI；TCP 绑定实际 Direct 本地地址，负责取消与关闭适配器。没有猜测固定网关。 |
-| 音频层 | 复用原 TCP 控制 + UDP 媒体、Opus、增益、监听和虚拟驱动。Android 控制监听只绑定 P2P 地址。 |
+| 层 | Windows | Android |
+|---|---|---|
+| Wi-Fi Direct | 发布自主组，监听请求并确认手机 | 搜索设备，用户选中后主动连接，倾向成为组客户端 |
+| 地址 | 等待 Connected 与真实 IPv4 端点 | 读取实际组接口的本机 IPv4，等待 DHCP；不把电脑的组主地址当成本机地址 |
+| 既有音频协议 | TCP 控制客户端、UDP 音频接收 | TCP 8125 服务端、Opus 采集与 UDP 发送 |
 
-Android 使用公开 `WifiP2pManager.createGroup()`，不调用热点/网络共享接口。Windows 扫描时采用官方 connector 示例的 advertiser + association-endpoint watcher 流程，明确关闭 `LegacySettings`。这是 P2P 组连接，不用 SSID/密码方式让普通 Wi-Fi 客户端加入。
+Windows 模块仍是独立 C++/WinRT DLL，监听 ABI 为 **3**，只负责直连、用户确认、端点与生命周期；不引入音频依赖。旧 ABI 2 DLL 与新主程序不能混用，必须整包替换。普通 Wi-Fi、USB、蓝牙、日志与主题沿用验证过的公共代码。
 
-当前配对采用 Invitation（手机已建组），优先 Push Button，并支持系统要求的 PIN 显示或输入；手机保留系统确认。PIN 只在配对窗口中显示或输入，不写入运行日志。发现列表可能包含其他支持 P2P 的设备，应按手机显示的系统设备名选择。不会自动连接第一个设备，不会自动删除旧配对，也不关闭防火墙。
+Android 不再在启动时调用 `createGroup()`，不会接管已有直连组。Stop 撤销自己的搜索和连接请求，只移除能归属当前选择的组；若系统在取消后才完成入组、同时隐藏了组主身份，保守保留无法确认归属的网络，必要时在系统设置中断开。不会清空系统配对或重置全局 Wi-Fi。
 
-Wi-Fi Direct 仍有组所有者和组客户端，并非无中心网状网络。网卡、驱动、手机系统以及与现有 Wi-Fi 并发的能力需实测；不能保证同时保持路由器上网或延迟一定优于普通 Wi-Fi。没有合适无线网卡的台式机可继续使用 Wi-Fi（有线接入同一局域网）、USB 或蓝牙。
+电脑拒绝手机后保留等待，关闭/取消则停止广播并释放待决请求。只允许一个手机会话，额外请求不自动接入。Windows 取得端点后，仅针对控制服务尚未启动的连接拒绝做最多约 5 秒等待；音频协议不变。
 
-## 构建与 CI
+## 分支起点与后续整合
 
-主程序沿用 Linux / WSL2 MinGW；Direct DLL 在 Windows 使用 Visual Studio C++ 和 Windows SDK 构建，见[构建说明](BUILD.md#wi-fi-direct-原生适配模块)。不引入音频/驱动依赖，也不强制整个客户端改用 Windows SDK。
+见[分支决策](development/DIRECT-BRANCHES.md)。起点为已验证的 `221f54c`，旧方向的角色相关实现被替换，日志、设置、只读主题、映射文件上限和 CI 修复保留。没有重写或强推旧分支历史。旧方案的问题与实机记录见[旧分支原始记录](https://github.com/1-1-2/MicOpen/blob/221f54c/docs/WIFI-DIRECT.md)。
 
-[本轮 CI 40866305729](https://github.com/1-1-2/MicOpen/actions/runs/40866305729) 的 10 个作业均已通过，构建源码为 `c3f269a`：两端构建、Android 单元与协议测试、debug/release 模拟器回归、Windows 协议/驱动/监听/ADB 回归，以及直连适配器 ABI 2、参数边界、预取消、重复调用、窗口取消/关闭/超时和深浅色只读控件检查。Windows 地址栏的实际渲染像素已核对；日志面板通过真实鼠标事件与剪贴板验证独立滚动、暂停期间缓冲覆写、清除与继续记录。Android 日志缓冲的清除、版本失效、保留界限和并发测试已通过；紧凑日志栏已在 debug/release 模拟器以 1.0、1.3 字号检查同行且不重叠，并留存截图；配对恢复策略验证了各拒绝/取消结果不会继续会话。离线设备过滤经过代码核对；20 秒自动跟随与实体配对仍需作者复测。
+未来如同时提供两种方向，应把组角色与发现发起方、音频服务器角色分开协调；单个会话只能确定一种建组方向。本分支不预先决定双模式 UI，也不让双方自动同时建组。
 
-首轮实机反馈与修正见下节；新包仍待作者复测。云端 runner 没有这对实体无线设备，**CI 成功不等于状态 19 已在实体设备上消失，也不等于实体无线配对或音频已验收**。
+## 验证与参考
 
-## 实机检查清单
+新方向的双端构建、原生取消/确认窗口、组归属保护及既有协议回归需要通过 CI。云端检查无法证明无线网卡与两台手机之间的实体发现、配对和音频可用；旧分支的 CI 成功不作为新方向的验证结论。
 
-- Wi-Fi 原路由器连接、手机热点连接均可用，界面只有一个 Wi-Fi 入口。
-- 手机 Direct 启动后，电脑能发现并选择它，首次配对确认后有音频；未开启系统热点、未输入 IP。
-- 停止后再次连接；电脑取消搜索/配对；退出 Windows 客户端后直连会话释放。
-- 手机关闭 Wi-Fi 或停止服务，电脑及时报告断线；再次开启后可重新建立连接。
-- 拒绝权限、不支持 P2P、已有其他 P2P 会话时有明确说明；USB、蓝牙不受影响。
-- 如需同时上网，分别记录电脑 Wi-Fi / 网线、手机 Wi-Fi / 移动数据的实际结果，不以一组设备推断通用兼容性。
+- [Android P2P 搜索与连接](https://developer.android.com/develop/connectivity/wifi/wifi-direct)
+- [Microsoft Wi-Fi Direct advertiser 示例](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/WiFiDirect/cs/Scenario1_Advertiser.xaml.cs)
+- [Windows 接收入站请求](https://learn.microsoft.com/en-us/uwp/api/windows.devices.wifidirect.wifidirectconnectionlistener)
 
-反馈时附手机型号/Android 版本、Windows 版本/无线网卡型号，以及两端错误文字和运行日志即可。手机连接页最底部的「运行日志」可长按节选，或点击「全部复制」；选取时可暂停显示更新，后台继续记录。日志只在当前进程内保留最近 300 条，并受 64 Ki 字符总量限制，退出进程后不保留；暂停时全部复制对应当前显示的快照。测试包来自当前分支 CI，正式版仍保持 v0.1.2。
-
-## 官方参考
-
-- [Android：Create P2P connections with Wi-Fi Direct](https://developer.android.com/develop/connectivity/wifi/wifi-direct)
-- [Microsoft：Wi-Fi Direct desktop/API guidance](https://learn.microsoft.com/en-us/windows-hardware/drivers/partnerapps/wi-fi-direct)
-- [Microsoft：Wi-Fi Direct sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-universal-samples/wifidirect/)，参考其 `Scenario2_Connector` 和 `ConnectionSettingsPanel` 的公开 API 流程；本模块独立实现 Win32 窗口和生命周期管理，不依赖 UWP 页面。
-
-不使用已弃用的 `Windows.Devices.WiFiDirect.Services` 服务发现接口。
-
-## 2026-10-29 实机反馈后的修正（待复测）
-
-首轮实测出现 Windows 配对状态 `19`，以及手机打开 WLAN 直连设置页后才可被发现。`19` 对应 `DevicePairingResultStatus.Failed`，含义是未知失败；`0x80004005` 是本工具包装的通用失败码，不能据此判定用户没有确认、旧配对冲突或网卡不支持。
-
-- Android 创建组后，Android 13+ 调用公开的 `startListening()`；失败或旧系统尝试 `discoverPeers()`，监听发现状态，避免在已知配对中频繁重启发现。
-- 仅在系统回调确认监听/发现请求成功、且未进入配对或连接时显示动态等待指示；这表示应用正在等待，不保证电脑已实际发现手机。失败时显示真实原因与设置入口。
-- 绑定组接口的实际 IPv4；不能把新系统可能匿名化的组所有者地址直接当成本机监听地址。
-- Windows 把选择设备和建立会话分开：选择「无线直连」立即搜索、点选名称、再点主界面「连接」。设备栏只读并沿用当前主题；搜索窗口支持取消、关闭和超时。
-- 配对参数改为 Invitation，并通过官方 `GetDevicePairingKinds()` 对应 Push Button / Display PIN / Provide PIN。失败信息保留状态码和所请求的方式（`-1` 表示未收到配对方式回调），不自动删除配对或静默反复重试。
-- Android 的「打开对应设置」位于「准备」标题同行，运行期间保持可用。Wi-Fi → WLAN 设置，蓝牙 → 蓝牙设置，USB → 开发者选项。直连打开公开的 WLAN 设置并提示查找里面的 WLAN 直连入口；没有依赖未经公共 SDK 保证的系统组件名或 settings action。普通 Wi-Fi 浮动面板不是通用的直连设备列表。
-
-这些修改针对代码中已经确认的缺项，状态 19 的具体设备原因仍需新包实测，不能把 CI 成功当成无线配对成功。下一轮优先确认：手机留在 MicLink 内能否被发现；手机是否弹出确认或 PIN；Windows 的状态及配对方式。
-
-参考：[Android 发现与监听 API](https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pManager#startListening(android.net.wifi.p2p.WifiP2pManager.Channel,%20android.net.wifi.p2p.WifiP2pManager.ActionListener))、[微软官方配对示例](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/WiFiDirect/cs/ConnectionSettingsPanel.xaml.cs)、[配对状态](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.devicepairingresultstatus)、[配对过程](https://learn.microsoft.com/en-us/uwp/api/windows.devices.wifidirect.wifidirectpairingprocedure)。
-
-### 第二轮反馈：已触发配对，仍返回 19
-
-作者反馈 Windows 在约 12 秒后返回 `状态=19；过程=Invitation，方式=1`；手机有 `discovery active=true`、`peers=1 invited=false`。`方式=1` 是 `ConfirmOnly`，证明 Windows 配对回调已触发；`peers=1` 只表示有一个邻居，`invited=false` 不等于确认窗口已出现，也不等于入组成功。虚拟麦克风、Opus 和 UDP 就绪信息属于本机初始化，尚未证明无线链路或音频握手成功。配对窗口随失败结束而关闭，不据此判断程序崩溃。
-
-这轮保持官方配对参数，补充「确认已提交」与配对耗时；回调提交异常不再静默吞掉。手机日志分别记录每个邻居的状态、WPS 能力与实际组客户端数量，不记录 MAC、配对 PIN 或密码。可见性文案改为「已请求可发现」，区分系统接受请求和电脑实际搜到设备。状态 19 的根因与实体连通仍待确认，本轮没有宣称已修复实体配对。
-
-两端日志新增「清除日志」。Windows 新增「暂停更新／继续更新」、日志正文独立滚轮和可拖动滚动条，工具栏直接衔接标题与正文。暂停只固定显示快照，后台继续记录；暂停时复制全部对应此快照。清除同时清空后台与暂停快照，保留暂停状态，后续仍可记录。Windows 保留最近 200 条，手机保留最近 300 条及 64 Ki 字符；均为当前进程内日志。
-
-补充反馈：手机未出现系统确认，在系统 WLAN 直连页尝试加入电脑也失败，Windows 偶发 `0x80070002`。该 HRESULT 不能独自证明安装目录缺文件；新日志标出「解析所选设备标识／系统配对／建立直连会话」等失败阶段，设备记录为空时明确拒绝并提示重新选择。当前流程仍由手机建组、电脑主动加入，未实现手机系统页主动连接电脑的反向接入。
-
-鼠标位于展开的 Windows 日志面板（含标题和工具栏）时滚轮只滚日志，面板外滚右栏。Android 默认跟随最新日志；手动翻阅后暂停跟随，20 秒未滚动时回到最新，暂停更新期间不自动跳转。
-
-### 第三轮反馈：Huawei JSN-AL00a / Android 10
-
-手机已创建组且始终 `clients=0`；电脑已经选择设备，Windows 的 `ConfirmOnly` 回调已提交，但 `PairAsync` 在 781ms 后返回 19。日志总等待约 11 秒，不能把它全部称为配对等待时间。手机邻居的 `AVAILABLE` 和 WPS 能力只证明发现，不证明收到入组请求。没有证据说明用户漏点了手机确认。
-
-这轮显式请求并使用 `System.Devices.Aep.IsPaired/CanPair/IsPresent` 属性，避免仅依赖默认属性袋判断配对。系统也会枚举已配对的缓存设备，因此「选中手机」不单独证明本次空口发现成功；列表排除明确 `IsPresent=false` 的设备，选中与连接前再次检查，未知值不会冒充明确不在场。只有通用 `Failed` 返回时才重新查询：必须得到新查询的明确已配对值，才能尝试打开会话；拒绝、认证失败、取消等结果仍立即结束。打开会话沿用微软 connector 示例的无附加配对参数重载，并要求连接状态为 Connected 且有真实 IPv4 端点。此修改覆盖已知状态不一致情况，尚不能证明是本机状态 19 的根因或已解决实体入组。
-
-手机系统返回空设备名时显示明确的名称缺失提示。手机日志改为标题同行三个短按钮「清除／暂停（继续）／复制」，删除长篇跟随说明；「长按可复制」放在原有卡片底部内边距中，不增加单独一行高度。
-
-参考：[设备端点属性](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/device-information-properties)、[微软示例状态问题 #1399](https://github.com/microsoft/Windows-universal-samples/issues/1399)、[官方 connector](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/WiFiDirect/cs/Scenario2_Connector.xaml.cs)。本轮继续不创建 Release。
+本实现使用公开 API，不使用 Wi-Fi Direct Services 的弃用接口、隐藏设置组件或普通 SoftAP。

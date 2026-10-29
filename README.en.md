@@ -29,11 +29,11 @@ This is an independently maintained client project, unaffiliated with WO Mic. No
 | Connection | How it works |
 |---|---|
 | 📶 Wi-Fi | Join the same local network, or connect Windows to the phone's hotspot, then enter the phone's IP address. |
-| 📡 Wi-Fi Direct · pending device test | Start Direct on the phone, discover and select it on Windows, then confirm pairing. No IP entry or phone hotspot required. |
+| 📡 Wi-Fi Direct · pending device test | In this experimental branch, Windows waits; Android discovers and selects the PC, then Windows approves the phone. No IP entry or hotspot required. |
 | 🔵 Bluetooth | Pair in system settings, then select the paired phone in the Windows client. |
 | 🔌 USB | Connect a data cable, enable USB debugging and authorize the PC. External ADB is required. |
 
-**Choose a method on Android → tap Start to wait → select the same method on Windows and Connect.** Stop the phone's service before changing methods. Wi-Fi covers routers and phone hotspots; Wi-Fi Direct creates a separate P2P group.
+**Other methods: start Android, then connect on Windows. Direct experiment: Windows waits, then Android discovers and selects the PC.** Stop the phone's service before changing methods. Wi-Fi covers routers and phone hotspots; Wi-Fi Direct creates a separate P2P group.
 
 ### 🎚️ Your input, your settings
 

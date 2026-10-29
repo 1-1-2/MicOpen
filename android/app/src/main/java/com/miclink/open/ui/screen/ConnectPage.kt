@@ -138,11 +138,30 @@ fun ConnectPage(
             }
             HintText(mode.preparation)
             if (mode == ConnectionMode.DIRECT && state.isRunning && state.detail.isNotBlank()) {
-                if (state.directDiscoverable) DirectWaitingHint(state.detail)
+                if (state.directSearching) DirectSearchHint(state.detail)
                 else HintText(state.detail)
             }
             HintText(if (state.isRunning) "当前使用${mode.title}。更换方式请先停止。"
+                else if (mode == ConnectionMode.DIRECT) "2. 电脑进入等待状态后，点击下方“启动”搜索电脑。"
                 else "2. 准备完成后点击下方“启动”，等待 Windows 连接。")
+        }
+
+        if (mode == ConnectionMode.DIRECT && state.isRunning && state.listeningAddress.isBlank()) {
+            SectionCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("选择电脑", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    TextButton(enabled = !state.directConnecting, onClick = vm::refreshDirectPeers) { Text("重新搜索") }
+                }
+                HintText("请选择 Windows 等待窗口显示的电脑名。")
+                if (state.directPeers.isEmpty()) HintText("暂无设备。请确认电脑已开启 Wi-Fi 并点击“等待连接”。")
+                state.directPeers.forEach { peer ->
+                    TextButton(enabled = !state.directConnecting, onClick = { vm.connectDirectPeer(peer.id) },
+                        modifier = Modifier.fillMaxWidth()) {
+                        Text(peer.name, modifier = Modifier.weight(1f))
+                        if (peer.groupOwner) Text("可加入的直连组", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
         }
 
         // ---- ① 连接状态卡 ----
@@ -626,7 +645,7 @@ private fun ConnectPagePreview() {
 
 /** Animate only after the transport receives an actual listen/discovery ACK. */
 @Composable
-private fun DirectWaitingHint(text: String) {
+private fun DirectSearchHint(text: String) {
     var step by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) {
         while (true) {

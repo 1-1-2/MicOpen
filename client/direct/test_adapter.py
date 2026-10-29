@@ -11,45 +11,22 @@ import time
 path = pathlib.Path(sys.argv[1]).resolve()
 dll = ctypes.CDLL(str(path))
 dll.ml_direct_abi.restype = ctypes.c_uint
-dll.ml_direct_open.restype = ctypes.c_void_p
-dll.ml_direct_open.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_void_p,
-    ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+dll.ml_direct_listen.restype = ctypes.c_void_p
+dll.ml_direct_listen.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_void_p,
+    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
 dll.ml_direct_close.argtypes = [ctypes.c_void_p]
-assert dll.ml_direct_abi() == 2
+assert dll.ml_direct_abi() == 3
 dll.ml_direct_close(None)
-assert not dll.ml_direct_open(None, None, 0, None, 0, None, 0)
+assert not dll.ml_direct_listen(None, None, None, None, 0, None, 0, None, 0)
 
 def cancelled_open():
     cancel = ctypes.c_long(1)
     remote, local, error = (ctypes.create_string_buffer(n) for n in [16, 16, 512])
-    assert not dll.ml_direct_open(ctypes.byref(cancel), remote, 16, local, 16, error, 512)
-    assert not remote.value and not local.value
-    assert '取消' in error.value.decode('utf-8')
-    # Too-small endpoint buffers fail before writing or touching the radio.
+    assert not dll.ml_direct_listen(ctypes.byref(cancel), None, None, remote, 16, local, 16, error, 512)
+    assert not remote.value and not local.value and '取消' in error.value.decode('utf-8')
     remote.value = b'unchanged'
-    assert not dll.ml_direct_open(ctypes.byref(cancel), remote, 1, local, 16, error, 512)
+    assert not dll.ml_direct_listen(ctypes.byref(cancel), None, None, remote, 1, local, 16, error, 512)
     assert remote.value == b'unchanged'
-
-# Discovery and connection are separate ABI operations. Both must reject bad
-# inputs and pre-cancellation without opening a window or touching a radio.
-class Device(ctypes.Structure):
-    _fields_ = [('id', ctypes.c_char * 2048), ('name', ctypes.c_wchar * 248)]
-dll.ml_direct_pick.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_void_p,
-    ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(Device), ctypes.c_void_p, ctypes.c_int]
-dll.ml_direct_pick.restype = ctypes.c_int
-dll.ml_direct_connect.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_char_p,
-    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int,
-    ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
-dll.ml_direct_connect.restype = ctypes.c_void_p
-cancel = ctypes.c_long(1)
-device = Device()
-remote, local, error = (ctypes.create_string_buffer(n) for n in [16, 16, 512])
-assert not dll.ml_direct_pick(None, None, 0, 0, None, None, None, 0)
-assert not dll.ml_direct_pick(ctypes.byref(cancel), None, 0, 0, None, ctypes.byref(device), error, 512)
-assert not device.id and '取消' in error.value.decode('utf-8')
-assert not dll.ml_direct_connect(ctypes.byref(cancel), b'fake-peer', None, None, remote, 16, local, 16, error, 512)
-assert not remote.value and not local.value and '取消' in error.value.decode('utf-8')
-assert not dll.ml_direct_connect(ctypes.byref(cancel), b'', None, None, remote, 16, local, 16, error, 512)
 
 errors = []
 def run():
@@ -89,16 +66,37 @@ if len(sys.argv) > 2:
         started = time.monotonic()
         window = None
         while time.monotonic() - started < 2:
-            window = user32.FindWindowW('MicLink.WiFiDirect.Selector.v1', None)
+            window = user32.FindWindowW('MicLink.WiFiDirect.Listener.v1', None)
             if window: break
             time.sleep(.01)
-        assert window, 'selector must open'
+        assert window, 'listener must open'
         if case == 'cancel': cancel.value = 1
         elif case == 'close': assert user32.PostMessageW(window, 0x0010, 0, 0)
         t.join(timeout=3)
         assert not t.is_alive() and results == [1], (case, results)
-        assert not user32.FindWindowW('MicLink.WiFiDirect.Selector.v1', None), 'selector must be destroyed'
-        print('PASS Direct native selector ' + case + ' (no radio test)')
+        assert not user32.FindWindowW('MicLink.WiFiDirect.Listener.v1', None), 'listener must be destroyed'
+        print('PASS Direct native listener ' + case + ' (no radio test)')
+
+    for command, mode, expected in [(1, 2, 2), (1001, 2, 3), (1, 0, 1)]:
+        cancel = ctypes.c_long(0); results = []
+        t = threading.Thread(target=lambda: results.append(fixture.ml_direct_test_wait(ctypes.byref(cancel), 5000, mode)))
+        t.start(); window = None
+        for _ in range(200):
+            window = user32.FindWindowW('MicLink.WiFiDirect.Listener.v1', None)
+            if window: break
+            time.sleep(.01)
+        assert window
+        time.sleep(.15)
+        assert t.is_alive() and not results, 'incoming request must wait for explicit consent'
+        user32.PostMessageW(window, 0x0111, command, 0)
+        if mode == 0:
+            time.sleep(.15)
+            assert t.is_alive(), 'Accept without an incoming request must do nothing'
+            cancel.value = 1
+        t.join(timeout=3)
+        assert not t.is_alive() and results == [expected], (command, mode, results)
+        assert not user32.FindWindowW('MicLink.WiFiDirect.Listener.v1', None)
+    print('PASS incoming consent requires a request and explicit Allow; Reject and Stop release the window')
 
     # Read-only fields send WM_CTLCOLORSTATIC, not WM_CTLCOLOREDIT. Verify both
     # paths retain the same surface color in light/dark native windows.
@@ -118,7 +116,7 @@ if len(sys.argv) > 2:
         started = time.monotonic()
         window = field = None
         while time.monotonic() - started < 2:
-            window = user32.FindWindowW('MicLink.WiFiDirect.Selector.v1', None)
+            window = user32.FindWindowW('MicLink.WiFiDirect.Listener.v1', None)
             if window:
                 field = user32.GetDlgItem(window, 101)
                 if field: break

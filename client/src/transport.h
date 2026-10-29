@@ -5,9 +5,7 @@
 /* Modes match the UI: LAN (router or phone hotspot), Wi-Fi Direct, RFCOMM, ADB. */
 typedef struct { wchar_t name[248]; char address[13]; } TransportDevice;
 int transport_paired_devices(TransportDevice *devices, int capacity);
-int transport_pick_direct(volatile LONG *cancel, HWND owner, int x, int y,
-    const MicDirectTheme *theme, MicDirectDevice *device, char *error, int cap);
-void transport_select_direct(const MicDirectDevice *device, HWND owner, const MicDirectTheme *theme);
+void transport_configure_direct(HWND owner, const MicDirectTheme *theme);
 SOCKET transport_connect(int mode, const char *endpoint, int port, char *error, int cap);
 void transport_prepare(void);
 void transport_cancel(void);

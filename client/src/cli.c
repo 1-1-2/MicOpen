@@ -60,7 +60,7 @@ const char *cli_help_text(void)
     "选项:\n"
     "  --transport wifi|direct|bluetooth|usb\n"
     "      wifi: 同一路由器或手机热点；hotspot 是 wifi 的兼容别名\n"
-    "      direct: 真正 Wi-Fi Direct，打开设备选择窗口，无需 --host\n"
+    "      direct: Wi-Fi Direct 等待手机发起连接，无需 --host\n"
     "  --host <IP>            手机在局域网里的地址；--connect 时必填\n"
     "  --port <n>             TCP 控制端口，默认 8125\n"
     "  --media-port <n>       UDP 媒体端口，默认由本机随机分配。\n"

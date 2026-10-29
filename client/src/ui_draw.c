@@ -982,7 +982,7 @@ void ui_draw_conn_card(HDC dc)
     }
 
     /* 手机 IP / 控制端口 / 媒体端口（C-06，可编辑） */
-    draw_input(dc, g_lo.ed_host, g_ui.transport == 1 ? L"直连手机（点上方无线直连选择）" : g_ui.transport == 2 ? L"蓝牙地址（12位）" : g_ui.transport == 3 ? L"设备序列号（留空自动）" : L"手机 IP（路由器 / 手机热点）");
+    draw_input(dc, g_lo.ed_host, g_ui.transport == 1 ? L"本机名称（在手机中选择）" : g_ui.transport == 2 ? L"蓝牙地址（12位）" : g_ui.transport == 3 ? L"设备序列号（留空自动）" : L"手机 IP（路由器 / 手机热点）");
     draw_input(dc, g_lo.ed_port, L"控制端口");
     draw_input(dc, g_lo.ed_media, L"媒体端口（留空 = 随机）");
 
@@ -998,7 +998,7 @@ void ui_draw_conn_card(HDC dc)
     {
         int reconnecting = (!g_ui.running && g_ui.autorec && g_ui.rc_armed &&
                             g_ui.rc_count > 0);
-        const wchar_t *lbl = L"连接";
+        const wchar_t *lbl = g_ui.transport == 1 ? L"等待连接" : L"连接";
         int style = BTN_PRIMARY;
         int enabled = (g_ui.drv.state == DRV_READY);
         if (reconnecting) {
@@ -1411,7 +1411,7 @@ void ui_draw_statusbar(HDC dc)
     } else if (g_ui.running && s->state == ST_STREAMING) {
         badge_txt = L"已连接"; badge_fg = g_th.ok; badge_bg = g_th.ok_12;
     } else if (g_ui.running) {
-        badge_txt = L"连接中"; badge_fg = g_th.accent; badge_bg = g_th.acc_12;
+        badge_txt = g_ui.transport == 1 ? L"等待手机" : L"连接中"; badge_fg = g_th.accent; badge_bg = g_th.acc_12;
     } else if (g_ui.running == 0 && s->state == ST_ERROR) {
         badge_txt = L"连接错误"; badge_fg = g_th.err; badge_bg = g_th.err_12;
     } else {

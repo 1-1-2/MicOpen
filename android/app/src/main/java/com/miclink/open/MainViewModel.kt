@@ -47,7 +47,9 @@ data class MainUiState(
     val state: String = MicCaptureService.STATE_IDLE,
     val detail: String = "",
     val listeningAddress: String = "",
-    val directDiscoverable: Boolean = false,
+    val directSearching: Boolean = false,
+    val directPeers: List<DirectPeer> = emptyList(),
+    val directConnecting: Boolean = false,
     val eventLog: EventLog.Snapshot = AppLog.snapshot(),
     /** 本回推流会话开始时刻（SystemClock.elapsedRealtime；0 = 无会话，时长显示「—」）。 */
     val sessionStartElapsedMs: Long = 0L,
@@ -93,6 +95,10 @@ data class MainUiState(
  * 用 Compose [mutableStateOf] 而非 StateFlow：单屏应用无需引入协程依赖。
  */
 class MainViewModel : ViewModel() {
+    private var pendingDirectPeer: String? = null
+    private var pendingDirectRefresh = false
+    fun connectDirectPeer(id: String) { pendingDirectPeer = id }
+    fun refreshDirectPeers() { pendingDirectRefresh = true }
 
     fun clearEventLog(): EventLog.Snapshot = AppLog.clear().also {
         uiState = uiState.copy(eventLog = it)
@@ -408,23 +414,29 @@ class MainViewModel : ViewModel() {
         val snapshot = AppLog.snapshot()
         if (uiState.eventLog.version != snapshot.version) uiState = uiState.copy(eventLog = snapshot)
         val svc = service
+        pendingDirectPeer?.let { id -> pendingDirectPeer = null; svc?.connectDirectPeer(id) }
+        if (pendingDirectRefresh) { pendingDirectRefresh = false; svc?.refreshDirectPeers() }
         if (svc == null) {
             // 服务断开（停止/崩溃）：清会话时长与协商采样率，不显示上一会话的残留值
             if (uiState.sessionStartElapsedMs != 0L || uiState.negotiatedSampleRate != 0 ||
-                uiState.reconcileStatus != ReconcileStatus.IDLE || uiState.directDiscoverable
+                uiState.reconcileStatus != ReconcileStatus.IDLE || uiState.directSearching ||
+                uiState.directPeers.isNotEmpty() || uiState.directConnecting
             ) {
                 uiState = uiState.copy(
                     sessionStartElapsedMs = 0L,
                     negotiatedSampleRate = 0,
                     reconcileStatus = ReconcileStatus.IDLE,
                     reconcileLossPermille = null,
-                    directDiscoverable = false
+                    directSearching = false,
+                    directPeers = emptyList(), directConnecting = false
                 )
             }
             return
         }
         uiState = uiState.copy(
-            directDiscoverable = svc.directDiscoverable(),
+            directSearching = svc.directSearching(),
+            directPeers = svc.directPeers(),
+            directConnecting = svc.directConnecting(),
             packets = svc.packetsSent(),
             bytes = svc.bytesSent(),
             failures = svc.sendFailures(),
