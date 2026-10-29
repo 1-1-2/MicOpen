@@ -11,4 +11,6 @@ Push-Location $out
 try {
     & cl.exe /nologo /LD /MT /O2 /std:c++20 /EHsc /utf-8 /W4 /DWINVER=0x0A00 /D_WIN32_WINNT=0x0A00 "$PSScriptRoot/direct.cpp" /Femiclink-direct.dll /link windowsapp.lib runtimeobject.lib user32.lib gdi32.lib ole32.lib
     if ($LASTEXITCODE -ne 0) { throw 'Wi-Fi Direct compilation failed' }
+    & cl.exe /nologo /LD /MT /O2 /std:c++20 /EHsc /utf-8 /W4 /DMICLINK_DIRECT_TEST /DWINVER=0x0A00 /D_WIN32_WINNT=0x0A00 "$PSScriptRoot/direct.cpp" /Fotest_direct.obj /Fetest_direct.dll /link windowsapp.lib runtimeobject.lib user32.lib gdi32.lib ole32.lib
+    if ($LASTEXITCODE -ne 0) { throw 'Wi-Fi Direct UI fixture compilation failed' }
 } finally { Pop-Location }

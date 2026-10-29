@@ -31,6 +31,7 @@ struct Picker {
     std::mutex mutex;
     std::vector<DeviceInformation> devices;
     unsigned revision{}, drawn = ~0u;
+    std::vector<hstring> drawnIds;
     bool done{};
     std::atomic_bool aborted{false};
     DeviceInformation choice{nullptr};
@@ -43,9 +44,15 @@ void refresh(Picker& p) {
     std::lock_guard lock(p.mutex);
     if (p.drawn == p.revision) return;
     auto index = SendMessageW(p.list, LB_GETCURSEL, 0, 0);
+    hstring selected = index >= 0 && index < (LRESULT)p.drawnIds.size() ? p.drawnIds[(size_t)index] : hstring{};
+    p.drawnIds.clear();
     SendMessageW(p.list, LB_RESETCONTENT, 0, 0);
-    for (auto const& d : p.devices) SendMessageW(p.list, LB_ADDSTRING, 0, (LPARAM)d.Name().c_str());
-    if (index >= 0 && index < (LRESULT)p.devices.size()) SendMessageW(p.list, LB_SETCURSEL, index, 0);
+    for (auto const& d : p.devices) {
+        auto i = p.drawnIds.size(); p.drawnIds.push_back(d.Id());
+        SendMessageW(p.list, LB_ADDSTRING, 0, (LPARAM)d.Name().c_str());
+        if (d.Id()==selected) SendMessageW(p.list, LB_SETCURSEL, i, 0);
+    }
+    EnableWindow(p.button,SendMessageW(p.list,LB_GETCURSEL,0,0)!=LB_ERR);
     p.drawn = p.revision;
     SetWindowTextW(p.status, p.devices.empty()
         ? L"正在搜索… 请在手机选择无线直连并启动，保持 Wi-Fi 开启。"
@@ -86,8 +93,10 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
         else if ((LOWORD(a)==IDOK || (LOWORD(a)==100 && HIWORD(a)==LBN_DBLCLK)) && !p->choice) {
             std::lock_guard lock(p->mutex);
             auto i=SendMessageW(p->list,LB_GETCURSEL,0,0);
-            if (i>=0 && i<(LRESULT)p->devices.size()) {
-                p->choice=p->devices[(size_t)i]; p->done=true;
+            if (i<0 || i>=(LRESULT)p->drawnIds.size()) return 0;
+            auto selected=std::find_if(p->devices.begin(),p->devices.end(),[&](auto const& d){return d.Id()==p->drawnIds[(size_t)i];});
+            if (selected!=p->devices.end()) {
+                p->choice=*selected; p->done=true;
                 EnableWindow(p->list,FALSE); EnableWindow(p->button,FALSE);
                 SetWindowTextW(p->status,L"正在配对与连接… 请查看手机上的系统确认提示。");
             }
@@ -126,6 +135,16 @@ struct UiScope {
     std::shared_ptr<Picker> p;
     ~UiScope() { if (p->window) DestroyWindow(p->window); }
 };
+void createPicker(std::shared_ptr<Picker> const& p) {
+    WNDCLASSW wc{}; wc.lpfnWndProc=windowProc; wc.hInstance=GetModuleHandleW(nullptr);
+    wc.lpszClassName=className; wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
+    wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);
+    if (!RegisterClassW(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) throw_last_error();
+    p->window=CreateWindowExW(WS_EX_APPWINDOW|WS_EX_CONTROLPARENT,className,L"MicLink · 无线直连（Wi-Fi Direct）",
+        WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,540,350,
+        nullptr,nullptr,wc.hInstance,p.get());
+    if (!p->window) throw_last_error();
+}
 bool ipv4(std::string const& s) {
     unsigned a,b,c,d; char tail;
     return sscanf_s(s.c_str(),"%u.%u.%u.%u%c",&a,&b,&c,&d,&tail,1)==4 && a>0 && a<224 &&
@@ -145,14 +164,7 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_open(
     auto session=std::make_unique<Session>();
     try {
         init_apartment(apartment_type::single_threaded); session->apartment=true;
-        WNDCLASSW wc{}; wc.lpfnWndProc=windowProc; wc.hInstance=GetModuleHandleW(nullptr);
-        wc.lpszClassName=className; wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
-        wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);
-        if (!RegisterClassW(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) throw_last_error();
-        p->window=CreateWindowExW(WS_EX_APPWINDOW,className,L"MicLink · 无线直连（Wi-Fi Direct）",
-            WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,540,350,
-            nullptr,nullptr,wc.hInstance,p.get());
-        if (!p->window) throw_last_error();
+        createPicker(p);
         // Microsoft connector sample starts an advertiser while discovering.
         // LegacySettings is explicitly disabled: no SSID/password hotspot fallback.
         session->publisher=WiFiDirectAdvertisementPublisher();
@@ -198,7 +210,7 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_open(
             auto custom=p->choice.Pairing().Custom();
             auto pairing=custom.PairingRequested(auto_revoke,[p](auto const&,DevicePairingRequestedEventArgs const& e) noexcept {
                 // User explicitly chose this device. The phone retains system consent.
-                if (!cancelled(*p) && e.PairingKind()==DevicePairingKinds::ConfirmOnly) e.Accept();
+                try { if (!cancelled(*p) && e.PairingKind()==DevicePairingKinds::ConfirmOnly) e.Accept(); } catch (...) {}
             });
             auto result=await(*p,custom.PairAsync(DevicePairingKinds::ConfirmOnly,DevicePairingProtectionLevel::Default,params));
             pairing.revoke();
@@ -223,3 +235,17 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_open(
     } catch (...) { snprintf(error,ecap,"无线直连初始化失败，请检查系统及网卡支持"); }
     return nullptr;
 }
+
+#ifdef MICLINK_DIRECT_TEST
+// Native window/pump/cancellation fixture; never compiled into the shipped DLL.
+extern "C" __declspec(dllexport) int __cdecl ml_direct_test_wait(volatile LONG* cancel, unsigned timeout) {
+    auto p=std::make_shared<Picker>(); p->cancel=cancel;
+    UiScope ui{p};
+    try {
+        p->deadline=GetTickCount64()+timeout;
+        createPicker(p);
+        while (!p->done && !cancelled(*p)) pump(*p);
+        return cancelled(*p) ? 1 : 0;
+    } catch (...) { return -1; }
+}
+#endif

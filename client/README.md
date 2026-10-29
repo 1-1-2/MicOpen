@@ -18,6 +18,8 @@ bash tools/build_opus.sh
 
 Windows 开发者可在 WSL2 Ubuntu 中使用上述交叉编译路线。`build.bat` 尚未同步当前监听与开关控件的编译依赖，暂不作为完整客户端的可靠原生构建入口。输出位于 `build/`。可选的 Opus 静态库由 `tools/build_opus.sh` 构建；未提供静态库时，运行需要可用的 `opus.dll`。可选监听处理模块另由 `bash monitor/build.sh` 构建。完整依赖见[构建说明](../docs/BUILD.md)。
 
+完整的 Wi-Fi Direct 功能还需要在 Windows 用 Visual Studio C++ / Windows SDK 执行 `./client/direct/build.ps1`，将生成的 `miclink-direct.dll` 放到同目录。缺少此模块不影响其他三种连接方式。详见[无线直连构建与验收](../docs/WIFI-DIRECT.md)。
+
 ## 使用
 
 电脑先安装兼容的 WO Mic 驱动。启动 `build/womic.exe`，输入手机 app 显示的地址和端口，连接后在录音或会议软件中选择 WO Mic 输入设备。

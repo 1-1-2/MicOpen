@@ -72,7 +72,7 @@ class WifiDirectTransport(
                     if (existing != null) error("已有其他无线直连会话，请先在系统中断开，再启动 MicLink")
                     else {
                         creating = true
-                        m.createGroup(ch, object : WifiP2pManager.ActionListener {
+                        try { m.createGroup(ch, object : WifiP2pManager.ActionListener {
                             override fun onSuccess() {
                                 creating = false
                                 owned = true
@@ -83,7 +83,13 @@ class WifiDirectTransport(
                                 if (closed) finishChannel()
                                 else error("无法创建无线直连：${reasonText(reason)}")
                             }
-                        })
+                        }) } catch (_: SecurityException) {
+                            creating = false
+                            error("无线直连权限已被撤销，请重新授权")
+                        } catch (e: RuntimeException) {
+                            creating = false
+                            error("无线直连启动失败：${e.message}")
+                        }
                     }
                 }
             }
@@ -105,9 +111,11 @@ class WifiDirectTransport(
                         delivered = true
                         handler.removeCallbacks(deadline)
                         ready(info.groupOwnerAddress)
-                        if (!closed) m.requestGroupInfo(ch) { group ->
-                            if (!closed && group != null) message("无线直连已就绪：在电脑搜索并选择 ${group.owner?.deviceName ?: "本手机"}，确认配对后连接")
-                        }
+                        if (!closed) try {
+                            m.requestGroupInfo(ch) { group ->
+                                if (!closed && group != null) message("无线直连已就绪：在电脑搜索并选择 ${group.owner?.deviceName ?: "本手机"}，确认配对后连接")
+                            }
+                        } catch (_: SecurityException) { error("无线直连权限已被撤销，请重新授权") }
                     }
                 } else if (delivered) error("无线直连网络已断开，请重新启动")
                 else handler.postDelayed({ if (!closed) inspect() }, 300)

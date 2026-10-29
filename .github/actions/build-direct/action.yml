@@ -9,7 +9,7 @@ runs:
   - name: Verify native adapter ABI and cancellation
     shell: pwsh
     run: |
-      python client/direct/test_adapter.py client/build/miclink-direct.dll
+      python client/direct/test_adapter.py client/build/miclink-direct.dll client/build/test_direct.dll
       if ($LASTEXITCODE -ne 0) { throw 'Direct ABI test failed' }
   - uses: actions/upload-artifact@v7
     with:

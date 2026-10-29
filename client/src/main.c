@@ -461,6 +461,11 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             g_ui.running = 0;
             g_ui.disc_at = now;                 /* D-08：断开时刻 */
             if (st.state == ST_ERROR) ui_log_add(st.last_error, 1);
+            /* Direct opens a user selector. Never reopen it repeatedly through
+             * the automatic reconnect loop after cancellation or link loss. */
+            if (g_ui.transport == 1) {
+                g_ui.rc_armed = 0; g_ui.rc_count = 0; g_ui.rc_next = 0;
+            }
             g_dirty = 1;
         }
         /* worker 自行结束（连接失败 / 对端断开）后回收线程与设备资源。

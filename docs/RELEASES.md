@@ -2,6 +2,13 @@
 
 [项目首页](../README.md) · [正式下载](https://github.com/1-1-2/MicOpen/releases)
 
+## 开发中 · 尚未发布
+
+- 合并 Wi-Fi 与手机热点入口；新增 Wi-Fi Direct 无线直连，电脑搜索手机后配对，无需填写 IP。
+- 等待用户实机验收，**确认前不创建新 Release 或版本标签**。开发与测试范围见 [Wi-Fi Direct](WIFI-DIRECT.md)。
+
+后续 GitHub Release Notes 保持简短：概述用户可感知的改动、必要依赖和已知问题；构建、CI 与协议细节链接到对应文档，不在发布说明中重复展开。
+
 ## v0.1.2 · 2026-10-29
 
 修复 Windows 退出后遗留本工具所启动 ADB 进程的问题。已有共享 ADB 服务继续复用；本工具新建的服务使用独立端口并纳入 Windows Job Object，正常关闭、失败、取消或强制结束时回收自身进程。不会按进程名误杀其他工具使用的 ADB。

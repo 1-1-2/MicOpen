@@ -123,6 +123,9 @@ fun ConnectPage(
             }
             Text("准备：${mode.title}", style = MaterialTheme.typography.labelLarge)
             HintText(mode.preparation)
+            if (mode == ConnectionMode.DIRECT && state.isRunning && state.detail.isNotBlank()) {
+                HintText(state.detail)
+            }
             val settingsAction = when (mode) {
                 ConnectionMode.WIFI -> Settings.ACTION_WIFI_SETTINGS
                 ConnectionMode.DIRECT -> Settings.ACTION_WIFI_SETTINGS

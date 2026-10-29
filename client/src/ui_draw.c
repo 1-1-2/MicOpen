@@ -1276,7 +1276,7 @@ void ui_draw_stats_card(HDC dc)
         } else {
             swprintf(v[2], 40, L"—");
         }
-        swprintf(v[3], 40, L"Wi-Fi");
+        swprintf(v[3], 40, L"%ls", g_ui.transport==1 ? L"Wi-Fi Direct" : g_ui.transport==2 ? L"蓝牙" : g_ui.transport==3 ? L"USB" : L"Wi-Fi");
         { RECT area = { c.left + ui_pad(), c.top + sd(140), c.right - ui_pad(), c.top + sd(225) };
           ui_fill_round(dc, area, sd(8), g_th.sunken, 255);
           ui_stroke_round(dc, area, sd(8), g_th.stroke, 255, 1); }
@@ -1409,14 +1409,14 @@ void ui_draw_statusbar(HDC dc)
         ui_badge(dc, ir, badge_txt, badge_fg, badge_bg);
         x = ir.right + sd(8);
     }
-    /* 分隔 + 传输方式（当前仅 Wi-Fi 一种已实现，其余为可见禁用态，D-03） */
+    /* 分隔 + 当前所选传输方式 */
     ui_text(dc, (RECT){ x, r.top, x + sd(8), r.bottom }, L"·", f, g_th.text_mute,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     x += sd(8) + sd(8);
     ui_text(dc, (RECT){ x, r.top, x + sd(80), r.bottom },
-            L"Wi-Fi", ui_font(12, FW_NORMAL, 2), g_th.text_dim,
+            g_ui.transport==1 ? L"Wi-Fi Direct" : g_ui.transport==2 ? L"蓝牙" : g_ui.transport==3 ? L"USB" : L"Wi-Fi", ui_font(12, FW_NORMAL, 2), g_th.text_dim,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    x += ui_measure_text(L"Wi-Fi", f) + sd(8);
+    x += sd(88);
     /* 抖动（旧名「延迟」是错名：这是帧到达间隔 EMA，不含编解码与驱动缓冲） */
     ui_text(dc, (RECT){ x, r.top, x + sd(8), r.bottom }, L"·", f, g_th.text_mute,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE);

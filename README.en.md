@@ -16,20 +16,24 @@ MicLink Open builds new Android and Windows clients on the established **WO Mic 
 
 This is an independently maintained client project, unaffiliated with WO Mic. No official partnership or endorsement is implied. We appreciate WO Mic's mature virtual audio driver; it remains maintained and licensed separately by its provider.
 
-## One phone. Four ways to connect.
+## One phone. Connect your way.
 
-📶 **Wi-Fi** · 📡 **Phone hotspot** · 🔵 **Bluetooth** · 🔌 **USB**
+📶 **Wi-Fi (router / phone hotspot)** · 📡 **Wi-Fi Direct** · 🔵 **Bluetooth** · 🔌 **USB**
 
-![Windows client showing connection methods, input levels, gain and audio settings](site/assets/windows-client-dark.png)
+> The development version merges Wi-Fi and hotspot into one option and adds real **Wi-Fi Direct**. Physical-device acceptance is pending; no new release will be published before user confirmation. Downloads below still point to stable v0.1.2.
+
+![Stable Windows client showing input levels, gain and audio settings](site/assets/windows-client-dark.png)
+
+<sub>Screenshot: stable v0.1.2. Connection choices have changed in the development version.</sub>
 
 | Connection | How it works |
 |---|---|
-| 📶 Wi-Fi | Join a mutually reachable local network and enter the phone's IP address. |
-| 📡 Phone hotspot | Enable the phone's hotspot, join it from Windows, and enter its hotspot address. |
+| 📶 Wi-Fi | Join the same local network, or connect Windows to the phone's hotspot, then enter the phone's IP address. |
+| 📡 Wi-Fi Direct · pending device test | Start Direct on the phone, discover and select it on Windows, then confirm pairing. No IP entry or phone hotspot required. |
 | 🔵 Bluetooth | Pair in system settings, then select the paired phone in the Windows client. |
 | 🔌 USB | Connect a data cable, enable USB debugging and authorize the PC. External ADB is required. |
 
-**Choose a method on Android → tap Start to wait → select the same method on Windows and Connect.** Stop the phone's service before changing methods. Hotspot mode uses the phone's access point, not Wi-Fi P2P.
+**Choose a method on Android → tap Start to wait → select the same method on Windows and Connect.** Stop the phone's service before changing methods. Wi-Fi covers routers and phone hotspots; Wi-Fi Direct creates a separate P2P group.
 
 ### 🎚️ Your input, your settings
 

@@ -601,6 +601,16 @@ static unsigned __stdcall worker(void *arg)
      *    不再是截断兜底） */
     g_tcp = transport_connect(g_transport, host, port, g_st.last_error, sizeof(g_st.last_error));
     if (g_tcp == INVALID_SOCKET) { g_st.state = ST_ERROR; goto out; }
+    if (g_transport == 1) {
+        SOCKADDR_IN peer; int length = sizeof(peer); char address[16];
+        if (!getpeername(g_tcp, (SOCKADDR*)&peer, &length) &&
+            InetNtopA(AF_INET, &peer.sin_addr, address, sizeof(address))) {
+            EnterCriticalSection(&g_cs);
+            snprintf(g_st.peer, sizeof(g_st.peer), "%s:%d", address, port);
+            LeaveCriticalSection(&g_cs);
+            elog("Wi-Fi Direct 已连接 %s，开始 101 握手", address);
+        }
+    }
     if (g_transport == 2) elog("蓝牙 RFCOMM 已连接，开始 101 握手");
 
     g_st.state = ST_HANDSHAKE;

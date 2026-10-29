@@ -26,7 +26,7 @@
 #   两者都只依赖 Windows 自带 DLL，都内嵌 VS_VERSION_INFO / 图标 / manifest。
 #
 # 体积预算分开设（安装器不沿用应用那套）：
-#   SIZE_BUDGET_APP          应用预算，默认 352 KiB（R-42 撤出 app 侧后回到约 331 KB）
+#   SIZE_BUDGET_APP          应用预算，默认 360 KiB（含独立 Wi-Fi Direct 模块的加载入口）
 #   SIZE_BUDGET_DRVINST      安装器预算，默认 256 KiB（内嵌三套驱动时实测约 209 KB）
 #   SIZE_BUDGET_DRVINST_DEV  开发分支安装器预算，默认 320 KiB（多带解包模块）
 #
@@ -42,7 +42,7 @@ MODE=${1:-all}
 APP_OUT=build/womic.exe
 DRVINST_OUT=build/womic-drvinst.exe
 DRVINST_DEV_OUT=build/womic-drvinst-dev.exe
-SIZE_BUDGET_APP=${SIZE_BUDGET_APP:-360448}      # 352 KiB（R-25/R-24：字体字形探测+电平配色+CLIP+卡片裁剪；R-42 撤出 app 侧后体积回落）
+SIZE_BUDGET_APP=${SIZE_BUDGET_APP:-368640}      # 360 KiB：Wi-Fi Direct C ABI 加载、连接状态与诊断
 SIZE_BUDGET_DRVINST=${SIZE_BUDGET_DRVINST:-262144}  # 256 KiB
 SIZE_BUDGET_DRVINST_DEV=${SIZE_BUDGET_DRVINST_DEV:-327680}  # 320 KiB
 

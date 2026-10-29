@@ -239,6 +239,7 @@ class MicCaptureService : Service() {
     private var connection: Socket? = null
     private var bluetoothTransport: BluetoothTransport? = null
     private var directTransport: WifiDirectTransport? = null
+    private var directHint = ""
     private var connectionMode = ConnectionMode.WIFI
     @Volatile private var streamConnection: Socket? = null
     @Volatile private var streamWriter: ((ByteArray) -> Unit)? = null
@@ -386,6 +387,7 @@ class MicCaptureService : Service() {
     fun currentState(): String = when {
         isStreaming -> STATE_STREAMING
         isConnected() -> STATE_CONNECTED
+        isRunning && connectionMode == ConnectionMode.DIRECT && serverSocket == null -> STATE_STARTING
         isRunning -> STATE_LISTENING
         lastError != null -> STATE_ERROR
         else -> STATE_IDLE
@@ -410,6 +412,8 @@ class MicCaptureService : Service() {
             isConnected() ->
                 "PC 已连接：${peerDescription} · 协商 ${codecName(negotiatedCodec())}/" +
                     "${negotiatedSampleRate}Hz/媒体端口 ${negotiatedMediaPort}"
+            isRunning && connectionMode == ConnectionMode.DIRECT ->
+                directHint.ifBlank { "正在准备无线直连…" }
             isRunning ->
                 "${connectionMode.title} · 等待 Windows 连接"
             else ->
@@ -420,6 +424,7 @@ class MicCaptureService : Service() {
     /** 本机监听地址（IPv4:port），UI 提示用户在 PC 客户端填写。 */
     fun listeningAddress(): String {
         val port = if (controlPort in 1..65535) controlPort else Prefs.DEFAULT_CONTROL_PORT
+        if (connectionMode == ConnectionMode.DIRECT) return serverSocket?.inetAddress?.hostAddress?.let { "$it:$port" } ?: ""
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
             for (ni in Collections.list(interfaces)) {
@@ -440,7 +445,7 @@ class MicCaptureService : Service() {
     fun negotiatedCodec(): Int = session?.codec ?: Codec.OPUS
 
     /** 已发送包数（UI 轮询显示）。 */
-    fun activeTransport(): String? = streamConnection?.let {
+    fun activeTransport(): String? = if (isRunning && connectionMode == ConnectionMode.DIRECT) "Wi-Fi Direct" else streamConnection?.let {
         if (bluetoothTransport?.owns(it) == true) "蓝牙" else "USB / TCP 音频流"
     }
 
@@ -568,9 +573,14 @@ class MicCaptureService : Service() {
         connectionMode = ConnectionMode.read(this)
         if (connectionMode == ConnectionMode.DIRECT) {
             isRunning = true
+            directHint = "正在准备无线直连…"
             val adapter = WifiDirectTransport(this,
                 ready = { address -> openServer(address) },
-                message = { text -> postMessage(text); updateNotification(text) },
+                message = { text ->
+                    directHint = text
+                    if (!isConnected()) notifyState(STATE_LISTENING, text)
+                    if (!isConnected()) updateNotification(text)
+                },
                 failed = { text -> fail(text) })
             directTransport = adapter
             adapter.start()
@@ -620,6 +630,7 @@ class MicCaptureService : Service() {
         // 采集链路
         directTransport?.close()
         directTransport = null
+        directHint = ""
         bluetoothTransport?.close()
         bluetoothTransport = null
         stopStreaming("服务停止")

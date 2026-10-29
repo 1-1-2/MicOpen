@@ -9,7 +9,7 @@
 | 想做的事 | 入口与内容 |
 |---|---|
 | 第一次连上手机 | [首页快速上手](../README.md#quick-start)：Wi-Fi 四步连接。 |
-| 换热点、USB 或蓝牙 | [连接指南](TRANSPORTS.md)：准备顺序、ADB 放置与授权、蓝牙配对、协议边界。 |
+| 换 Wi-Fi Direct、USB 或蓝牙 | [连接指南](TRANSPORTS.md)：准备顺序、ADB 放置与授权、蓝牙配对、协议边界；[无线直连开发与验收](WIFI-DIRECT.md)。 |
 | 调整手机采集 | [Android 采集端](../android/README.md)：应用模块、采集与验证入口。 |
 | 管理电脑接收与驱动 | [Windows 接收端](../client/README.md)：CLI、外置驱动管理与无声排查。 |
 | 试听与抑制监听啸叫 | [监听实验室](../client/monitor/README.md)：设备、独立音量、Ring Out 与实验性 AEC。 |

@@ -6,6 +6,7 @@ import ctypes
 import pathlib
 import sys
 import threading
+import time
 
 path = pathlib.Path(sys.argv[1]).resolve()
 dll = ctypes.CDLL(str(path))
@@ -39,3 +40,30 @@ t.start(); t.join(timeout=10)
 assert not t.is_alive(), 'cancel must return immediately'
 if errors: raise errors[0]
 print('PASS Wi-Fi Direct ABI / invalid arguments / cancellation / repeated calls (no radio test)')
+
+if len(sys.argv) > 2:
+    fixture = ctypes.CDLL(str(pathlib.Path(sys.argv[2]).resolve()))
+    fixture.ml_direct_test_wait.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_uint]
+    fixture.ml_direct_test_wait.restype = ctypes.c_int
+    user32 = ctypes.WinDLL('user32', use_last_error=True)
+    user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user32.FindWindowW.restype = ctypes.c_void_p
+    user32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+    for case in ['cancel', 'close', 'timeout']:
+        cancel = ctypes.c_long(0)
+        results = []
+        t = threading.Thread(target=lambda: results.append(fixture.ml_direct_test_wait(ctypes.byref(cancel), 200 if case == 'timeout' else 5000)))
+        t.start()
+        started = time.monotonic()
+        window = None
+        while time.monotonic() - started < 2:
+            window = user32.FindWindowW('MicLink.WiFiDirect.Selector.v1', None)
+            if window: break
+            time.sleep(.01)
+        assert window, 'selector must open'
+        if case == 'cancel': cancel.value = 1
+        elif case == 'close': assert user32.PostMessageW(window, 0x0010, 0, 0)
+        t.join(timeout=3)
+        assert not t.is_alive() and results == [1], (case, results)
+        assert not user32.FindWindowW('MicLink.WiFiDirect.Selector.v1', None), 'selector must be destroyed'
+        print('PASS Direct native selector ' + case + ' (no radio test)')

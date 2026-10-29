@@ -127,6 +127,7 @@ jobs:
     - plan
     - build-android
     - build-windows
+    - build-direct
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dual != 'true' && !contains(needs.*.result,
       'failure') }}
     strategy:
@@ -229,6 +230,7 @@ jobs:
     - plan
     - build-android
     - build-windows
+    - build-direct
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dual == 'true' && !contains(needs.*.result,
       'failure') }}
     runs-on: ubuntu-latest
@@ -284,6 +286,7 @@ jobs:
     - plan
     - build-android
     - build-windows
+    - build-direct
     if: ${{ always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dual == 'true' && !contains(needs.*.result,
       'failure') }}
     runs-on: windows-latest

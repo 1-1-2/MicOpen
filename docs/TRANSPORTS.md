@@ -4,14 +4,14 @@ Source, issues, CI and releases: [1-1-2/MicOpen](https://github.com/1-1-2/MicOpe
 
 ## Design and references
 
-- **Wi-Fi:** the phone listens for control connections; media uses the existing UDP format.
-- **Phone hotspot:** Windows joins the phone's SoftAP and uses its actual interface address. This follows WO Mic's [official hotspot scenario](https://wolicheng.com/womic/references.html); it is not negotiated Wi-Fi P2P and has no hard-coded gateway.
+- **Wi-Fi (LAN or phone hotspot):** the phone listens for control connections; media uses the existing UDP format. Windows either joins the same router or the phone's SoftAP and enters the actual phone address. Old Android `HOTSPOT` preferences and the Windows `--transport hotspot` alias map to Wi-Fi.
+- **Wi-Fi Direct (development, physical acceptance pending):** Android creates its own P2P group through `WifiP2pManager`. Windows discovers association endpoints, lets the user select a phone, pairs through the public WinRT API, and gets both endpoint addresses from `GetConnectionEndpointPairs`. Legacy advertisement is disabled; no ordinary phone/Windows hotspot is started. See [Direct design, build and acceptance](WIFI-DIRECT.md).
 - **USB:** ADB forwards a private local TCP port to the installed app. No server binary is pushed. Selection and forwarding cleanup follow the lifecycle documented by [scrcpy](https://github.com/Genymobile/scrcpy/blob/master/doc/develop.md).
 - **Bluetooth:** secure paired RFCOMM, following the [Android API](https://developer.android.com/develop/connectivity/bluetooth/connect-bluetooth-devices) and [Microsoft Winsock example](https://github.com/microsoft/Windows-classic-samples/blob/main/Samples/Win7Samples/netds/winsock/bluetooth/bthcxn.cpp). Pairing stays in system settings; Windows enumerates paired devices without a new radio inquiry.
 
 `client/src/transport.c` owns connection establishment, device selection, ADB process ownership and forwarding rules. It does not access codecs, DSP or the virtual driver. `engine.c` owns one audio pipeline for every method.
 
-On Android, `MediaSender` accepts complete existing media packets. `UdpSender` serves Wi-Fi/hotspot; `StreamMediaSender` serves USB/RFCOMM with a three-packet queue, drops queued packets older than 200 ms, and aborts a connection whose write blocks for 500 ms. Control and media share a serialized writer. Bluetooth relays bytes to the local session server; its loopback source port is bound and registered before connect, preventing ownership races.
+On Android, `MediaSender` accepts complete existing media packets. `UdpSender` serves Wi-Fi and Wi-Fi Direct; `StreamMediaSender` serves USB/RFCOMM with a three-packet queue, drops queued packets older than 200 ms, and aborts a connection whose write blocks for 500 ms. Control and media share a serialized writer. Bluetooth relays bytes to the local session server; its loopback source port is bound and registered before connect, preventing ownership races.
 
 ## Stream extension v1
 
@@ -32,7 +32,7 @@ Choose a method on Android **before** tapping Start. Leave the phone waiting, th
 | Method | Windows CLI / preparation |
 |---|---|
 | Wi-Fi | `womic.exe --transport wifi --host <phone-ip> --connect` |
-| Hotspot | Enable the phone's hotspot, join it from Windows, then `womic.exe --transport hotspot --host <phone-hotspot-ip> --connect`. |
+| Wi-Fi Direct | Start Direct on Android, then `womic.exe --transport direct --connect`. Select the phone in the discovery window and confirm pairing on the phone; no `--host` needed. |
 | USB | `womic.exe --transport usb --connect`; optionally `--host <usb-serial>`. Empty / auto selects exactly one USB device. Enable USB debugging and authorize this PC. |
 | Bluetooth | Pair in system settings, enable Bluetooth and nearby-device permission on Android, then select the paired phone in Windows. CLI accepts a 12-digit hexadecimal address without separators. |
 

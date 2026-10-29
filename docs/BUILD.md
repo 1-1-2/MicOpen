@@ -93,3 +93,14 @@ export WOMIC_DRIVER_DIR="<本机官方驱动目录>"
 具体入口和选项见[工作流使用说明](../.github/workflows/README.md)。
 
 Android debug 与 release 分别输出到 `app/build/outputs/apk/debug/`、`app/build/outputs/apk/release/`（从 Android 模块定位）。release 开启 R8 与资源裁剪，且 `debuggable=false`。未提供签名配置时 release 默认不签名；本机可通过 `MICLINK_ANDROID_KEYSTORE`、`MICLINK_ANDROID_STORE_PASSWORD`、`MICLINK_ANDROID_KEY_ALIAS`、`MICLINK_ANDROID_KEY_PASSWORD` 配置发布签名。CI 显式使用 `-PmiclinkTestSigning=true`，不持有分发私钥；其 release 用于功能验证，分发前在本机签名。调试构建与测试签名均不能代替正式分发身份。
+
+## Wi-Fi Direct 原生适配模块
+
+音频客户端和监听模块仍可在 Linux / WSL2 下交叉编译。新增的 `miclink-direct.dll` 使用系统 C++/WinRT 投影，需在 Windows 安装 Visual Studio 2022（或更新版本）的 C++ 桌面开发工具和 Windows 10/11 SDK，在 PowerShell 执行：
+
+```powershell
+./client/direct/build.ps1
+python client/direct/test_adapter.py client/build/miclink-direct.dll
+```
+
+把 DLL 放在 `womic.exe` 同目录。缺少该 DLL 只影响无线直连；Wi-Fi、USB 和蓝牙沿用原路径。不能把 Linux 交叉编译主程序成功等同于已构建完整 Direct 功能。CI 先在 Windows 构建适配器，再与 Linux 构建的客户端合并成同一来源清单；Lab 共用此流程。物理无线连接不由云端托管 runner 验收。

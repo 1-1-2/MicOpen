@@ -15,8 +15,12 @@ enum class ConnectionMode(val title: String, val preparation: String) {
         fun read(context: Context): ConnectionMode {
             val prefs = context.getSharedPreferences("transport", Context.MODE_PRIVATE)
             val saved = prefs.getString("mode", null)
+            return fromSaved(saved, prefs.getBoolean("bluetooth", false))
+        }
+        /** Old HOTSPOT preferences become ordinary Wi-Fi, never silently Direct. */
+        fun fromSaved(saved: String?, legacyBluetooth: Boolean = false): ConnectionMode {
             return entries.firstOrNull { it.name == saved }
-                ?: if (saved == null && prefs.getBoolean("bluetooth", false)) BLUETOOTH else WIFI
+                ?: if (saved == null && legacyBluetooth) BLUETOOTH else WIFI
         }
         fun save(context: Context, mode: ConnectionMode) {
             context.getSharedPreferences("transport", Context.MODE_PRIVATE).edit()
