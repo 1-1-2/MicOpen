@@ -18,6 +18,8 @@ static unsigned direct_abi;
 static INIT_ONCE direct_once = INIT_ONCE_STATIC_INIT;
 static HWND direct_owner;
 static MicDirectTheme direct_theme;
+static MicDirectLog transport_logger;
+void transport_set_logger(MicDirectLog logger) { transport_logger=logger; }
 /* Load once from the executable directory, including concurrent UI/engine
  * callers. Failure stays local to Direct and never affects other transports. */
 static BOOL CALLBACK load_direct(PINIT_ONCE once, PVOID arg, PVOID *context)
@@ -58,6 +60,8 @@ static int direct_open(char *remote, char *local, char *error, int cap)
     if (!direct_available(error,cap)) return 0;
     MicDirectListen listen = (MicDirectListen)GetProcAddress(direct_module,"ml_direct_listen");
     if (!listen) {snprintf(error,cap,"无线直连模块缺少等待接口");return 0;}
+    MicDirectSetLogger set_logger=(MicDirectSetLogger)GetProcAddress(direct_module,"ml_direct_set_logger");
+    if (set_logger) set_logger(transport_logger);
     direct_session = listen(&cancelled,direct_owner,&direct_theme,remote,16,local,16,error,cap);
     return direct_session != NULL;
 }

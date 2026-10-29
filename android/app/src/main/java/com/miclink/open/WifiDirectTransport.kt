@@ -12,6 +12,7 @@ import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import java.io.Closeable
 import java.net.Inet4Address
@@ -140,6 +141,7 @@ class WifiDirectTransport(
         val m = manager ?: return
         val ch = channel ?: return
         if (closed || !prepared || selected != null || peers.none { it.id == id }) return
+        log("selected peer groupOwner=${peers.first { it.id == id }.groupOwner}; submitting connect without explicit stopDiscovery")
         selected = id
         isConnecting = true
         isDiscovering = false
@@ -152,20 +154,23 @@ class WifiDirectTransport(
             groupOwnerIntent = 0
             wps.setup = WpsInfo.PBC
         }
-        try {
-            m.stopPeerDiscovery(ch, object : WifiP2pManager.ActionListener {
-                override fun onSuccess() { beginConnect(m, ch, config) }
-                override fun onFailure(reason: Int) { beginConnect(m, ch, config) }
-            })
-        } catch (_: SecurityException) { error("连接权限已被撤销") }
-        catch (e: RuntimeException) { error("连接失败：${e.message}") }
+        // connect() stops discovery inside the system connection state machine.
+        // Explicit stopPeerDiscovery() may also flush supplicant peer records
+        // (AOSP Android 10/11), invalidating the device we are about to select.
+        beginConnect(m, ch, config)
     }
     private fun beginConnect(m: WifiP2pManager, ch: WifiP2pManager.Channel, config: WifiP2pConfig) {
         if (closed) return
+        val started = SystemClock.elapsedRealtime()
         try {
             m.connect(ch, config, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() { log("connect request accepted by system; waiting for group"); if (!closed) inspect() }
-                override fun onFailure(reason: Int) { if (!closed) error("无法连接电脑：${reasonText(reason)}") }
+                override fun onFailure(reason: Int) {
+                    if (!closed) {
+                        log("connect initiation rejected reason=$reason elapsedMs=${SystemClock.elapsedRealtime() - started}")
+                        error("系统未接受连接请求：${reasonText(reason)}；请复制两端日志")
+                    }
+                }
             })
         } catch (_: SecurityException) { error("连接权限已被撤销") }
         catch (e: RuntimeException) { error("连接失败：${e.message}") }
@@ -254,8 +259,9 @@ class WifiDirectTransport(
         channel?.close(); channel = null; manager = null
     }
     private fun reasonText(reason: Int) = when (reason) {
+        WifiP2pManager.ERROR -> "系统内部错误（ERROR=0，未提供细分原因）"
         WifiP2pManager.P2P_UNSUPPORTED -> "设备不支持 Wi-Fi Direct"
         WifiP2pManager.BUSY -> "系统繁忙，请检查其他直连或热点会话"
-        else -> "系统错误 $reason，请检查 Wi-Fi、权限及定位开关"
+        else -> "系统返回未知错误 $reason"
     }
 }

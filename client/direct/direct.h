@@ -12,6 +12,9 @@ typedef struct {
 typedef void *(__cdecl *MicDirectListen)(volatile LONG *, HWND, const MicDirectTheme *,
     char *, int, char *, int, char *, int);
 typedef void (__cdecl *MicDirectClose)(void *);
+/* Optional ABI 3 extension. Callback runs on the transport worker, no PIN data. */
+typedef void (__cdecl *MicDirectLog)(const char *, int);
+typedef void (__cdecl *MicDirectSetLogger)(MicDirectLog);
 #ifdef __cplusplus
 }
 #endif

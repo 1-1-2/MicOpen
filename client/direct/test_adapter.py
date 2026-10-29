@@ -77,7 +77,15 @@ if len(sys.argv) > 2:
         assert not user32.FindWindowW('MicLink.WiFiDirect.Listener.v1', None), 'listener must be destroyed'
         print('PASS Direct native listener ' + case + ' (no radio test)')
 
-    for command, mode, expected in [(1, 2, 2), (1001, 2, 3), (1, 0, 1)]:
+    events = []
+    LogCallback = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int)
+    logger = LogCallback(lambda line, kind: events.append((line.decode('utf-8'), kind)))
+    fixture.ml_direct_set_logger.argtypes = [LogCallback]
+    dll.ml_direct_set_logger.argtypes = [LogCallback]
+    dll.ml_direct_set_logger(LogCallback())  # Production export also accepts detach.
+    for command, mode, expected, logging in [(1, 2, 2, True), (1001, 2, 3, True), (1, 0, 1, True), (1, 2, 2, False)]:
+        events.clear()
+        fixture.ml_direct_set_logger(logger if logging else LogCallback())
         cancel = ctypes.c_long(0); results = []
         t = threading.Thread(target=lambda: results.append(fixture.ml_direct_test_wait(ctypes.byref(cancel), 5000, mode)))
         t.start(); window = None
@@ -96,6 +104,12 @@ if len(sys.argv) > 2:
         t.join(timeout=3)
         assert not t.is_alive() and results == [expected], (command, mode, results)
         assert not user32.FindWindowW('MicLink.WiFiDirect.Listener.v1', None)
+        expected_events = []
+        if logging and mode == 2:
+            expected_events = [('无线直连：用户允许手机连接请求' if command == 1 else '无线直连：用户拒绝手机连接请求', 0)]
+        assert events == expected_events, (command, mode, logging, events)
+    fixture.ml_direct_set_logger(LogCallback())
+    print('PASS Direct stage logger receives actual consent decisions and supports detach')
     print('PASS incoming consent requires a request and explicit Allow; Reject and Stop release the window')
 
     # Read-only fields send WM_CTLCOLORSTATIC, not WM_CTLCOLOREDIT. Verify both

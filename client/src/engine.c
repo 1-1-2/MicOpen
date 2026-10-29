@@ -796,7 +796,7 @@ int eng_set_gain_ext(int on)
 int eng_gain_ext(void) { return g_gain_ext; }
 
 /* --------------------------------------------------------- 对外 API */
-void eng_set_logger(LogFn fn) { g_log = fn; }
+void eng_set_logger(LogFn fn) { g_log = fn; transport_set_logger(fn); }
 
 /* 不再独立 CreateFile：门控是驱动全局的，任何新句柄都会把它清零。
  * “设备可用”只看本进程持有的那个长句柄。 */

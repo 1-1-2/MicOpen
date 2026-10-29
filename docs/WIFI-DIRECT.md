@@ -42,3 +42,13 @@ Android 不再在启动时调用 `createGroup()`，不会接管已有直连组�
 - [Windows 接收入站请求](https://learn.microsoft.com/en-us/uwp/api/windows.devices.wifidirect.wifidirectconnectionlistener)
 
 本实现使用公开 API，不使用 Wi-Fi Direct Services 的弃用接口、隐藏设置组件或普通 SoftAP。
+
+## 21:07 即刻失败反馈与修正
+
+作者本轮反馈：手机发现 1 个设备，点选后约 69 ms 返回 Android `ERROR=0`；没有系统接受 connect 的日志，尚未确认入组。发现记录 `groupOwners=0` 只是这一刻系统列表的角色标志，不能据此断定电脑没有发布组。
+
+代码中发现一个可明确修正的时序缺陷：在 `connect()` 前显式调用 `stopPeerDiscovery()`。AOSP Android 10/11 的 InactiveState 在这个停止操作里还会执行 `p2pFlush()`，可能使刚选中的底层设备记录失效；系统自己的 connect 流程会在适当阶段停止搜索。现改为直接提交 connect，停止/退出时仍清理自己的搜索。该缺陷与此次日志高度吻合，但还没有手机系统日志来证明厂商 ROM 走到了哪条底层失败分支，不能把它宣称为唯一根因。
+
+`ERROR=0` 是通用内部错误，不能直接当作定位或权限失败。新版记录提交失败的阶段和耗时；Windows 的日志回调扩展记录广播启动、收到请求、用户允许/拒绝、配对条件满足及 IPv4 端点就绪，不记录 PIN。旧版 Windows 没有这些阶段事件，因此旧日志“没有收到请求行”不能证明系统一定没收到请求。独立 DLL 保持监听 ABI 3，新增可选日志导出，不变更音频协议。
+
+本轮构建与回归状态待 CI 写回，仍不创建 Release。参考：[AOSP STOP_DISCOVERY](https://android.googlesource.com/platform/prebuilts/fullsdk/sources/android-30/+/refs/heads/androidx-core-release/com/android/server/wifi/p2p/WifiP2pServiceImpl.java#1838)、[Android discoverPeers / connect](https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pManager)。

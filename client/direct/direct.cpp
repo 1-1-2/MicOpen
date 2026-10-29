@@ -23,6 +23,8 @@ using namespace Windows::Foundation;
 using namespace Windows::Devices::Enumeration;
 using namespace Windows::Devices::WiFiDirect;
 namespace {
+std::atomic<MicDirectLog> stageLogger{nullptr};
+void emitStage(const char* text) noexcept { if (auto logger=stageLogger.load()) logger(text,0); }
 constexpr wchar_t className[] = L"MicLink.WiFiDirect.Listener.v1";
 std::optional<bool> aepFlag(DeviceInformation const& target,wchar_t const* key);
 struct PairPrompt {
@@ -152,8 +154,11 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
             SecureZeroMemory(value,sizeof(value));SetWindowTextW(p->pin,L"");
             ShowWindow(p->pin,SW_HIDE);ShowWindow(p->button,SW_HIDE);
             SetWindowTextW(p->status,L"PIN 已提交，正在等待系统完成配对…");
-        } else if (LOWORD(a)==IDOK && p->incoming) p->decision=1;
-        else if (LOWORD(a)==1001 && p->incoming) p->decision=-1;
+        } else if (LOWORD(a)==IDOK && p->incoming) {
+            p->decision=1;emitStage("无线直连：用户允许手机连接请求");
+        } else if (LOWORD(a)==1001 && p->incoming) {
+            p->decision=-1;emitStage("无线直连：用户拒绝手机连接请求");
+        }
         return 0;
     case WM_CLOSE:p->aborted=true;p->done=true;p->pendingPin.reset();ShowWindow(w,SW_HIDE);return 0;
     }
@@ -204,6 +209,7 @@ struct Session {
         try {if (publisher) publisher.Stop();} catch (...) {}
         device=nullptr;request=nullptr;listener=nullptr;publisher=nullptr;
         if (apartment) uninit_apartment();
+        emitStage("无线直连：本轮直连资源已清理");
     }
 };
 struct UiScope {
@@ -248,6 +254,7 @@ void advertise(Session& session,Picker& p) {
     if (cancelled(p)) throw hresult_canceled();
     if (session.publisher.Status()!=WiFiDirectAdvertisementPublisherStatus::Started)
         throw hresult_error(E_FAIL,L"无线直连启动超时，请检查网卡支持及 Wi-Fi 开关");
+    emitStage("无线直连：本机广播已启动，等待手机请求");
 }
 bool ipv4(std::string const& s) {
     unsigned a,b,c,d;char tail;
@@ -343,6 +350,7 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
                 L"，确认已提交="+(p->accepted.load()?L"是":L"否")+
                 L"，耗时="+to_hstring(pairElapsed)+L"ms。尚未进入音频握手。");
     }
+    emitStage("无线直连：系统配对条件已满足，正在建立会话");
     p->stage=L"建立直连会话";
     // Pairing settings were applied above. Reuse the resulting profile as in
     // Microsoft's connector sample, rather than requesting Invitation twice.
@@ -354,7 +362,7 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
         if (session.device.ConnectionStatus()==WiFiDirectConnectionStatus::Connected) {
             for (auto const& pair:session.device.GetConnectionEndpointPairs()) {
                 auto r=to_string(pair.RemoteHostName().CanonicalName()),l=to_string(pair.LocalHostName().CanonicalName());
-                if (ipv4(r) && ipv4(l)) {snprintf(remote,rcap,"%s",r.c_str());snprintf(local,lcap,"%s",l.c_str());return;}
+                if (ipv4(r) && ipv4(l)) {emitStage("无线直连：IPv4 端点就绪，继续音频握手");snprintf(remote,rcap,"%s",r.c_str());snprintf(local,lcap,"%s",l.c_str());return;}
             }
         }
         pump(*p);
@@ -374,6 +382,7 @@ void report(Picker const& p,char* error,int cap) noexcept {
     catch (...) {snprintf(error,cap,"无线直连初始化失败，请检查系统及网卡支持");}
 }
 }
+extern "C" __declspec(dllexport) void __cdecl ml_direct_set_logger(MicDirectLog logger) {stageLogger=logger;}
 extern "C" __declspec(dllexport) unsigned __cdecl ml_direct_abi() {return MIC_DIRECT_ABI;}
 extern "C" __declspec(dllexport) void __cdecl ml_direct_close(void* value) {delete static_cast<Session*>(value);}
 extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* cancel,HWND owner,
@@ -412,6 +421,7 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* c
             {std::lock_guard lock(incoming->mutex);
                 if (incoming->pending) {session->request=incoming->pending;incoming->pending=nullptr;}}
             if (!session->request) {pump(*p);continue;}
+            emitStage("无线直连：收到手机连接请求，等待本机允许");
             p->incoming=true;p->decision=0;
             auto target=session->request.DeviceInformation();
             auto name=target.Name();if (name.empty()) name=L"未命名手机";
