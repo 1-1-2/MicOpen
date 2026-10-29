@@ -64,7 +64,7 @@ print('PASS Wi-Fi Direct ABI / invalid arguments / cancellation / repeated calls
 
 if len(sys.argv) > 2:
     fixture = ctypes.CDLL(str(pathlib.Path(sys.argv[2]).resolve()))
-    fixture.ml_direct_test_wait.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_uint]
+    fixture.ml_direct_test_wait.argtypes = [ctypes.POINTER(ctypes.c_long), ctypes.c_uint, ctypes.c_uint]
     fixture.ml_direct_test_wait.restype = ctypes.c_int
     user32 = ctypes.WinDLL('user32', use_last_error=True)
     user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
@@ -73,7 +73,7 @@ if len(sys.argv) > 2:
     for case in ['cancel', 'close', 'timeout']:
         cancel = ctypes.c_long(0)
         results = []
-        t = threading.Thread(target=lambda: results.append(fixture.ml_direct_test_wait(ctypes.byref(cancel), 200 if case == 'timeout' else 5000)))
+        t = threading.Thread(target=lambda: results.append(fixture.ml_direct_test_wait(ctypes.byref(cancel), 200 if case == 'timeout' else 5000, 0)))
         t.start()
         started = time.monotonic()
         window = None
@@ -88,3 +88,39 @@ if len(sys.argv) > 2:
         assert not t.is_alive() and results == [1], (case, results)
         assert not user32.FindWindowW('MicLink.WiFiDirect.Selector.v1', None), 'selector must be destroyed'
         print('PASS Direct native selector ' + case + ' (no radio test)')
+
+    # Read-only fields send WM_CTLCOLORSTATIC, not WM_CTLCOLOREDIT. Verify both
+    # paths retain the same surface color in light/dark native windows.
+    user32.GetDlgItem.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    user32.GetDlgItem.restype = ctypes.c_void_p
+    user32.GetDC.argtypes = [ctypes.c_void_p]; user32.GetDC.restype = ctypes.c_void_p
+    user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+    user32.SendMessageW.restype = ctypes.c_ssize_t
+    gdi = ctypes.WinDLL('gdi32')
+    gdi.GetBkColor.argtypes = [ctypes.c_void_p]; gdi.GetBkColor.restype = ctypes.c_uint
+    for dark, expected in [(0, 235 | (237 << 8) | (241 << 16)), (1, 20 | (23 << 8) | (28 << 16))]:
+        cancel = ctypes.c_long(0)
+        results = []
+        t = threading.Thread(target=lambda: results.append(fixture.ml_direct_test_wait(ctypes.byref(cancel), 5000, dark | 2 | 4)))
+        t.start()
+        started = time.monotonic()
+        window = field = None
+        while time.monotonic() - started < 2:
+            window = user32.FindWindowW('MicLink.WiFiDirect.Selector.v1', None)
+            if window:
+                field = user32.GetDlgItem(window, 101)
+                if field: break
+            time.sleep(.01)
+        assert window and field
+        dc = user32.GetDC(field)
+        try:
+            for message in [0x0138, 0x0133]:  # WM_CTLCOLORSTATIC / WM_CTLCOLOREDIT
+                assert user32.SendMessageW(window, message, dc, field)
+                assert gdi.GetBkColor(dc) == expected, 'native field lost theme'
+        finally:
+            user32.ReleaseDC(field, dc)
+            cancel.value = 1
+            t.join(timeout=3)
+        assert not t.is_alive() and results == [1]
+        print('PASS Direct light/dark read-only field surface, compact picker cleanup')

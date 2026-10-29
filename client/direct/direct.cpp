@@ -115,9 +115,9 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
         p->pin = CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_TABSTOP|ES_NUMBER|ES_CENTER,
             14,100,width-28,28,w,(HMENU)101,nullptr,nullptr);
         SendMessageW(p->pin,EM_SETLIMITTEXT,8,0);
-        p->button = CreateWindowW(L"BUTTON",L"选择",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_DEFPUSHBUTTON,
+        p->button = CreateWindowW(L"BUTTON",L"选择",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,
             width-190,234,80,30,w,(HMENU)IDOK,nullptr,nullptr);
-        CreateWindowW(L"BUTTON",L"取消",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+        CreateWindowW(L"BUTTON",L"取消",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,
             width-96,234,82,30,w,(HMENU)IDCANCEL,nullptr,nullptr);
         for (HWND c=GetWindow(w,GW_CHILD);c;c=GetWindow(c,GW_HWNDNEXT))
             SendMessageW(c,WM_SETFONT,(WPARAM)GetStockObject(DEFAULT_GUI_FONT),TRUE);
@@ -136,6 +136,18 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
         bool field=(HWND)b==p->pin || (HWND)b==p->list;
         SetTextColor(dc,p->theme.text);SetBkColor(dc,field?p->theme.surface:p->theme.background);
         return (LRESULT)(field?p->surface:p->background);
+    }
+    case WM_DRAWITEM: {
+        auto item=reinterpret_cast<DRAWITEMSTRUCT*>(b);
+        if (item->CtlType!=ODT_BUTTON) break;
+        FillRect(item->hDC,&item->rcItem,p->surface);
+        FrameRect(item->hDC,&item->rcItem,p->background);
+        wchar_t label[32]{};GetWindowTextW(item->hwndItem,label,32);
+        SetBkMode(item->hDC,TRANSPARENT);
+        SetTextColor(item->hDC,(item->itemState&ODS_DISABLED)?p->theme.muted:p->theme.text);
+        DrawTextW(item->hDC,label,-1,&item->rcItem,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        if (item->itemState&ODS_FOCUS) {RECT focus=item->rcItem;InflateRect(&focus,-3,-3);DrawFocusRect(item->hDC,&focus);}
+        return TRUE;
     }
     case WM_TIMER:
         if (cancelled(*p) || GetTickCount64() >= p->deadline) {
@@ -200,8 +212,8 @@ void createPicker(std::shared_ptr<Picker> const& p,int x=CW_USEDEFAULT,int y=CW_
     if (x!=CW_USEDEFAULT) {
         POINT point{x,y};MONITORINFO mi{sizeof(mi)};
         if (GetMonitorInfoW(MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST),&mi)) {
-            x=std::clamp(x,mi.rcWork.left,std::max(mi.rcWork.left,mi.rcWork.right-380));
-            y=std::clamp(y,mi.rcWork.top,std::max(mi.rcWork.top,mi.rcWork.bottom-310));
+            x=std::clamp<LONG>(x,mi.rcWork.left,std::max(mi.rcWork.left,mi.rcWork.right-380));
+            y=std::clamp<LONG>(y,mi.rcWork.top,std::max(mi.rcWork.top,mi.rcWork.bottom-310));
         }
     }
     p->window=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_CONTROLPARENT,className,
@@ -302,7 +314,7 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
         pairing.revoke();p->pendingPin.reset();
         if (result.Status()!=DevicePairingResultStatus::Paired && result.Status()!=DevicePairingResultStatus::AlreadyPaired)
             throw hresult_error(E_FAIL,hstring(pairingStatus(result.Status()))+L"，状态="+to_hstring((int)result.Status())+
-                L"；阶段=Invitation，配对方式="+to_hstring(p->ceremony.load())+L"。请查看两端提示后重试；该状态不能确定是未确认或旧配对导致。");
+                L"；过程=Invitation，方式="+to_hstring(p->ceremony.load()));
     }
     session.device=await(*p,WiFiDirectDevice::FromIdAsync(target.Id(),params));
     if (!session.device) throw hresult_error(E_FAIL,L"无法建立无线直连会话");
@@ -366,9 +378,18 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_open(volatile LONG* can
 }
 #ifdef MICLINK_DIRECT_TEST
 // Native window/pump/cancellation fixture; no radio required.
-extern "C" __declspec(dllexport) int __cdecl ml_direct_test_wait(volatile LONG* cancel,unsigned timeout) {
+extern "C" __declspec(dllexport) int __cdecl ml_direct_test_wait(volatile LONG* cancel,unsigned timeout,unsigned mode) {
     auto p=std::make_shared<Picker>();p->cancel=cancel;UiScope ui{p};
-    try {p->deadline=GetTickCount64()+timeout;createPicker(p);while (!p->done && !cancelled(*p)) pump(*p);return cancelled(*p)?1:0;}
+    try {
+        p->compact=(mode&2)!=0;
+        if (mode&1) p->theme={RGB(28,31,36),RGB(20,23,28),RGB(235,238,242),RGB(155,160,169),RGB(100,180,240),1};
+        p->deadline=GetTickCount64()+timeout;createPicker(p);
+        if (mode&4) {
+            ShowWindow(p->list,SW_HIDE);ShowWindow(p->pin,SW_SHOW);
+            SendMessageW(p->pin,EM_SETREADONLY,TRUE,0);
+            SetWindowTextW(p->pin,L"01234567");
+        }
+        while (!p->done && !cancelled(*p)) pump(*p);return cancelled(*p)?1:0;}
     catch (...) {return -1;}
 }
 #endif
