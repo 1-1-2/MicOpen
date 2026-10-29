@@ -18,7 +18,7 @@ static unsigned direct_abi;
 static INIT_ONCE direct_once = INIT_ONCE_STATIC_INIT;
 static HWND direct_owner;
 static MicDirectTheme direct_theme;
-/* Load once from the executable directory, including concurrent picker/engine
+/* Load once from the executable directory, including concurrent UI/engine
  * callers. Failure stays local to Direct and never affects other transports. */
 static BOOL CALLBACK load_direct(PINIT_ONCE once, PVOID arg, PVOID *context)
 {

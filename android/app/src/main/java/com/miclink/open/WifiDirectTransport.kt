@@ -130,7 +130,7 @@ class WifiDirectTransport(
             m.requestPeers(ch) { found ->
                 if (closed) return@requestPeers
                 peers = found.deviceList.filter { it.status != WifiP2pDevice.UNAVAILABLE && it.status != WifiP2pDevice.FAILED }
-                    .take(64).map { DirectPeer(it.deviceAddress, it.deviceName.takeIf(String::isNotBlank) ?: "未命名设备", it.isGroupOwner) }
+                    .take(64).map { DirectPeer(it.deviceAddress, it.deviceName?.takeIf(String::isNotBlank) ?: "未命名设备", it.isGroupOwner) }
                     .sortedWith(compareByDescending<DirectPeer> { it.groupOwner }.thenBy { it.name })
                 log("peers=${peers.size} groupOwners=${peers.count { it.groupOwner }}")
             }
@@ -189,7 +189,7 @@ class WifiDirectTransport(
                     }
                     joinedInterface = group.`interface`
                     if (info.isGroupOwner) {
-                        error("本次未加入电脑的直连组，请确认电脑先进入等待状态后重试")
+                        error("系统本次把手机分配为组主，与此实验方向不一致；请停止后检查这对设备的旧直连配对记录")
                         return@requestGroupInfo
                     }
                     // The GO address belongs to Windows. Bind only our own

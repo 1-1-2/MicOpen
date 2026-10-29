@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DirectGroupOwnershipTest {
-    private val chosen = "02:11:22:33:44:55"
+    private val chosen = "02:ab:cd:44:ee:55"
     @Test fun unrelatedGroupCannotBeRemovedEvenIfInterfaceWasReused() {
         assertFalse(DirectGroupOwnership.mayLeave(chosen, "p2p0", "p2p0", "02:99:88:77:66:55"))
         assertFalse(DirectGroupOwnership.mayLeave(null, "p2p0", "p2p0", chosen))

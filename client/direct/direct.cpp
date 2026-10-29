@@ -183,9 +183,10 @@ struct IncomingState {
     std::atomic_long error{0};
     WiFiDirectConnectionRequest pending{nullptr};
     void shutdown() {
-        std::lock_guard lock(mutex);active=false;
-        try {if (pending) pending.Close();} catch (...) {}
-        pending=nullptr;
+        WiFiDirectConnectionRequest closing{nullptr};
+        {std::lock_guard lock(mutex);active=false;closing=pending;pending=nullptr;}
+        // A COM call may dispatch callbacks. Never hold our queue lock here.
+        try {if (closing) closing.Close();} catch (...) {}
     }
 };
 struct Session {
@@ -283,7 +284,7 @@ DeviceInformation resolveDevice(Picker& p,hstring const& id) {
 void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInformation const& target,
                    char* remote,int rcap,char* local,int lcap) {
     p->stage=L"读取设备配对信息";
-    if (!target) throw hresult_error(HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),L"所选设备记录已不可用，请重新搜索并选择手机");
+    if (!target) throw hresult_error(HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),L"手机请求的设备记录已不可用，请让手机重新发起连接");
     p->pairing=true;p->done=false;p->deadline=GetTickCount64()+90000;
     ShowWindow(p->button,SW_HIDE);ShowWindow(p->reject,SW_HIDE);
     SetWindowTextW(p->status,L"正在配对与连接… 请查看手机上的确认提示。");
@@ -366,7 +367,7 @@ void report(Picker const& p,char* error,int cap) noexcept {
     catch (hresult_error const& e) {
         auto text=to_string(e.message()),stage=to_string(p.stage),state=to_string(p.pairingState);
         char const* hint=e.code()==HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)
-            ? "；设备记录或关联可能已失效，请重新搜索并选择手机" : "";
+            ? "；设备记录或关联可能已失效，请让手机重新发起连接" : "";
         snprintf(error,cap,"无线直连[%s]：%s%s%s%s (0x%08X)",stage.c_str(),text.c_str(),hint,
             state.empty()?"":"；",state.c_str(),(unsigned)e.code().value);
     }
@@ -392,9 +393,11 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* c
             [incoming](auto const&,WiFiDirectConnectionRequestedEventArgs const& e) noexcept {
                 try {
                     auto request=e.GetConnectionRequest();
-                    std::lock_guard lock(incoming->mutex);
-                    if (!incoming->active || incoming->occupied) {request.Close();return;}
-                    incoming->occupied=true;incoming->pending=request;
+                    bool reject;
+                    {std::lock_guard lock(incoming->mutex);
+                        reject=!incoming->active || incoming->occupied;
+                        if (!reject) {incoming->occupied=true;incoming->pending=request;}}
+                    if (reject) request.Close();
                 } catch (hresult_error const& e) {incoming->error=e.code().value;}
                 catch (...) {incoming->error=E_FAIL;}
             });
