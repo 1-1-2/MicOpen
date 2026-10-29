@@ -10,15 +10,15 @@
 
 双机工作流使用 CI 专用 OAuth 客户端：允许写入 `auth_keys`，签发标签为 `tag:ci`。`TS_OAUTH_CLIENT_ID` 和 `TS_OAUTH_SECRET` 必须来自同一客户端。管理客户端即使也有 `auth_keys` 权限，允许签发的标签仍可能不同，不能直接替换 CI 凭据。本地没有 CI secret 副本，不代表 GitHub Actions 未配置它；应通过工作流的入网结果核验。
 
-## 待办：CI OAuth 凭据更新
+## CI OAuth 配置与待办
 
-2026-10-29 作者决定暂缓处理。**下次需要使用这组凭据前，先提醒并询问作者，不自动继续迁移或轮换。**
+2026-10-29 作者随后明确授权一次性安全迁移，已完成 MicOpen 的 CI 凭据配置。沿用原 CI OAuth 客户端，没有新建或撤销 Tailscale 客户端；此前的新建凭据计划已由本次迁移替代。
 
-- [ ] 作者在 Tailscale 新建 CI 专用 OAuth 客户端：`auth_keys` 写权限、`tag:ci`。
-- [ ] 将配套的新 ID、secret 同时更新到 MicOpen 的 `TS_OAUTH_CLIENT_ID` 和 `TS_OAUTH_SECRET`。
-- [ ] 获得作者确认后验证入网；确认旧客户端不再被使用后，再由作者决定是否撤销。
+- [x] `TS_OAUTH_CLIENT_ID`、`TS_OAUTH_SECRET` 已配套配置到 MicOpen Actions Secrets。
+- [x] [MicOpen 独立验证](https://github.com/1-1-2/MicOpen/actions/runs/40807940182)通过：CI 身份匹配、Tailscale OAuth 认证，以及 SSH 公钥变量存在性检查。
+- [ ] 实际 Tailscale 入网、Lab SSH 或双机联调尚未重跑；下次需要启用时先确认场景。已经明确授权的场景不重复询问。
 
-SSH 公钥变量 `UPTERM_DEBUG_PUBKEY` 已配置并核对；管理用 OAuth 不在本次更新范围内。此待办不阻塞普通构建，也不表示 Lab 已经验证可用。
+SSH 公钥变量 `UPTERM_DEBUG_PUBKEY` 已配置并核对；管理用 OAuth 不在本次更新范围内。本地仅保留迁移和验证记录，没有导出 CI secret 明文。凭据配置完成不等于实际 Lab / SSH 已验证可用，也不阻塞普通构建。
 
 ## 保存与使用规则
 
