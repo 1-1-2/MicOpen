@@ -437,7 +437,7 @@ class MicCaptureService : Service() {
                 }
             }
         } catch (e: SocketException) {
-            android.util.Log.w(TAG, "枚举网卡失败：${e.message}")
+            AppLog.w(TAG, "枚举网卡失败：${e.message}")
         }
         return "0.0.0.0:$port"
     }
@@ -478,7 +478,7 @@ class MicCaptureService : Service() {
         return try {
             rec.routedDevice?.let { AudioDeviceManager.deviceLabel(it) }
         } catch (t: Throwable) {
-            android.util.Log.w(TAG, "读取 routedDevice 失败：${t.message}")
+            AppLog.w(TAG, "读取 routedDevice 失败：${t.message}")
             null
         }
     }
@@ -510,7 +510,7 @@ class MicCaptureService : Service() {
         }
         captureSettings = sanitized
         captureSettingsChanged.set(true)
-        android.util.Log.i(
+        AppLog.i(
             TAG,
             "采集选项已更新：audioSource=${sanitized.audioSource}，" +
                 "micDeviceId=${sanitized.micDeviceId}，" +
@@ -646,14 +646,14 @@ class MicCaptureService : Service() {
             try {
                 sock.close()
             } catch (t: Throwable) {
-                android.util.Log.w(TAG, "关闭 ServerSocket 异常：${t.message}")
+                AppLog.w(TAG, "关闭 ServerSocket 异常：${t.message}")
             }
         }
 
         try {
             audioManager?.unregisterAudioDeviceCallback(deviceCallback)
         } catch (t: Throwable) {
-            android.util.Log.w(TAG, "注销 AudioDeviceCallback 失败：${t.message}")
+            AppLog.w(TAG, "注销 AudioDeviceCallback 失败：${t.message}")
         }
 
         releaseWakeLock()
@@ -662,7 +662,7 @@ class MicCaptureService : Service() {
         try {
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         } catch (t: Throwable) {
-            android.util.Log.w(TAG, "stopForeground 失败：${t.message}")
+            AppLog.w(TAG, "stopForeground 失败：${t.message}")
         }
 
         if (state == STATE_ERROR) {
@@ -675,13 +675,13 @@ class MicCaptureService : Service() {
 
     /** 出错停止：把原因回传给 UI。 */
     private fun fail(message: String) {
-        android.util.Log.e(TAG, message)
+        AppLog.e(TAG, message)
         stopCapture(STATE_ERROR, message)
         mainHandler.post { listener?.onError(message) }
         try {
             stopSelf()
         } catch (t: Throwable) {
-            android.util.Log.w(TAG, "stopSelf 失败：${t.message}")
+            AppLog.w(TAG, "stopSelf 失败：${t.message}")
         }
     }
 
@@ -691,12 +691,12 @@ class MicCaptureService : Service() {
 
     /** accept 循环：一次只服务一个客户端，断开后继续等下一个。 */
     private fun serverLoop(sock: ServerSocket) {
-        android.util.Log.i(TAG, "TCP 控制服务器已监听 :$controlPort")
+        AppLog.i(TAG, "TCP 控制服务器已监听 :$controlPort")
         while (!Thread.currentThread().isInterrupted && !sock.isClosed) {
             try {
                 val client = sock.accept()
                 if (connectionMode == ConnectionMode.BLUETOOTH && bluetoothTransport?.owns(client) != true) {
-                    android.util.Log.w(TAG, "拒绝非蓝牙转接连接：内部来源端口=${client.port}")
+                    AppLog.w(TAG, "拒绝非蓝牙转接连接：内部来源端口=${client.port}")
                     client.close()
                     continue
                 }
@@ -723,17 +723,17 @@ class MicCaptureService : Service() {
                         mainHandler.post { stopStreaming("上一会话遗留推流，新会话接管") }
                     }
                 }
-                android.util.Log.i(TAG, "PC 客户端已连接：${peerDescription}")
+                AppLog.i(TAG, "PC 客户端已连接：${peerDescription}")
                 notifyState(STATE_CONNECTED, "PC 已连接：${peerDescription}")
                 updateNotification("已连接 ${peerDescription}，等待协商…")
             } catch (e: IOException) {
                 if (!sock.isClosed) {
-                    android.util.Log.w(TAG, "accept 失败：${e.message}")
+                    AppLog.w(TAG, "accept 失败：${e.message}")
                 }
                 break
             }
         }
-        android.util.Log.i(TAG, "TCP 控制服务器退出")
+        AppLog.i(TAG, "TCP 控制服务器退出")
     }
 
     /**
@@ -836,7 +836,7 @@ class MicCaptureService : Service() {
                 if (client.isClosed) break
                 val alive = sess.checkHeartbeatWatchdog(SystemClock.elapsedRealtime())
                 if (!alive) {
-                    android.util.Log.w(TAG, "心跳看门狗超时（${WATCHDOG_PERIOD_MS}ms 无 105 心跳），断开连接")
+                    AppLog.w(TAG, "心跳看门狗超时（${WATCHDOG_PERIOD_MS}ms 无 105 心跳），断开连接")
                     try {
                         client.close()
                     } catch (_: IOException) {
@@ -901,10 +901,10 @@ class MicCaptureService : Service() {
             try {
                 client.close()
             } catch (t: Throwable) {
-                android.util.Log.w(TAG, "关闭连接异常：${t.message}")
+                AppLog.w(TAG, "关闭连接异常：${t.message}")
             }
         }
-        android.util.Log.i(
+        AppLog.i(
             TAG,
             if (owned) "连接已清理：$reason" else "过期连接清理（新会话已接管，不动其状态）：$reason"
         )
@@ -981,11 +981,11 @@ class MicCaptureService : Service() {
             try {
                 audioManager?.registerAudioDeviceCallback(deviceCallback, mainHandler)
             } catch (t: Throwable) {
-                android.util.Log.w(TAG, "注册 AudioDeviceCallback 失败：${t.message}")
+                AppLog.w(TAG, "注册 AudioDeviceCallback 失败：${t.message}")
             }
         } else {
             actualSampleRate = rate
-            android.util.Log.i(TAG, "调试音模式：不打开 AudioRecord，合成 ${TONE_FREQUENCY_HZ}Hz 正弦")
+            AppLog.i(TAG, "调试音模式：不打开 AudioRecord，合成 ${TONE_FREQUENCY_HZ}Hz 正弦")
         }
 
         // 3.5) R-38a 对账链路：旁路 UDP 到 media_port + 1（端口越界则跳过）。
@@ -998,10 +998,10 @@ class MicCaptureService : Service() {
                 peerPort = reconcilePort,
                 sentPackets = { udpSender?.packetsSent?.toInt() ?: 0 },
                 lastSeq = { lastSeqSent },
-                log = { android.util.Log.w(TAG, it) }
+                log = { AppLog.w(TAG, it) }
             ).also { it.start() }
         } else {
-            android.util.Log.w(TAG, "媒体端口 $port 加 1 越界，跳过对账通道")
+            AppLog.w(TAG, "媒体端口 $port 加 1 越界，跳过对账通道")
         }
 
         // 4) 采集线程
@@ -1047,7 +1047,7 @@ class MicCaptureService : Service() {
         } catch (t: Throwable) {
             // 未注册时忽略
         }
-        android.util.Log.i(TAG, "推流已停止：$reason")
+        AppLog.i(TAG, "推流已停止：$reason")
     }
 
     // ------------------------------------------------------------------
@@ -1081,7 +1081,7 @@ class MicCaptureService : Service() {
             val deviceChanged = hardwareChanged.getAndSet(false)
             val settingsChanged = captureSettingsChanged.getAndSet(false)
             if ((deviceChanged || settingsChanged) && !debugTone) {
-                android.util.Log.i(
+                AppLog.i(
                     TAG,
                     if (deviceChanged) {
                         "检测到音频设备变化，重建 AudioRecord"
@@ -1133,7 +1133,7 @@ class MicCaptureService : Service() {
                 // 编码
                 val payloadLen = encoder?.encode(pcm, payload) ?: -1
                 if (payloadLen <= 0) {
-                    android.util.Log.w(TAG, "编码失败：$payloadLen，跳过本帧")
+                    AppLog.w(TAG, "编码失败：$payloadLen，跳过本帧")
                     continue
                 }
 
@@ -1165,7 +1165,7 @@ class MicCaptureService : Service() {
                     // logcat 确认"app 到底发没发首包"，与 pc_client.py C05 失败路径
                     // 的 nc/ps、/proc/net/udp 抓取互补，区分 app 侧未发包与 tap 侧
                     // 未收到。调试音模式同样经过这里（该模式不打开 AudioRecord）。
-                    android.util.Log.i(
+                    AppLog.i(
                         TAG,
                         "首个 UDP 包已发送 seq=$frameSeq ts=$ts 目标=${sender.targetDescription()}"
                     )
@@ -1194,7 +1194,7 @@ class MicCaptureService : Service() {
                 AudioRecord.ERROR_DEAD_OBJECT -> {
                     // 典型：另一个应用抢占了麦克风 / 音频服务重启 / 蓝牙设备断开
                     restarts++
-                    android.util.Log.w(TAG, "ERROR_DEAD_OBJECT，重建 AudioRecord（第 $restarts 次）")
+                    AppLog.w(TAG, "ERROR_DEAD_OBJECT，重建 AudioRecord（第 $restarts 次）")
                     if (restarts > MAX_RESTARTS) {
                         mainHandler.post { fail("AudioRecord 连续 $restarts 次失效（麦克风可能被其他应用独占）") }
                         return
@@ -1209,20 +1209,20 @@ class MicCaptureService : Service() {
                     recorder = newRec
                 }
                 AudioRecord.ERROR -> {
-                    android.util.Log.w(TAG, "AudioRecord 通用错误，重试")
+                    AppLog.w(TAG, "AudioRecord 通用错误，重试")
                     SystemClock.sleep(RESTART_BACKOFF_MS)
                 }
                 else -> {
                     // 0 < read < framesPerPacket：短读。首帧常见，攒够一帧再编码更稳。
                     shortReads++
                     if (shortReads % 100L == 0L) {
-                        android.util.Log.w(TAG, "累计短读 $shortReads 次（read=$read < $framesPerPacket）")
+                        AppLog.w(TAG, "累计短读 $shortReads 次（read=$read < $framesPerPacket）")
                     }
                 }
             }
         }
 
-        android.util.Log.i(TAG, "采集线程退出")
+        AppLog.i(TAG, "采集线程退出")
     }
 
     // ------------------------------------------------------------------
@@ -1261,7 +1261,7 @@ class MicCaptureService : Service() {
         )
         if (minBuffer <= 0) {
             lastError = "该设备不支持 ${sampleRate}Hz 单声道 16bit 采集（getMinBufferSize=$minBuffer）"
-            android.util.Log.e(TAG, lastError!!)
+            AppLog.e(TAG, lastError!!)
             return null
         }
         // 至少 2 倍最小缓冲，并保证 >= 4 帧，降低欠载概率
@@ -1281,7 +1281,7 @@ class MicCaptureService : Service() {
                 .build()
         } catch (t: Throwable) {
             lastError = "AudioRecord 构建异常：${t.message}"
-            android.util.Log.e(TAG, lastError!!, t)
+            AppLog.e(TAG, lastError!!, t)
             return null
         }
 
@@ -1290,9 +1290,9 @@ class MicCaptureService : Service() {
             try {
                 rec.release()
             } catch (t: Throwable) {
-                android.util.Log.w(TAG, "release 异常：${t.message}")
+                AppLog.w(TAG, "release 异常：${t.message}")
             }
-            android.util.Log.e(TAG, lastError!!)
+            AppLog.e(TAG, lastError!!)
             return null
         }
 
@@ -1303,7 +1303,7 @@ class MicCaptureService : Service() {
 
         val actual = rec.sampleRate
         if (actual != sampleRate) {
-            android.util.Log.w(TAG, "采样率被平台调整：请求 $sampleRate -> 实际 $actual，按实际值重建编码器")
+            AppLog.w(TAG, "采样率被平台调整：请求 $sampleRate -> 实际 $actual，按实际值重建编码器")
         }
         actualSampleRate = actual
 
@@ -1315,7 +1315,7 @@ class MicCaptureService : Service() {
                 try {
                     rec.release()
                 } catch (t: Throwable) {
-                    android.util.Log.w(TAG, "release 异常：${t.message}")
+                    AppLog.w(TAG, "release 异常：${t.message}")
                 }
                 return null
             }
@@ -1335,7 +1335,7 @@ class MicCaptureService : Service() {
                 try {
                     rec.release()
                 } catch (t: Throwable) {
-                    android.util.Log.w(TAG, "release 异常：${t.message}")
+                    AppLog.w(TAG, "release 异常：${t.message}")
                 }
                 return null
             }
@@ -1385,20 +1385,20 @@ class MicCaptureService : Service() {
             try {
                 rec.setPreferredDevice(null)
             } catch (t: Throwable) {
-                android.util.Log.w(TAG, "清除设备偏好失败：${t.message}")
+                AppLog.w(TAG, "清除设备偏好失败：${t.message}")
             }
             return null
         }
         val device = deviceManager.deviceById(settings.micDeviceId)
         if (device == null) {
             postMessage(getString(R.string.capture_msg_device_missing))
-            android.util.Log.w(TAG, "所选输入设备当前不可用：id=${settings.micDeviceId}，回退系统默认")
+            AppLog.w(TAG, "所选输入设备当前不可用：id=${settings.micDeviceId}，回退系统默认")
             return null
         }
         val applied = try {
             rec.setPreferredDevice(device)
         } catch (t: Throwable) {
-            android.util.Log.w(TAG, "setPreferredDevice 异常：${t.message}")
+            AppLog.w(TAG, "setPreferredDevice 异常：${t.message}")
             false
         }
         if (!applied) {
@@ -1408,13 +1408,13 @@ class MicCaptureService : Service() {
                     AudioDeviceManager.deviceLabel(device)
                 )
             )
-            android.util.Log.w(
+            AppLog.w(
                 TAG,
                 "setPreferredDevice 返回 false：${AudioDeviceManager.deviceLabel(device)}，回退系统默认"
             )
             return null
         }
-        android.util.Log.i(TAG, "已偏好输入设备：${AudioDeviceManager.deviceLabel(device)}")
+        AppLog.i(TAG, "已偏好输入设备：${AudioDeviceManager.deviceLabel(device)}")
         return device
     }
 
@@ -1435,7 +1435,7 @@ class MicCaptureService : Service() {
         }
         audioEffects = effects
         val active = effects.describe()
-        android.util.Log.i(
+        AppLog.i(
             TAG,
             "系统效果已绑定会话 ${rec.audioSessionId}：${active.ifEmpty { "（无效果生效）" }}"
         )
@@ -1466,12 +1466,12 @@ class MicCaptureService : Service() {
                 rec.stop()
             }
         } catch (t: Throwable) {
-            android.util.Log.w(TAG, "stop 异常：${t.message}")
+            AppLog.w(TAG, "stop 异常：${t.message}")
         }
         try {
             rec.release()
         } catch (t: Throwable) {
-            android.util.Log.w(TAG, "release 异常：${t.message}")
+            AppLog.w(TAG, "release 异常：${t.message}")
         }
     }
 
@@ -1490,7 +1490,7 @@ class MicCaptureService : Service() {
                 lock.acquire(10 * 60 * 60 * 1000L)
                 wakeLock = lock
             } catch (t: Throwable) {
-                android.util.Log.w(TAG, "获取 WakeLock 失败：${t.message}")
+                AppLog.w(TAG, "获取 WakeLock 失败：${t.message}")
             }
         }
     }
@@ -1502,7 +1502,7 @@ class MicCaptureService : Service() {
             try {
                 lock.release()
             } catch (t: Throwable) {
-                android.util.Log.w(TAG, "释放 WakeLock 失败：${t.message}")
+                AppLog.w(TAG, "释放 WakeLock 失败：${t.message}")
             }
         }
     }
@@ -1528,7 +1528,7 @@ class MicCaptureService : Service() {
                 ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
                 return true
             } catch (t: Throwable) {
-                android.util.Log.w(TAG, "startForeground(type=$type) 失败：${t.message}")
+                AppLog.w(TAG, "startForeground(type=$type) 失败：${t.message}")
             }
         }
         return false
@@ -1605,7 +1605,7 @@ class MicCaptureService : Service() {
         try {
             manager.notify(NOTIFICATION_ID, buildNotification(stateWord(currentState()), text))
         } catch (t: Throwable) {
-            android.util.Log.w(TAG, "更新通知失败：${t.message}")
+            AppLog.w(TAG, "更新通知失败：${t.message}")
         }
     }
 
@@ -1621,6 +1621,7 @@ class MicCaptureService : Service() {
     // 回调
     // ------------------------------------------------------------------
     private fun notifyState(state: String, detail: String) {
+        AppLog.i(TAG, "$state · $detail")
         mainHandler.post {
             listener?.onState(state, detail)
         }

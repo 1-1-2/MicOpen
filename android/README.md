@@ -36,3 +36,9 @@ python3 android/verify/integration/pc_client.py --self-test
 Android debug 与 release 分别输出到 `app/build/outputs/apk/debug/`、`app/build/outputs/apk/release/`（从 Android 模块定位）。release 开启 R8 与资源裁剪，且 `debuggable=false`。未提供签名配置时 release 默认不签名；本机可通过 `MICLINK_ANDROID_KEYSTORE`、`MICLINK_ANDROID_STORE_PASSWORD`、`MICLINK_ANDROID_KEY_ALIAS`、`MICLINK_ANDROID_KEY_PASSWORD` 配置发布签名。CI 显式使用 `-PmiclinkTestSigning=true`，不持有分发私钥；其 release 用于功能验证，分发前在本机签名。调试构建与测试签名均不能代替正式分发身份。
 
 界面中的“调试音”是无麦克风链路测试功能，与 APK 的 debug/release 构建类型无关。
+
+### 连接页运行日志
+
+连接页最底部提供进程内的运行日志：可长按节选复制，也可「全部复制」。需要稳定选取时可「暂停更新」，后台仍继续记录；继续更新后恢复最新保留内容。暂停状态下全部复制对应当前显示的快照。
+
+日志包含服务状态、音频与传输错误，以及 Wi-Fi Direct 组网/监听/发现结果。最多保留最近 300 条、64 Ki 字符，进程退出后不保留；不是读取整个系统 logcat，也不采集音频内容或配对 PIN。

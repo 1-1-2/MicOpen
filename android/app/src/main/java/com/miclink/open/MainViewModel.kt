@@ -48,6 +48,7 @@ data class MainUiState(
     val detail: String = "",
     val listeningAddress: String = "",
     val directDiscoverable: Boolean = false,
+    val eventLog: EventLog.Snapshot = AppLog.snapshot(),
     /** 本回推流会话开始时刻（SystemClock.elapsedRealtime；0 = 无会话，时长显示「—」）。 */
     val sessionStartElapsedMs: Long = 0L,
     /** 网络传输方式（ConnectivityManager 实读；空 = 未知，UI 显示「—」）。 */
@@ -400,6 +401,8 @@ class MainViewModel : ViewModel() {
 
     /** 轮询统计（Activity 的 500ms 刷新循环调用）。 */
     fun pollStats(service: MicCaptureService?) {
+        val snapshot = AppLog.snapshot()
+        if (uiState.eventLog.version != snapshot.version) uiState = uiState.copy(eventLog = snapshot)
         val svc = service
         if (svc == null) {
             // 服务断开（停止/崩溃）：清会话时长与协商采样率，不显示上一会话的残留值

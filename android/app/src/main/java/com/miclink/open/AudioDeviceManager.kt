@@ -9,7 +9,7 @@ import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import com.miclink.open.AppLog as Log
 
 /**
  * AudioDeviceManager -- 输入设备枚举 / 音源与效果能力查询（Android framework 薄封装）。

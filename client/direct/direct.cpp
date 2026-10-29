@@ -152,7 +152,10 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
     case WM_TIMER:
         if (cancelled(*p) || GetTickCount64() >= p->deadline) {
             p->aborted=true;p->done=true;p->pendingPin.reset();ShowWindow(w,SW_HIDE);
-        } else { showPrompts(*p);if (!p->choice) refresh(*p); }
+        } else {
+            try {showPrompts(*p);if (!p->choice) refresh(*p);}
+            catch (...) {p->aborted=true;p->pendingPin.reset();}
+        }
         return 0;
     case WM_COMMAND:
         if (LOWORD(a)==IDCANCEL) { p->aborted=true;p->done=true;p->pendingPin.reset();ShowWindow(w,SW_HIDE); }
@@ -162,7 +165,9 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
             if ((n!=4 && n!=8) || std::any_of(value,value+n,[](wchar_t c){return c<L'0'||c>L'9';})) {
                 SetWindowTextW(p->status,L"请输入手机显示的 4 位或 8 位数字 PIN。");return 0;
             }
-            p->pendingPin->args.Accept(value);p->pendingPin.reset();
+            try {p->pendingPin->args.Accept(value);}
+            catch (...) {p->aborted=true;}
+            p->pendingPin.reset();
             SecureZeroMemory(value,sizeof(value));SetWindowTextW(p->pin,L"");
             ShowWindow(p->pin,SW_HIDE);ShowWindow(p->button,SW_HIDE);
             SetWindowTextW(p->status,L"PIN 已提交，正在等待系统完成配对…");

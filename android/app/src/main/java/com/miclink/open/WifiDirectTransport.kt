@@ -44,7 +44,7 @@ class WifiDirectTransport(
     private var connectedPeer = false
     private var invitedPeer = false
     private val rediscover = Runnable { if (!closed && !connectedPeer && !invitedPeer) makeVisible() }
-    private fun log(text: String) = android.util.Log.i("WifiDirectTransport", text)
+    private fun log(text: String) = AppLog.i("WifiDirectTransport", text)
     private val deadline = Runnable { error("无线直连组网超时，请检查 Wi-Fi、权限及定位开关后重试") }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, intent: Intent) {
@@ -66,6 +66,19 @@ class WifiDirectTransport(
                     if (!active && owned && delivered && !connectedPeer && !invitedPeer) {
                         handler.removeCallbacks(rediscover)
                         handler.postDelayed(rediscover, 15_000)
+                    }
+                }
+                WifiP2pManager.ACTION_WIFI_P2P_LISTEN_STATE_CHANGED -> {
+                    if (Build.VERSION.SDK_INT >= 34) {
+                        listeningActive = intent.getIntExtra(WifiP2pManager.EXTRA_LISTEN_STATE, -1) == WifiP2pManager.WIFI_P2P_LISTEN_STARTED
+                        log("listen active=$listeningActive")
+                        isDiscoverable = listeningActive && !connectedPeer && !invitedPeer
+                        if (!listeningActive && owned && delivered && !connectedPeer && !invitedPeer) {
+                            visibleRequested = false
+                            message("直连监听已暂停，正在等待重新启动；也可打开对应设置检查 WLAN 直连。")
+                            handler.removeCallbacks(rediscover)
+                            handler.postDelayed(rediscover, 15_000)
+                        }
                     }
                 }
                 WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> updatePeers()
@@ -94,6 +107,7 @@ class WifiDirectTransport(
                 addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
                 addAction(WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION)
                 addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
+                if (Build.VERSION.SDK_INT >= 34) addAction(WifiP2pManager.ACTION_WIFI_P2P_LISTEN_STATE_CHANGED)
             }, ContextCompat.RECEIVER_EXPORTED) // Protected system Wi-Fi broadcasts.
             registered = true
             handler.postDelayed(deadline, 20_000)
@@ -158,6 +172,7 @@ class WifiDirectTransport(
                         deviceName = group.owner?.deviceName ?: "本手机"
                         val wasConnected = connectedPeer
                         connectedPeer = group.clientList.isNotEmpty()
+                        if (connectedPeer) invitedPeer = false
                         if (!delivered) {
                             delivered = true
                             handler.removeCallbacks(deadline)

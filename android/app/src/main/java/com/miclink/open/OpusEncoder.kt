@@ -1,6 +1,6 @@
 package com.miclink.open
 
-import android.util.Log
+import com.miclink.open.AppLog as Log
 
 /**
  * OpusEncoder -- libopus 的 Kotlin 侧封装（JNI 实现见 app/src/main/cpp/opus_jni.cpp）。

@@ -1,6 +1,6 @@
 package com.miclink.open
 
-import android.util.Log
+import com.miclink.open.AppLog as Log
 import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket

@@ -62,6 +62,7 @@ import com.miclink.open.ui.component.HintText
 import com.miclink.open.ui.component.LabeledSwitchRow
 import com.miclink.open.ui.component.LevelWaveform
 import com.miclink.open.ui.component.LocalMicLinkTokens
+import com.miclink.open.ui.component.ConnectionLogCard
 import com.miclink.open.ui.component.SectionCard
 import com.miclink.open.ui.component.StatusBadge
 import com.miclink.open.ui.theme.WomicTheme
@@ -340,6 +341,7 @@ fun ConnectPage(
                 }
             )
         }
+        ConnectionLogCard(state.eventLog)
     }
 }
 

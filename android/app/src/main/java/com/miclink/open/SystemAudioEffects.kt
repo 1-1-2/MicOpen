@@ -3,7 +3,7 @@ package com.miclink.open
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
-import android.util.Log
+import com.miclink.open.AppLog as Log
 
 /**
  * SystemAudioEffects -- 系统音效（NS / AEC / AGC）的薄封装。

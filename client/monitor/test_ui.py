@@ -165,6 +165,28 @@ try:
     u.GetWindowTextW(field, value, len(value))
     assert value.value == '192.168.7.42', 'theme switch changed input text'
     assert u.SendMessageW(field, 0x00B0, 0, 0) == (7 << 16 | 3), 'theme switch changed selection'
+    # Regression: making the address field read-only changes its parent color
+    # notification to WM_CTLCOLORSTATIC. It must use the same themed surface.
+    g.GetBkColor.argtypes = [w.HDC]; g.GetBkColor.restype = w.DWORD
+    for label, x in [('light', client.right - 258), ('dark', client.right - 194)]:
+        position = (24 << 16) | x
+        u.SendMessageW(main, 0x201, 1, position)
+        u.SendMessageW(main, 0x202, 0, position)
+        dc = u.GetDC(field)
+        try:
+            u.SendMessageW(field, 0x00CF, 0, 0)  # EM_SETREADONLY(false)
+            assert u.SendMessageW(main, 0x0133, dc, field)  # WM_CTLCOLOREDIT
+            editable_color = g.GetBkColor(dc)
+            u.SendMessageW(field, 0x00CF, 1, 0)
+            assert u.SendMessageW(main, 0x0138, dc, field)  # WM_CTLCOLORSTATIC
+            assert g.GetBkColor(dc) == editable_color, 'read-only address lost theme'
+            if label == 'dark': assert editable_color != 0xffffff, 'dark field became white'
+        finally:
+            u.ReleaseDC(field, dc)
+        time.sleep(.2)
+        capture_window(main, 'gui-readonly-' + label + '.png')
+        u.SendMessageW(field, 0x00CF, 0, 0)
+    print('PASS main address read-only/editable surface matches in both themes')
     u.PostMessageW(main, 0x8003, 0, 0)  # WM_APP + 3
     help_window = None
     for _ in range(50):

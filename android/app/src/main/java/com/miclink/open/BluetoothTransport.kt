@@ -36,7 +36,7 @@ class BluetoothTransport(private val context: Context, private val port: Int,
                             if (stopped) { tcp.close(); bt.close(); return@Thread }
                             local = tcp
                         }
-                        android.util.Log.i("BluetoothTransport", "RFCOMM已接受，内部来源端口=${tcp.sourcePort}，目标端口=$port")
+                        AppLog.i("BluetoothTransport", "RFCOMM已接受，内部来源端口=${tcp.sourcePort}，目标端口=$port")
                         tcp.connect(port)
                         val sent = java.util.concurrent.atomic.AtomicLong()
                         val received = java.util.concurrent.atomic.AtomicLong()
@@ -44,7 +44,7 @@ class BluetoothTransport(private val context: Context, private val port: Int,
                             try {
                                 relayBytes(tcp.input, bt.outputStream) { received.addAndGet(it.toLong()) }
                             } catch (e: Exception) {
-                                android.util.Log.w("BluetoothTransport", "内部会话→蓝牙失败", e)
+                                AppLog.w("BluetoothTransport", "内部会话→蓝牙失败", e)
                             } finally { runCatching { bt.close() }; runCatching { tcp.close() } }
                         }, "miclink-bt-return").also { it.start() }
                         try {
@@ -52,7 +52,7 @@ class BluetoothTransport(private val context: Context, private val port: Int,
                         } finally {
                             runCatching { bt.close() }; runCatching { tcp.close() }; copy.join(1000)
                             val detail = "蓝牙会话结束：电脑→手机 ${sent.get()} B，手机→电脑 ${received.get()} B"
-                            android.util.Log.i("BluetoothTransport", detail)
+                            AppLog.i("BluetoothTransport", detail)
                             if (!stopped && received.get() == 0L) report("$detail；内部会话未返回握手应答，请同时查看电脑握手错误")
                         }
                     } catch (e: Exception) {
