@@ -81,7 +81,10 @@ def stage(kind):
     entries=[]
     for p in files:
         if not p.is_file() or p.is_symlink():raise ValueError('invalid source: '+str(p))
-        if p.stat().st_size>32*1024*1024:raise ValueError('artifact file exceeds 32 MiB')
+        # R8 mapping is debug text and can exceed an APK's size. Keep a narrow
+        # bounded allowance for this exact input; all other files retain 32 MiB.
+        limit=64 if kind=='android' and p==ROOT/'android/app/build/outputs/mapping/release/mapping.txt' else 32
+        if p.stat().st_size>limit*1024*1024:raise ValueError(f'artifact file exceeds {limit} MiB: '+p.name)
         rel=license_names.get(str(p),p.name) if kind in ['windows','android'] else p.relative_to(ROOT/'probe-results')
         dest=out/rel;dest.parent.mkdir(parents=True,exist_ok=True)
         if p.suffix.lower() in ['.txt','.log','.out','.json','.xml']:
