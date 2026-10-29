@@ -6,6 +6,9 @@ runs:
   - uses: ./.github/actions/android-tools
     with:
       purpose: build
+  - name: Read-only emulator capability inventory
+    shell: bash
+    run: python3 .github/scripts/probe-direct-environment.py
   - name: Fetch Opus
     shell: bash
     run: python3 .github/scripts/ci.py run --seconds 480 -- bash .github/scripts/fetch-opus.sh

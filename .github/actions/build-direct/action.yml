@@ -3,6 +3,9 @@ description: Windows SDK C++/WinRT module; isolated from the MinGW audio client.
 runs:
   using: composite
   steps:
+  - name: Read-only wireless capability inventory
+    shell: pwsh
+    run: python .github/scripts/probe-direct-environment.py
   - name: Compile Windows Wi-Fi Direct adapter
     shell: pwsh
     run: ./client/direct/build.ps1
