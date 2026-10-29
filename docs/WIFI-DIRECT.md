@@ -30,7 +30,7 @@ Wi-Fi Direct 仍有组所有者和组客户端，并非无中心网状网络。�
 
 主程序沿用 Linux / WSL2 MinGW；Direct DLL 在 Windows 使用 Visual Studio C++ 和 Windows SDK 构建，见[构建说明](BUILD.md#wi-fi-direct-原生适配模块)。不引入音频/驱动依赖，也不强制整个客户端改用 Windows SDK。
 
-[修复后 CI 40824427124](https://github.com/1-1-2/MicOpen/actions/runs/40824427124) 已全部通过，构建源码为 `9bfefab`：两端构建、Android 单元与协议测试、debug/release 模拟器回归、Windows 协议/驱动/监听/ADB 回归，以及直连适配器 ABI 2、参数边界、预取消、重复调用、窗口取消/关闭/超时和深浅色只读控件检查。Windows 地址栏的实际渲染像素已核对，不再只比较控件消息返回值。
+[本轮 CI 40860949914](https://github.com/1-1-2/MicOpen/actions/runs/40860949914) 的 10 个作业均已通过，构建源码为 `2fcee94`：两端构建、Android 单元与协议测试、debug/release 模拟器回归、Windows 协议/驱动/监听/ADB 回归，以及直连适配器 ABI 2、参数边界、预取消、重复调用、窗口取消/关闭/超时和深浅色只读控件检查。Windows 地址栏的实际渲染像素已核对；日志面板通过真实鼠标事件与剪贴板验证独立滚动、暂停期间缓冲覆写、清除与继续记录。Android 日志缓冲的清除、版本失效、保留界限和并发测试已通过；20 秒自动跟随与实体配对仍需作者复测。
 
 首轮实机反馈与修正见下节；新包仍待作者复测。云端 runner 没有这对实体无线设备，**CI 成功不等于状态 19 已在实体设备上消失，也不等于实体无线配对或音频已验收**。
 
