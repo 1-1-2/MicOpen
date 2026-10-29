@@ -260,13 +260,14 @@ DeviceInformation discover(std::shared_ptr<Picker> const& p) {
     auto updated=watcher.Updated(auto_revoke,[p](auto const&,DeviceInformationUpdate const& d) noexcept {
         try {std::lock_guard lock(p->mutex);for (auto const& v:p->devices) if (v.Id()==d.Id()) {v.Update(d);++p->revision;break;}} catch (...) {}
     });
-    auto stopped=watcher.Stopped(auto_revoke,[p](auto const&,auto const&) noexcept {
-        if (!p->done) p->aborted=true;
+    auto stopping=std::make_shared<std::atomic_bool>(false);
+    auto stopped=watcher.Stopped(auto_revoke,[p,stopping](auto const&,auto const&) noexcept {
+        if (!stopping->load()) p->aborted=true;
     });
     watcher.Start();
     while (!p->done && !cancelled(*p)) pump(*p);
     // Set before Stop so the Stopped callback never cancels a valid selection.
-    p->done=true;watcher.Stop();
+    p->done=true;stopping->store(true);watcher.Stop();
     if (cancelled(*p) || !p->choice) throw hresult_canceled();
     return p->choice;
 }

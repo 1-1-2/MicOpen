@@ -233,6 +233,9 @@ class WifiDirectTransport(
         val ch = channel ?: return
         if (closed || connectedPeer || invitedPeer) return
         try {
+            // Mark the request before its async ACK so stop also reclaims an
+            // in-flight discovery request on Android versions without listen.
+            discoveryOwned = true
             m.discoverPeers(ch, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     if (closed) return
