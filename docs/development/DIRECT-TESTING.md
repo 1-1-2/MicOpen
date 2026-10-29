@@ -13,6 +13,10 @@ Android 官方在 2026 年提供的新网络栈是重要改进：Emulator 36.5+ 
 
 能力探针只读取网络接口类型、驱动查询结果、模拟器版本与 KVM 权限，不启动/停止系统服务、不发起配对。输出带 pairing_tested=false；缺少硬件记录为不具备该验证条件，不记成配对测试通过。当前 scratch 环境没有可读写 KVM，也未找到 Android Emulator SDK，双 AVD 应在具备 KVM 的 runner 上另行执行。
 
-本轮 CI 探测结果待写回。建议先用探针确认条件，再把 Android 的双 AVD 回归作为独立实验；针对 30 秒 Failed(19) 的 Windows/华为互通，最终仍需真实设备记录，不能用单元测试通过替代。
+[CI 40886645430](https://github.com/1-1-2/MicOpen/actions/runs/40886645430) 的探针结果：Windows 检出 0 个原生 802.11 候选适配器，列表为 Hyper-V / Mellanox 虚拟以太网及调试、隧道接口；netsh 报告 WLAN 服务未运行。该 runner 不具备可用的 Windows 原生 Direct 无线链路。当前 Lab 配置使用同类 hosted runner，而非已连接物理手机的自托管主机。
+
+Android 构建任务快照未找到 emulator/source.properties，当前用户不能读写 KVM；这是 build purpose、尚未经过 android-runtime 安装和权限准备的状态，不能据此断言 Android Lab 不支持模拟器。现有运行组件会安装 Emulator / 镜像并验证、准备 KVM。需要另外安装或核对 36.5+，再用两个 AVD 执行 P2P 实验；本轮没有运行它，也没有启动交互 Lab。
+
+建议先用探针确认条件，再把 Android 的双 AVD 回归作为独立实验；针对 30 秒 Failed(19) 的 Windows/华为互通，最终仍需真实设备记录，不能用单元测试通过替代。
 
 参考：[Android Emulator 网络](https://developer.android.com/studio/run/emulator-networking)、[互连模拟器](https://developer.android.com/studio/run/emulator-networking-interconnect)、[GitHub hosted runner](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners)。

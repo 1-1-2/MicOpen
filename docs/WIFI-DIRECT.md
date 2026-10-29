@@ -63,6 +63,6 @@ HUAWEI JSN-AL00a / Android 10 的两轮记录已确认：手机 connect 被系�
 
 手机搜索动画移到“选择电脑”卡片标题下面，显示“正在搜索电脑，请在下面选择电脑”；正在连接时停止显示搜索动画，改为实际连接进度。准备区不重复展示这段动态状态。
 
-本轮 CI 状态待写回；实体配对仍待作者验证，不创建 Release。参见 [PairingProcedure 的两个过程](https://learn.microsoft.com/en-us/uwp/api/windows.devices.wifidirect.wifidirectpairingprocedure)与 [DeviceInformation 的 ID / Kind](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/device-information-properties)。
+本轮应用提交 `99f31bb` 已通过 [CI 40886645430](https://github.com/1-1-2/MicOpen/actions/runs/40886645430) 的双端构建、Android 单元测试及原生窗口/日志回归。本轮为 build 任务，未重跑全套端到端验证；实体配对仍待作者验证，不创建 Release。参见 [PairingProcedure 的两个过程](https://learn.microsoft.com/en-us/uwp/api/windows.devices.wifidirect.wifidirectpairingprocedure)与 [DeviceInformation 的 ID / Kind](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/device-information-properties)。
 
 模拟测试与远程 LAB 的条件、能力探针及尚未执行的实验，见[验证环境说明](development/DIRECT-TESTING.md)。
