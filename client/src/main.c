@@ -690,7 +690,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         POINT point = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
         ScreenToClient(hwnd, &point);
         if (g_ui.exp_log && point.y >= ui_title_h() && point.y < g_ui.h - ui_status_h()
-            && PtInRect(&g_lo.log_body, point)) {
+            && PtInRect(&g_lo.card_log, point)) {
             static int remainder;
             remainder += d;
             ui_log_scroll(-(remainder / WHEEL_DELTA) * 3);

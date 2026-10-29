@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -18,6 +19,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miclink.open.EventLog
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 
 /** Immutable paused snapshot keeps text selection stable while logs continue. */
 @Composable
@@ -28,6 +31,26 @@ fun ConnectionLogCard(snapshot: EventLog.Snapshot, onClear: () -> EventLog.Snaps
     var frozen by remember { mutableStateOf(snapshot) }
     val shown = if (paused) frozen else snapshot
     val scroll = rememberScrollState()
+    var followLatest by remember { mutableStateOf(true) }
+    var userScrollVersion by remember { mutableLongStateOf(0L) }
+    val scrolling by remember { derivedStateOf { scroll.isScrollInProgress } }
+    LaunchedEffect(scroll) {
+        scroll.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) {
+                followLatest = false
+                userScrollVersion++
+            }
+        }
+    }
+    LaunchedEffect(userScrollVersion, scrolling, paused, followLatest) {
+        if (!paused && !scrolling && !followLatest) {
+            delay(20_000)
+            followLatest = true
+        }
+    }
+    LaunchedEffect(shown.version, scroll.maxValue, followLatest, paused) {
+        if (!paused && followLatest) scroll.scrollTo(scroll.maxValue)
+    }
     SectionCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("运行日志", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -36,10 +59,12 @@ fun ConnectionLogCard(snapshot: EventLog.Snapshot, onClear: () -> EventLog.Snaps
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = {
                 frozen = onClear()
+                followLatest = true
             }) { Text("清除日志") }
             TextButton(onClick = {
                 if (!paused) frozen = snapshot
                 paused = !paused
+                if (!paused) followLatest = true
             }) { Text(if (paused) "继续更新" else "暂停更新") }
             TextButton(enabled = shown.text.isNotEmpty(), onClick = {
                 val clipboard = context.getSystemService(ClipboardManager::class.java)
@@ -49,7 +74,7 @@ fun ConnectionLogCard(snapshot: EventLog.Snapshot, onClear: () -> EventLog.Snaps
                 }
             }) { Text("全部复制") }
         }
-        HintText("长按文字可节选复制；暂停更新后便于选取。仅保留本次运行的最近 300 条日志。")
+        HintText("默认跟随最新日志；手动翻阅后停留，20 秒未滚动自动回到最新。暂停后可长按节选复制。")
         Box(Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 260.dp)
             .background(tokens.bgSunken, MaterialTheme.shapes.small)
             .verticalScroll(scroll).padding(10.dp)) {

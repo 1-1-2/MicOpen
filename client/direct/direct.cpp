@@ -44,6 +44,7 @@ struct Picker {
     std::atomic_int ceremony{-1};
     std::atomic_bool accepted{false};
     std::atomic_long pairingError{0};
+    wchar_t const* stage = L"初始化";
     DeviceInformation choice{nullptr};
     ULONGLONG deadline = GetTickCount64() + 120000;
     ~Picker() {
@@ -242,6 +243,7 @@ void createPicker(std::shared_ptr<Picker> const& p,int x=CW_USEDEFAULT,int y=CW_
     }
 }
 void advertise(Session& session,Picker& p) {
+    p.stage=L"启动本机直连广播";
     session.publisher=WiFiDirectAdvertisementPublisher();
     session.publisher.Advertisement().IsAutonomousGroupOwnerEnabled(false);
     session.publisher.Advertisement().LegacySettings().IsEnabled(false);
@@ -256,6 +258,7 @@ void advertise(Session& session,Picker& p) {
         throw hresult_error(E_FAIL,L"无线直连启动超时，请检查网卡支持及 Wi-Fi 开关");
 }
 DeviceInformation discover(std::shared_ptr<Picker> const& p) {
+    p->stage=L"搜索设备";
     auto watcher=DeviceInformation::CreateWatcher(WiFiDirectDevice::GetDeviceSelector(WiFiDirectDeviceSelectorType::AssociationEndpoint));
     auto added=watcher.Added(auto_revoke,[p](auto const&,DeviceInformation const& d) noexcept {
         try {std::lock_guard lock(p->mutex);
@@ -298,6 +301,8 @@ const wchar_t* pairingStatus(DevicePairingResultStatus status) {
 }
 void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInformation const& target,
                    char* remote,int rcap,char* local,int lcap) {
+    p->stage=L"读取设备配对信息";
+    if (!target) throw hresult_error(HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND),L"所选设备记录已不可用，请重新搜索并选择手机");
     p->pairing=true;p->done=false;p->deadline=GetTickCount64()+90000;
     ShowWindow(p->list,SW_HIDE);ShowWindow(p->button,SW_HIDE);
     SetWindowTextW(p->status,L"正在配对与连接… 请查看手机上的确认提示。");
@@ -313,6 +318,7 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
     for (auto method:params.PreferenceOrderedConfigurationMethods())
         kinds=kinds|WiFiDirectConnectionParameters::GetDevicePairingKinds(method);
     if (!target.Pairing().IsPaired()) {
+        p->stage=L"系统配对";
         ULONGLONG started=GetTickCount64();
         auto custom=target.Pairing().Custom();
         auto pairing=custom.PairingRequested(auto_revoke,[p](auto const&,DevicePairingRequestedEventArgs const& e) noexcept {
@@ -335,17 +341,24 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
                 L"，确认已提交="+(p->accepted.load()?L"是":L"否")+
                 L"，耗时="+to_hstring(GetTickCount64()-started)+L"ms。尚未进入音频握手；请同时检查两端系统配对提示。");
     }
+    p->stage=L"建立直连会话";
     session.device=await(*p,WiFiDirectDevice::FromIdAsync(target.Id(),params));
     if (!session.device) throw hresult_error(E_FAIL,L"无法建立无线直连会话");
+    p->stage=L"读取直连地址";
     for (auto const& pair:session.device.GetConnectionEndpointPairs()) {
         auto r=to_string(pair.RemoteHostName().CanonicalName()),l=to_string(pair.LocalHostName().CanonicalName());
         if (ipv4(r) && ipv4(l)) {snprintf(remote,rcap,"%s",r.c_str());snprintf(local,lcap,"%s",l.c_str());return;}
     }
     throw hresult_error(E_FAIL,L"无线直连已建立，但系统没有提供 IPv4 端点");
 }
-void report(char* error,int cap) noexcept {
+void report(Picker const& p,char* error,int cap) noexcept {
     try {throw;} catch (hresult_canceled const&) {snprintf(error,cap,"无线直连已取消或超时");}
-    catch (hresult_error const& e) {auto text=to_string(e.message());snprintf(error,cap,"无线直连：%s (0x%08X)",text.c_str(),(unsigned)e.code().value);}
+    catch (hresult_error const& e) {
+        auto text=to_string(e.message()),stage=to_string(p.stage);
+        char const* hint=e.code()==HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)
+            ? "；设备记录或关联可能已失效，请重新搜索并选择手机" : "";
+        snprintf(error,cap,"无线直连[%s]：%s%s (0x%08X)",stage.c_str(),text.c_str(),hint,(unsigned)e.code().value);
+    }
     catch (...) {snprintf(error,cap,"无线直连初始化失败，请检查系统及网卡支持");}
 }
 }
@@ -366,7 +379,7 @@ extern "C" __declspec(dllexport) int __cdecl ml_direct_pick(volatile LONG* cance
         if (id.size()>=sizeof(output->id)) throw hresult_error(E_BOUNDS,L"设备标识过长，无法选择");
         snprintf(output->id,sizeof(output->id),"%s",id.c_str());
         wcsncpy_s(output->name,device.Name().c_str(),_TRUNCATE);return 1;
-    } catch (...) {report(error,cap);return 0;}
+    } catch (...) {report(*p,error,cap);return 0;}
 }
 extern "C" __declspec(dllexport) void* __cdecl ml_direct_connect(volatile LONG* cancel,char const* id,HWND owner,
     MicDirectTheme const* theme,char* remote,int rcap,char* local,int lcap,char* error,int cap) {
@@ -379,9 +392,10 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_connect(volatile LONG* 
     try {
         init_apartment(apartment_type::single_threaded);session->apartment=true;
         createPicker(p);advertise(*session,*p);
+        p->stage=L"解析所选设备标识";
         auto target=await(*p,DeviceInformation::CreateFromIdAsync(to_hstring(id),nullptr,DeviceInformationKind::AssociationEndpoint));
         connectDevice(*session,p,target,remote,rcap,local,lcap);return session.release();
-    } catch (...) {report(error,cap);return nullptr;}
+    } catch (...) {report(*p,error,cap);return nullptr;}
 }
 extern "C" __declspec(dllexport) void* __cdecl ml_direct_open(volatile LONG* cancel,
     char* remote,int rcap,char* local,int lcap,char* error,int cap) {
@@ -393,7 +407,7 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_open(volatile LONG* can
         init_apartment(apartment_type::single_threaded);session->apartment=true;
         createPicker(p);advertise(*session,*p);auto target=discover(p);
         connectDevice(*session,p,target,remote,rcap,local,lcap);return session.release();
-    } catch (...) {report(error,cap);return nullptr;}
+    } catch (...) {report(*p,error,cap);return nullptr;}
 }
 #ifdef MICLINK_DIRECT_TEST
 // Native window/pump/cancellation fixture; no radio required.
