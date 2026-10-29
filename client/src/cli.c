@@ -595,7 +595,7 @@ void cli_apply_to_ui(const CliArgs *a)
     g_ui.transport = a->transport == 4 ? 0 : a->transport;
     if (a->host_pos) SetWindowTextW(g_ui.edit_host, a->host_pos);
     if (a->transport == 1) SetWindowTextW(g_ui.edit_host, L"");
-    EnableWindow(g_ui.edit_host, a->transport != 1);
+    SendMessageW(g_ui.edit_host, EM_SETREADONLY, a->transport == 1, 0);
     if (a->media_port > 0 && g_ui.edit_media) {
         wchar_t buf[16];
         _snwprintf(buf, 16, L"%d", a->media_port);
