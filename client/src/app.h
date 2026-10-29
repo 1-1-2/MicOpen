@@ -179,7 +179,7 @@ typedef struct {
     int      dev_handshake_ok;/* 驱动握手成功 */
     int      silent_frames;   /* 连续静音帧计数（VoiceMeter 转“无信号”用） */
     char     opus_src[16];    /* static / dll / none */
-    char     last_error[160];
+    char     last_error[512];
     DWORD    started_at;
     /* R-38w 对账通道（旁路 UDP media_port+1）：
      *   0 未启用（side socket bind 失败 / 未协商）
@@ -300,7 +300,7 @@ void cli_set_defaults(CliArgs *a);
 
 /* ------------------------------------------------------------- 界面 */
 #define LOG_LINES 200
-#define LOG_LEN   220
+#define LOG_LEN   640
 #define HIST_BARS 48          /* 最近 10 秒电平历史柱数（约 208ms/柱，D-08） */
 
 typedef struct { char text[LOG_LEN]; wchar_t ts[16]; int kind; } LogLine;
@@ -316,6 +316,7 @@ typedef struct {
     int   content_h;           /* 内容总高（布局后得出） */
     int   hover, pressed;
     int   drag_slider;
+    int   drag_log;
     int   monitor;             /* R-39 监听开关（与静音同形态） */
     int   autorec;             /* R-27 自动重连开关（默认关） */
     int   rc_count;            /* 本次断线后已重试次数（成功后归零） */
@@ -365,6 +366,7 @@ enum {
     ID_RATE0, ID_RATE1, ID_RATE2,
     ID_BUF0, ID_BUF1, ID_BUF2,
     ID_COPYLOG,
+    ID_CLEARLOG, ID_PAUSELOG, ID_LOG_SCROLL,
     ID_MAX_
 };
 

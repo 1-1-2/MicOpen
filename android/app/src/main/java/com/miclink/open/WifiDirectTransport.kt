@@ -54,7 +54,10 @@ class WifiDirectTransport(
                     if (intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1) == WifiP2pManager.WIFI_P2P_STATE_DISABLED)
                         error("无线直连已关闭，请开启 Wi-Fi 后重新启动")
                 }
-                WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> if (owned) inspect()
+                WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> if (owned) {
+                    log("connection changed; checking group clients")
+                    inspect()
+                }
                 WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION -> {
                     val active = intent.getIntExtra(WifiP2pManager.EXTRA_DISCOVERY_STATE, -1) == WifiP2pManager.WIFI_P2P_DISCOVERY_STARTED
                     log("discovery active=$active")
@@ -172,6 +175,7 @@ class WifiDirectTransport(
                         deviceName = group.owner?.deviceName ?: "本手机"
                         val wasConnected = connectedPeer
                         connectedPeer = group.clientList.isNotEmpty()
+                        log("group owner=${info.isGroupOwner} clients=${group.clientList.size}")
                         if (connectedPeer) invitedPeer = false
                         if (!delivered) {
                             delivered = true
@@ -214,7 +218,7 @@ class WifiDirectTransport(
                         discoveryOwned = true
                         listeningActive = true
                         isDiscoverable = !connectedPeer && !invitedPeer
-                        message("可被发现：$deviceName · 等待电脑连接")
+                        message("已请求可发现：$deviceName · 等待电脑连接")
                     }
                     override fun onFailure(reason: Int) {
                         if (!closed) {
@@ -242,7 +246,7 @@ class WifiDirectTransport(
                     discoveryOwned = true
                     log("peer discovery started")
                     isDiscoverable = !connectedPeer && !invitedPeer
-                    message("可被发现：$deviceName · 等待电脑连接")
+                    message("已请求可发现：$deviceName · 等待电脑连接")
                 }
                 override fun onFailure(reason: Int) {
                     if (closed) return
@@ -269,6 +273,17 @@ class WifiDirectTransport(
                 val wasInvited = invitedPeer
                 invitedPeer = peers.deviceList.any { it.status == WifiP2pDevice.INVITED }
                 log("peers=${peers.deviceList.size} invited=$invitedPeer")
+                peers.deviceList.forEachIndexed { index, peer ->
+                    val status = when (peer.status) {
+                        WifiP2pDevice.CONNECTED -> "CONNECTED"
+                        WifiP2pDevice.INVITED -> "INVITED"
+                        WifiP2pDevice.AVAILABLE -> "AVAILABLE"
+                        WifiP2pDevice.FAILED -> "FAILED"
+                        WifiP2pDevice.UNAVAILABLE -> "UNAVAILABLE"
+                        else -> "UNKNOWN(${peer.status})"
+                    }
+                    log("peer[$index] status=$status groupOwner=${peer.isGroupOwner} wpsPbc=${peer.wpsPbcSupported()} wpsDisplay=${peer.wpsDisplaySupported()} wpsKeypad=${peer.wpsKeypadSupported()}")
+                }
                 if (invitedPeer) {
                     if (isDiscoverable) message("正在配对，请查看系统确认提示")
                     isDiscoverable = false

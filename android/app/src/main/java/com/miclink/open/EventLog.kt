@@ -45,6 +45,15 @@ class EventLog(
     }
 
     @Synchronized
+    fun clear(): Snapshot {
+        entries.clear()
+        characters = 0
+        dropped = 0
+        version++
+        return snapshot()
+    }
+
+    @Synchronized
     fun snapshot(): Snapshot {
         if (cached.version != version) cached = Snapshot(version, entries.joinToString("\n"), entries.size, dropped)
         return cached

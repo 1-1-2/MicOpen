@@ -4,6 +4,7 @@ package com.miclink.open
 object AppLog {
     private val buffer = EventLog()
     fun snapshot(): EventLog.Snapshot = buffer.snapshot()
+    fun clear(): EventLog.Snapshot = buffer.clear()
     private fun write(priority: Int, level: String, tag: String, message: String, error: Throwable?): Int {
         val text = if (error == null) message else "$message (${error.javaClass.simpleName}: ${error.message.orEmpty()})"
         val safe = buffer.sanitize(text)

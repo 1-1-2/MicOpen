@@ -308,12 +308,19 @@ static void layout_once(void)
     g_lo.card_log = g_lo.hdr_log;
     yr += sd(48);
     if (g_ui.exp_log) {
-        g_lo.btn_copylog = cs(rx1 - inner - sd(72), yr + sd(12),
-                              rx1 - inner, yr + sd(36));
+        /* Toolbar directly adjoins the hover header and the log viewport. */
+        g_lo.log_toolbar = cs(rx0 + 1, yr, rx1 - 1, yr + sd(32));
+        g_lo.btn_copylog = cs(rx1 - inner - sd(80), yr, rx1 - inner, yr + sd(32));
+        g_lo.btn_pauselog = cs(rx1 - inner - sd(168), yr, rx1 - inner - sd(80), yr + sd(32));
+        g_lo.btn_clearlog = cs(rx1 - inner - sd(248), yr, rx1 - inner - sd(168), yr + sd(32));
+        g_lo.log_body = cs(rx0 + 1, yr + sd(32), rx1 - 1, yr + sd(232));
+        g_lo.log_track = cs(rx1 - sd(12), yr + sd(36), rx1 - sd(4), yr + sd(228));
         g_lo.card_log = cs(rx0, g_lo.hdr_log.top + g_ui.scroll, rx1, yr + sd(232));
         yr += sd(232);
     } else {
         SetRectEmpty(&g_lo.btn_copylog);
+        SetRectEmpty(&g_lo.btn_pauselog); SetRectEmpty(&g_lo.btn_clearlog);
+        SetRectEmpty(&g_lo.log_toolbar); SetRectEmpty(&g_lo.log_body); SetRectEmpty(&g_lo.log_track);
     }
 
     /* content_h 只由右列决定（左列固定不滚动） */
@@ -367,7 +374,10 @@ int ui_hit_test(int x, int y)
     if (PtInRect(&g_lo.hdr_audio, p)) return ID_EXP_AUDIO;
     if (PtInRect(&g_lo.hdr_stats, p)) return ID_EXP_STATS;
     if (PtInRect(&g_lo.hdr_log, p))   return ID_EXP_LOG;
-    if (PtInRect(&g_lo.btn_copylog, p)) return ID_COPYLOG;
+    if (PtInRect(&g_lo.btn_copylog, p)) return ui_log_count() ? ID_COPYLOG : ID_NONE;
+    if (PtInRect(&g_lo.btn_pauselog, p)) return ID_PAUSELOG;
+    if (PtInRect(&g_lo.btn_clearlog, p)) return ID_CLEARLOG;
+    if (PtInRect(&g_lo.log_track, p)) return ID_LOG_SCROLL;
     for (i = 0; i < 4; i++) if (PtInRect(&g_lo.seg_trans[i], p)) return ID_TRANS0 + i;
     for (i = 0; i < 3; i++) if (PtInRect(&g_lo.seg_rate[i], p)) return ID_RATE0 + i;
     for (i = 0; i < 3; i++) if (PtInRect(&g_lo.seg_buf[i], p))  return ID_BUF0 + i;

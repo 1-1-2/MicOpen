@@ -41,7 +41,8 @@ typedef struct {
 
     RECT card_audio, hdr_audio, seg_rate[3], seg_buf[3];
     RECT card_stats, hdr_stats;
-    RECT card_log, hdr_log, btn_copylog;
+    RECT card_log, hdr_log, log_toolbar, log_body, log_track;
+    RECT btn_copylog, btn_clearlog, btn_pauselog;
 
     int  content_h;      /* 右列内容总高（不含滚动） */
     int  view_h;         /* 可视区高度（窗口高 - 标题栏 - 状态栏） */

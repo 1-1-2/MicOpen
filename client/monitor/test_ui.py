@@ -189,6 +189,67 @@ try:
         if label == 'dark': assert backgrounds[1] != (255,255,255), 'dark field became white'
         u.SendMessageW(field, 0x00CF, 0, 0)
     print('PASS main address read-only/editable surface matches in both themes')
+    # Exercise the actual log panel with enough real UI events to overflow it.
+    # No network connection or test-only messages are injected into the process.
+    u.SetWindowPos.argtypes = [w.HWND, w.HWND, c.c_int, c.c_int, c.c_int, c.c_int, w.UINT]
+    assert u.SetWindowPos(main, None, 0, 0, 1060, 900, 0x0016)  # NOMOVE|NOZORDER|NOACTIVATE
+    def click(x, y):
+        position = (y << 16) | x
+        u.SendMessageW(main, 0x201, 1, position)
+        u.SendMessageW(main, 0x202, 0, position)
+    click(700, 590)  # Expand event header; other panels remain collapsed.
+    for _ in range(30): click(333, 354)  # Idle auto-reconnect toggle creates real log entries.
+    time.sleep(.2)
+    first = capture_window(main, 'gui-logs-live.png')
+    main_rect = w.RECT(); assert u.GetWindowRect(main, c.byref(main_rect))
+    wheel_point = ((main_rect.top + 700) << 16) | ((main_rect.left + 700) & 0xffff)
+    u.SendMessageW(main, 0x020A, ((-120 & 0xffff) << 16), wheel_point)
+    time.sleep(.2)
+    scrolled = capture_window(main, 'gui-logs-scrolled.png')
+    def region(bitmap, left, top, right, bottom):
+        width, _, pixels = bitmap
+        return b''.join(pixels[(y * width + left) * 4:(y * width + right) * 4] for y in range(top, bottom))
+    assert region(first, 405, 650, 1024, 840) != region(scrolled, 405, 650, 1024, 840), 'log wheel did not reveal older rows'
+    assert region(first, 390, 566, 1038, 614) == region(scrolled, 390, 566, 1038, 614), 'log wheel moved entire right column'
+    # Clipboard must follow the paused snapshot, even after the live ring wraps.
+    u.OpenClipboard.argtypes = [w.HWND]; u.OpenClipboard.restype = w.BOOL
+    u.GetClipboardData.argtypes = [w.UINT]; u.GetClipboardData.restype = w.HANDLE
+    kernel = c.windll.kernel32
+    kernel.GlobalLock.argtypes = [w.HGLOBAL]; kernel.GlobalLock.restype = c.c_void_p
+    kernel.GlobalUnlock.argtypes = [w.HGLOBAL]
+    def clipboard():
+        for _ in range(50):
+            if u.OpenClipboard(None): break
+            time.sleep(.02)
+        else: raise AssertionError('clipboard unavailable')
+        try:
+            handle = u.GetClipboardData(13)
+            assert handle, 'Unicode clipboard missing'
+            pointer = kernel.GlobalLock(handle)
+            assert pointer
+            try: return c.wstring_at(pointer)
+            finally: kernel.GlobalUnlock(handle)
+        finally: u.CloseClipboard()
+    click(902, 630)  # Pause.
+    click(986, 630)  # Copy all visible snapshot (including rows outside viewport).
+    frozen = clipboard()
+    assert len(frozen.splitlines()) >= 30
+    for _ in range(220): click(333, 354)
+    click(986, 630)
+    assert clipboard() == frozen, 'paused log changed when live ring wrapped'
+    capture_window(main, 'gui-logs-paused.png')
+    click(818, 630)  # Clear while paused must also clear the frozen display.
+    # The disabled empty copy button leaves the previous clipboard untouched.
+    click(986, 630)
+    assert clipboard() == frozen, 'disabled empty copy replaced clipboard'
+    capture_window(main, 'gui-logs-cleared.png')
+    click(333, 354)  # Continue recording while display is paused and empty.
+    click(902, 630)  # Resume; only post-clear events may remain.
+    click(986, 630)
+    resumed = clipboard()
+    assert len(resumed.splitlines()) == 1 and '自动重连' in resumed, ('clear/resume lost events or restored old logs', resumed)
+    assert p.poll() is None
+    print('PASS log independent wheel scrolling, pause across ring wrap, copy snapshot, clear and continued recording')
     u.PostMessageW(main, 0x8003, 0, 0)  # WM_APP + 3
     help_window = None
     for _ in range(50):

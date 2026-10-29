@@ -42,6 +42,8 @@ struct Picker {
     bool compact{}, pairing{};
     std::atomic_bool aborted{false};
     std::atomic_int ceremony{-1};
+    std::atomic_bool accepted{false};
+    std::atomic_long pairingError{0};
     DeviceInformation choice{nullptr};
     ULONGLONG deadline = GetTickCount64() + 120000;
     ~Picker() {
@@ -89,6 +91,7 @@ void showPrompts(Picker& p) {
             auto text=L"请在手机上输入此配对 PIN："+prompt->args.Pin()+L"\n确认后继续；此 PIN 不写入日志。";
             SetWindowTextW(p.status,text.c_str());
             prompt->args.Accept();
+            p.accepted=true;
         } else if (kind==DevicePairingKinds::ProvidePin) {
             p.pendingPin=prompt;
             ShowWindow(p.pin,SW_SHOW); ShowWindow(p.button,SW_SHOW);
@@ -154,7 +157,8 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
             p->aborted=true;p->done=true;p->pendingPin.reset();ShowWindow(w,SW_HIDE);
         } else {
             try {showPrompts(*p);if (!p->choice) refresh(*p);}
-            catch (...) {p->aborted=true;p->pendingPin.reset();}
+            catch (hresult_error const& e) {p->pairingError=e.code().value;p->aborted=true;p->pendingPin.reset();}
+            catch (...) {p->pairingError=E_FAIL;p->aborted=true;p->pendingPin.reset();}
         }
         return 0;
     case WM_COMMAND:
@@ -165,8 +169,9 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
             if ((n!=4 && n!=8) || std::any_of(value,value+n,[](wchar_t c){return c<L'0'||c>L'9';})) {
                 SetWindowTextW(p->status,L"请输入手机显示的 4 位或 8 位数字 PIN。");return 0;
             }
-            try {p->pendingPin->args.Accept(value);}
-            catch (...) {p->aborted=true;}
+            try {p->pendingPin->args.Accept(value);p->accepted=true;}
+            catch (hresult_error const& e) {p->pairingError=e.code().value;p->aborted=true;}
+            catch (...) {p->pairingError=E_FAIL;p->aborted=true;}
             p->pendingPin.reset();
             SecureZeroMemory(value,sizeof(value));SetWindowTextW(p->pin,L"");
             ShowWindow(p->pin,SW_HIDE);ShowWindow(p->button,SW_HIDE);
@@ -191,7 +196,11 @@ void pump(Picker& p) {
 }
 template<class Operation> auto await(Picker& p, Operation const& op) {
     while (op.Status()==AsyncStatus::Started && !cancelled(p)) pump(p);
-    if (cancelled(p)) {op.Cancel();p.pendingPin.reset();throw hresult_canceled();}
+    if (cancelled(p)) {
+        op.Cancel();p.pendingPin.reset();
+        if (p.pairingError) throw hresult_error(hresult(p.pairingError.load()),L"提交系统配对确认失败");
+        throw hresult_canceled();
+    }
     return op.GetResults();
 }
 struct Session {
@@ -304,23 +313,27 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
     for (auto method:params.PreferenceOrderedConfigurationMethods())
         kinds=kinds|WiFiDirectConnectionParameters::GetDevicePairingKinds(method);
     if (!target.Pairing().IsPaired()) {
+        ULONGLONG started=GetTickCount64();
         auto custom=target.Pairing().Custom();
         auto pairing=custom.PairingRequested(auto_revoke,[p](auto const&,DevicePairingRequestedEventArgs const& e) noexcept {
             try {
                 p->ceremony=(int)e.PairingKind();
                 if (cancelled(*p)) return;
-                if (e.PairingKind()==DevicePairingKinds::ConfirmOnly) {e.Accept();return;}
+                if (e.PairingKind()==DevicePairingKinds::ConfirmOnly) {e.Accept();p->accepted=true;return;}
                 if (e.PairingKind()==DevicePairingKinds::DisplayPin || e.PairingKind()==DevicePairingKinds::ProvidePin) {
                     auto prompt=std::make_shared<PairPrompt>();prompt->args=e;prompt->deferral=e.GetDeferral();
                     std::lock_guard lock(p->mutex);p->prompts.push_back(prompt);
                 }
-            } catch (...) {}
+            } catch (hresult_error const& error) {p->pairingError=error.code().value;p->aborted=true;}
+            catch (...) {p->pairingError=E_FAIL;p->aborted=true;}
         });
         auto result=await(*p,custom.PairAsync(kinds,DevicePairingProtectionLevel::Default,params));
         pairing.revoke();p->pendingPin.reset();
         if (result.Status()!=DevicePairingResultStatus::Paired && result.Status()!=DevicePairingResultStatus::AlreadyPaired)
             throw hresult_error(E_FAIL,hstring(pairingStatus(result.Status()))+L"，状态="+to_hstring((int)result.Status())+
-                L"；过程=Invitation，方式="+to_hstring(p->ceremony.load()));
+                L"；过程=Invitation，方式="+to_hstring(p->ceremony.load())+
+                L"，确认已提交="+(p->accepted.load()?L"是":L"否")+
+                L"，耗时="+to_hstring(GetTickCount64()-started)+L"ms。尚未进入音频握手；请同时检查两端系统配对提示。");
     }
     session.device=await(*p,WiFiDirectDevice::FromIdAsync(target.Id(),params));
     if (!session.device) throw hresult_error(E_FAIL,L"无法建立无线直连会话");

@@ -6,6 +6,21 @@ import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
 
 class EventLogTest {
+    @Test fun clearInvalidatesSnapshotsAndKeepsRecording() {
+        val log = EventLog(maxEntries = 2)
+        repeat(3) { log.append("INFO", "test", "before-$it") }
+        val paused = log.snapshot()
+        val cleared = log.clear()
+        assertEquals(0, cleared.count)
+        assertEquals(0L, cleared.dropped)
+        assertEquals("", cleared.text)
+        assertTrue(cleared.version > paused.version)
+        assertTrue(paused.text.contains("before-2"))
+        log.append("INFO", "test", "after-clear")
+        assertEquals(1, log.snapshot().count)
+        assertFalse(log.snapshot().text.contains("before-"))
+        assertTrue(log.snapshot().text.contains("after-clear"))
+    }
     @Test fun retentionAndStableSnapshots() {
         val log = EventLog(maxEntries = 3, clock = { 0L })
         repeat(5) { log.append("INFO", "test", "event-$it") }

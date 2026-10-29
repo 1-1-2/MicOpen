@@ -369,6 +369,10 @@ void ui_on_click(int id, int x, int y)
         if (ui_log_copy_all()) ui_log_add("事件已全部复制到剪贴板", 2);
         else ui_log_add("复制失败：剪贴板被其他程序占用", 1);
         break;
+    case ID_CLEARLOG: ui_log_clear(); break;
+    case ID_PAUSELOG: ui_log_toggle_pause(); break;
+    case ID_LOG_SCROLL:
+        g_ui.drag_log = 1; SetCapture(g_ui.hwnd); ui_log_scroll_to(y); break;
     case ID_EXP_AUDIO: g_ui.exp_audio = !g_ui.exp_audio; break;
     case ID_EXP_STATS: g_ui.exp_stats = !g_ui.exp_stats; break;
     case ID_EXP_LOG:   g_ui.exp_log = !g_ui.exp_log; break;
@@ -422,6 +426,8 @@ void ui_on_release(void)
 {
     g_ui.pressed = 0;
     g_ui.drag_slider = 0;
+    g_ui.drag_log = 0;
+    if (GetCapture() == g_ui.hwnd) ReleaseCapture();
     g_dirty = 1;
 }
 
@@ -681,7 +687,15 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_MOUSEWHEEL: {
         int d = GET_WHEEL_DELTA_WPARAM(wp);
-        g_ui.scroll += (d < 0 ? sd(40) : -sd(40));
+        POINT point = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+        ScreenToClient(hwnd, &point);
+        if (g_ui.exp_log && point.y >= ui_title_h() && point.y < g_ui.h - ui_status_h()
+            && PtInRect(&g_lo.log_body, point)) {
+            static int remainder;
+            remainder += d;
+            ui_log_scroll(-(remainder / WHEEL_DELTA) * 3);
+            remainder %= WHEEL_DELTA;
+        } else g_ui.scroll += (d < 0 ? sd(40) : -sd(40));
         ui_layout_compute();
         place_edits();
         InvalidateRect(hwnd, NULL, FALSE);
@@ -718,6 +732,10 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             eng_set_gain_db(g_ui.gain_db10);   /* 实时生效 */
             InvalidateRect(hwnd, NULL, FALSE);
         }
+        if (g_ui.drag_log) {
+            ui_log_scroll_to(y);
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
         SetCursor(LoadCursorW(NULL, (LPCWSTR)((h == ID_SLIDER) ? IDC_SIZEWE :
                               (h != ID_NONE) ? IDC_HAND : IDC_ARROW)));
         return 0;
@@ -739,6 +757,9 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_LBUTTONUP:
         ui_on_release();
         InvalidateRect(hwnd, NULL, FALSE);
+        return 0;
+    case WM_CAPTURECHANGED:
+        g_ui.drag_log = g_ui.drag_slider = 0;
         return 0;
 
     case WM_CTLCOLORSTATIC: /* read-only / disabled EDIT uses STATIC coloring */

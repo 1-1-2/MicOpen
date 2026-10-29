@@ -67,3 +67,11 @@ Wi-Fi Direct 仍有组所有者和组客户端，并非无中心网状网络。�
 这些修改针对代码中已经确认的缺项，状态 19 的具体设备原因仍需新包实测，不能把 CI 成功当成无线配对成功。下一轮优先确认：手机留在 MicLink 内能否被发现；手机是否弹出确认或 PIN；Windows 的状态及配对方式。
 
 参考：[Android 发现与监听 API](https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pManager#startListening(android.net.wifi.p2p.WifiP2pManager.Channel,%20android.net.wifi.p2p.WifiP2pManager.ActionListener))、[微软官方配对示例](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/WiFiDirect/cs/ConnectionSettingsPanel.xaml.cs)、[配对状态](https://learn.microsoft.com/en-us/uwp/api/windows.devices.enumeration.devicepairingresultstatus)、[配对过程](https://learn.microsoft.com/en-us/uwp/api/windows.devices.wifidirect.wifidirectpairingprocedure)。
+
+### 第二轮反馈：已触发配对，仍返回 19
+
+作者反馈 Windows 在约 12 秒后返回 `状态=19；过程=Invitation，方式=1`；手机有 `discovery active=true`、`peers=1 invited=false`。`方式=1` 是 `ConfirmOnly`，证明 Windows 配对回调已触发；`peers=1` 只表示有一个邻居，`invited=false` 不等于确认窗口已出现，也不等于入组成功。虚拟麦克风、Opus 和 UDP 就绪信息属于本机初始化，尚未证明无线链路或音频握手成功。配对窗口随失败结束而关闭，不据此判断程序崩溃。
+
+这轮保持官方配对参数，补充「确认已提交」与配对耗时；回调提交异常不再静默吞掉。手机日志分别记录每个邻居的状态、WPS 能力与实际组客户端数量，不记录 MAC、配对 PIN 或密码。可见性文案改为「已请求可发现」，区分系统接受请求和电脑实际搜到设备。状态 19 的根因与实体连通仍待确认，本轮没有宣称已修复实体配对。
+
+两端日志新增「清除日志」。Windows 新增「暂停更新／继续更新」、日志正文独立滚轮和可拖动滚动条，工具栏直接衔接标题与正文。暂停只固定显示快照，后台继续记录；暂停时复制全部对应此快照。清除同时清空后台与暂停快照，保留暂停状态，后续仍可记录。Windows 保留最近 200 条，手机保留最近 300 条及 64 Ki 字符；均为当前进程内日志。

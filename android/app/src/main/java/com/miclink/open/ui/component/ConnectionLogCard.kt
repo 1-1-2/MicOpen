@@ -21,7 +21,7 @@ import com.miclink.open.EventLog
 
 /** Immutable paused snapshot keeps text selection stable while logs continue. */
 @Composable
-fun ConnectionLogCard(snapshot: EventLog.Snapshot) {
+fun ConnectionLogCard(snapshot: EventLog.Snapshot, onClear: () -> EventLog.Snapshot) {
     val context = LocalContext.current
     val tokens = LocalMicLinkTokens.current
     var paused by remember { mutableStateOf(false) }
@@ -31,6 +31,12 @@ fun ConnectionLogCard(snapshot: EventLog.Snapshot) {
     SectionCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("运行日志", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        }
+        // Keep three touch targets on their own row, including on narrow phones.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = {
+                frozen = onClear()
+            }) { Text("清除日志") }
             TextButton(onClick = {
                 if (!paused) frozen = snapshot
                 paused = !paused

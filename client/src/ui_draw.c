@@ -1321,20 +1321,29 @@ void ui_draw_log_card(HDC dc)
     ui_panel_hdr(dc, g_lo.hdr_log, L"事件", sum, g_ui.exp_log, ID_EXP_LOG);
     if (!g_ui.exp_log) return;
 
-    /* 「复制全部」secondary 按钮置于面板右上（Ctrl+C 同效） */
-    ui_button(dc, g_lo.btn_copylog, L"复制全部", ID_COPYLOG, BTN_SECONDARY, 1);
+    /* No external top/bottom padding around the toolbar. */
+    ui_button(dc, g_lo.btn_clearlog, L"清除日志", ID_CLEARLOG, BTN_TEXT, 1);
+    ui_button(dc, g_lo.btn_pauselog, ui_log_paused() ? L"继续更新" : L"暂停更新", ID_PAUSELOG, BTN_TEXT, 1);
+    ui_button(dc, g_lo.btn_copylog, L"复制全部", ID_COPYLOG, BTN_TEXT, ui_log_count() > 0);
+    {
+        wchar_t count[48]; RECT r = g_lo.log_toolbar;
+        r.left += ui_pad(); r.right = g_lo.btn_clearlog.left;
+        swprintf(count, 48, L"%d 条%ls", ui_log_count(), ui_log_paused() ? L" · 已暂停" : L"");
+        ui_text(dc, r, count, ui_font(11, FW_NORMAL, 0), g_th.text_mute, DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    }
 
     tf = ui_font(11, FW_NORMAL, 1);       /* 等宽时间戳 HH:MM:SS.mmm */
     lf = ui_font(11, FW_SEMIBOLD, 0);     /* 级别标签 */
     mf = ui_font(12, FW_NORMAL, 0);       /* 消息正文 */
-    y = c.top + sd(92);
-    for (i = 0; i < ui_log_count(); i++) {
+    y = g_lo.log_body.top + sd(4);
+    ui_log_scroll(0); /* Clamp after resize or clearing. */
+    for (i = ui_log_offset(); i < ui_log_count(); i++) {
         const LogLine *L = ui_log_get(i);
         wchar_t msg[LOG_LEN];
         RECT tr, mr, lr;
         COLORREF lc;
         if (!L) break;
-        if (y + line_h > c.bottom - sd(8)) break;
+        if (y + line_h > g_lo.log_body.bottom - sd(4)) break;
         MultiByteToWideChar(CP_UTF8, 0, L->text, -1, msg, LOG_LEN);
         msg[LOG_LEN - 1] = 0;
         lc = lv_col[L->kind < 0 || L->kind > 3 ? 0 : L->kind];
@@ -1351,15 +1360,20 @@ void ui_draw_log_card(HDC dc)
         ui_text(dc, lr, lv_name[L->kind < 0 || L->kind > 3 ? 0 : L->kind], lf, lc,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         /* 消息正文 text-1 */
-        SetRect(&mr, c.left + sd(182), y, c.right - ui_pad(), y + line_h);
+        SetRect(&mr, c.left + sd(182), y, g_lo.log_track.left - sd(4), y + line_h);
         ui_text(dc, mr, msg, mf, g_th.text,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         y += line_h;
     }
     if (!ui_log_count()) {
-        RECT tr = { c.left + ui_pad(), c.top + sd(92), c.right - ui_pad(), c.top + sd(114) };
+        RECT tr = { c.left + ui_pad(), y, c.right - ui_pad(), y + line_h };
         ui_text(dc, tr, L"暂无事件", ui_font(12, FW_NORMAL, 0), g_th.text_mute,
                 DT_LEFT | DT_SINGLELINE);
+    }
+    if (ui_log_count() > ui_log_visible_rows()) {
+        RECT thumb = ui_log_thumb();
+        ui_fill_round(dc, g_lo.log_track, sd(3), g_th.sunken, 255);
+        ui_fill_round(dc, thumb, sd(3), g_th.text_mute, 180);
     }
 }
 
@@ -1570,6 +1584,8 @@ void ui_draw_all(HDC dc)
 /* ---------------------------------------------------------------- 日志 */
 static LogLine g_logs[LOG_LINES];
 static int g_head, g_count;
+static LogLine g_frozen[LOG_LINES]; /* Newest first; untouched by live writers. */
+static int g_paused, g_frozen_count, g_log_offset;
 
 void ui_log_add(const char *s, int kind)
 {
@@ -1586,14 +1602,71 @@ void ui_log_add(const char *s, int kind)
     L->kind = kind;
     g_head = (g_head + 1) % LOG_LINES;
     if (g_count < LOG_LINES) g_count++;
+    if (!g_paused && g_log_offset > 0) g_log_offset++;
+    ui_log_scroll(0);
 }
 
-int ui_log_count(void) { return g_count; }
+int ui_log_count(void) { return g_paused ? g_frozen_count : g_count; }
 
 const LogLine *ui_log_get(int i)
 {
-    if (i < 0 || i >= g_count) return NULL;
+    if (i < 0 || i >= ui_log_count()) return NULL;
+    if (g_paused) return &g_frozen[i];
     return &g_logs[(g_head - 1 - i + LOG_LINES * 2) % LOG_LINES];
+}
+
+void ui_log_clear(void)
+{
+    ZeroMemory(g_logs, sizeof(g_logs)); ZeroMemory(g_frozen, sizeof(g_frozen));
+    g_head = g_count = g_frozen_count = g_log_offset = 0;
+    /* Preserve pause: new events keep recording, display remains empty. */
+}
+
+int ui_log_paused(void) { return g_paused; }
+int ui_log_offset(void) { return g_log_offset; }
+int ui_log_visible_rows(void)
+{
+    int rows = (g_lo.log_body.bottom - g_lo.log_body.top - sd(8)) / sd(22);
+    return rows > 0 ? rows : 1;
+}
+void ui_log_toggle_pause(void)
+{
+    if (!g_paused) {
+        int i;
+        g_frozen_count = g_count;
+        for (i = 0; i < g_count; i++) g_frozen[i] = *ui_log_get(i);
+        g_paused = 1;
+    } else { g_paused = 0; g_log_offset = 0; }
+    ui_log_scroll(0);
+}
+void ui_log_scroll(int lines)
+{
+    int max = ui_log_count() - ui_log_visible_rows();
+    if (max < 0) max = 0;
+    g_log_offset += lines;
+    if (g_log_offset > max) g_log_offset = max;
+    if (g_log_offset < 0) g_log_offset = 0;
+}
+RECT ui_log_thumb(void)
+{
+    RECT r = g_lo.log_track;
+    int height = r.bottom - r.top, count = ui_log_count(), rows = ui_log_visible_rows();
+    int size = count > rows ? height * rows / count : height;
+    if (size < sd(20)) size = sd(20);
+    if (size > height) size = height;
+    r.top += count > rows ? (height - size) * g_log_offset / (count - rows) : 0;
+    r.bottom = r.top + size;
+    return r;
+}
+void ui_log_scroll_to(int y)
+{
+    RECT thumb = ui_log_thumb();
+    int size = thumb.bottom - thumb.top;
+    int travel = g_lo.log_track.bottom - g_lo.log_track.top - size;
+    int max = ui_log_count() - ui_log_visible_rows();
+    if (travel <= 0 || max <= 0) return;
+    g_log_offset = (y - g_lo.log_track.top - size / 2) * max / travel;
+    ui_log_scroll(0);
 }
 
 int ui_log_copy_all(void)

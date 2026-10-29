@@ -341,7 +341,7 @@ fun ConnectPage(
                 }
             )
         }
-        ConnectionLogCard(state.eventLog)
+        ConnectionLogCard(state.eventLog, onClear = vm::clearEventLog)
     }
 }
 

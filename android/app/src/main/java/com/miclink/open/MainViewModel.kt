@@ -94,6 +94,10 @@ data class MainUiState(
  */
 class MainViewModel : ViewModel() {
 
+    fun clearEventLog(): EventLog.Snapshot = AppLog.clear().also {
+        uiState = uiState.copy(eventLog = it)
+    }
+
     var uiState: MainUiState by mutableStateOf(MainUiState())
         private set
 

@@ -124,5 +124,13 @@ void  ui_log_add(const char *s, int kind);
 int   ui_log_count(void);
 const LogLine *ui_log_get(int i);
 int   ui_log_copy_all(void);        /* 全部事件写入剪贴板（D-13，Ctrl+C 同效） */
+void  ui_log_clear(void);
+void  ui_log_toggle_pause(void);
+int   ui_log_paused(void);
+int   ui_log_offset(void);
+int   ui_log_visible_rows(void);
+void  ui_log_scroll(int lines);
+void  ui_log_scroll_to(int y);
+RECT  ui_log_thumb(void);
 
 #endif /* MICLINK_UI_DRAW_H */
