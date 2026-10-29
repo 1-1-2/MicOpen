@@ -780,7 +780,7 @@ static void on_forwarded(const wchar_t *cmdline)
             if (a.transport == 1) show_direct_host(g_ui.edit_host);
             SendMessageW(g_ui.edit_host,EM_SETREADONLY,a.transport==1,0);
         }
-        if (a.host_pos) SetWindowTextW(g_ui.edit_host, a.host_pos);
+        if (a.host_pos && a.transport != 1) SetWindowTextW(g_ui.edit_host, a.host_pos);
         if (a.media_port > 0 && g_ui.edit_media) {
             wchar_t buf[16];
             _snwprintf(buf, 16, L"%d", a.media_port);
@@ -925,6 +925,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
                  SWP_FRAMECHANGED);
 
     cli_apply_to_ui(&g_args);
+    if (g_ui.transport == 1) show_direct_host(g_ui.edit_host);
     if (g_args.feed_write) eng_set_feed_mode(DEV_FEED_WRITE);
 
     /* 驱动检测放在窗口创建之后：L1 会打开设备句柄（全进程只开一次），
@@ -946,7 +947,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE prev, LPSTR cmd, int show)
     ShowWindow(hwnd, show);
     UpdateWindow(hwnd);
 
-    if (g_args.connect && g_args.host_pos) PostMessageW(hwnd, WM_APP + 2, 0, 0);
+    if (g_args.connect && (g_args.host_pos || g_args.transport == 1)) PostMessageW(hwnd, WM_APP + 2, 0, 0);
 
     while (GetMessageW(&m, NULL, 0, 0) > 0) {
         if (monitor_handle_message(&m)) continue;
