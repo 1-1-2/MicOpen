@@ -73,7 +73,7 @@ Windows 端提供输入增益、扩展增益和一键静音。打开「监听实
 |---|---|
 | 连接与恢复 | 驱动就绪提示、按连接方式切换的地址输入、可选自动重连。 |
 | 音频与状态 | 输入电平、峰值、采样率与缓冲设置；会话时长、抖动和丢包统计。 |
-| 排查与复现 | Windows 运行事件可复制；Android 440 Hz 调试音可帮助检查链路。 |
+| 排查与复现 | Windows 运行事件可复制；Android 440 Hz 调试音可帮助检查链路。开发分支另有 Android 日志节选／全部复制，见[直连测试说明](docs/WIFI-DIRECT.md)。 |
 | 外观与习惯 | Windows 浅色／深色；Android 跟随系统、预设配色、Android 12+ 动态取色与 AMOLED 纯黑。 |
 
 Wi-Fi、手机热点、蓝牙和有线 ADB / USB 均已有用户实机可用反馈。[本仓库 CI](https://github.com/1-1-2/MicOpen/actions/runs/40735612451)已通过两种 Android 构建、模拟器 ADB 转发、Windows 协议／驱动及 ADB 退出清理检查；这些不代表所有设备和长时间场景都已验证。详见[发布记录与验证范围](docs/RELEASES.md)。

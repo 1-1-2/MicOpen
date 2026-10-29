@@ -73,7 +73,7 @@ See the [monitoring guide](client/monitor/README.md) for modules, delay adjustme
 |---|---|
 | Connect and recover | Driver readiness, method-specific address inputs and optional automatic reconnection. |
 | Watch your audio | Input level and peaks, sample rate and buffer controls; session duration, jitter and packet-loss statistics. |
-| Troubleshoot | Copy Windows event logs; use Android's 440 Hz test tone to check the audio path. |
+| Troubleshoot | Copy Windows event logs; use Android's 440 Hz test tone to check the audio path. The development branch also adds selectable Android logs and Copy all; see the [Direct testing guide](docs/WIFI-DIRECT.md). |
 | Make it yours | Light/dark Windows UI; Android system theme, preset palettes, Android 12+ dynamic colors and AMOLED black. |
 
 Wi-Fi, phone hotspot, Bluetooth and wired ADB / USB all have user-reported working results on physical devices. [CI in this repository](https://github.com/1-1-2/MicOpen/actions/runs/40735612451) passes both Android variants, emulator ADB forwarding, Windows protocol/driver checks and ADB exit cleanup. This does not cover every device or long session. See the [release record and validation scope](docs/RELEASES.md).
