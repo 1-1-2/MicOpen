@@ -55,6 +55,8 @@ runs:
 
         probe-results/direct-avd/*.log
 
-        probe-results/direct-avd/*.txt'
+        probe-results/direct-avd/*.txt
+
+        probe-results/direct-avd/*.xml'
       retention-days: 7
       if-no-files-found: warn

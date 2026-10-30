@@ -37,6 +37,10 @@ run-name: CI · ${{ inputs.task || 'verify' }} · ${{ github.ref_name }}
         - '35'
         - '37'
         default: none
+      direct_artifact_run_id:
+        description: Reuse unchanged APK for harness-only retest; 0 builds normally
+        type: string
+        default: '0'
 permissions:
   contents: read
 concurrency:
@@ -62,7 +66,11 @@ jobs:
       env:
         TASK: ${{ inputs.task || 'verify' }}
         TARGET: ${{ inputs.target || 'auto' }}
-      run: python .github/scripts/ci.py plan --task "$TASK" --target "$TARGET"
+        DIRECT_ARTIFACT_RUN: ${{ inputs.direct_artifact_run_id }}
+        DIRECT_API: ${{ inputs.direct_simulation_api }}
+      run: "if [[ -n \"$DIRECT_ARTIFACT_RUN\" && \"$DIRECT_ARTIFACT_RUN\" != \"0\" ]]; then\n  python .github/scripts/direct-artifact.py\
+        \ plan --run \"$DIRECT_ARTIFACT_RUN\" --api \"$DIRECT_API\"\nelse\n  python .github/scripts/ci.py plan --task \"$TASK\"\
+        \ --target \"$TARGET\"\nfi"
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -214,21 +222,34 @@ jobs:
     needs:
     - plan
     - build-android
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.direct_simulation_api != 'none' && inputs.direct_simulation_api
-      != '' }}
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && inputs.direct_simulation_api != 'none' && inputs.direct_simulation_api
+      != '' && (needs.build-android.result == 'success' || (inputs.direct_artifact_run_id != '0' && inputs.direct_artifact_run_id
+      != '')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v7
       with:
         persist-credentials: false
+        fetch-depth: 0
     - uses: actions/download-artifact@v8
       with:
-        name: build-android-${{ github.run_id }}-${{ github.run_attempt }}
+        github-token: ${{ github.token }}
+        run-id: ${{ inputs.direct_artifact_run_id != '0' && inputs.direct_artifact_run_id != '' && inputs.direct_artifact_run_id
+          || github.run_id }}
+        pattern: build-android-${{ inputs.direct_artifact_run_id != '0' && inputs.direct_artifact_run_id != '' && inputs.direct_artifact_run_id
+          || github.run_id }}-*
+        merge-multiple: true
         path: apk
-    - name: Verify exact source
-      run: python .github/scripts/ci.py verify apk --sha "$GITHUB_SHA"
+    - name: Verify APK provenance and unchanged application inputs
+      env:
+        GH_TOKEN: ${{ github.token }}
+        DIRECT_ARTIFACT_RUN: ${{ inputs.direct_artifact_run_id }}
+      run: python .github/scripts/direct-artifact.py verify --folder apk --run "${DIRECT_ARTIFACT_RUN:-0}"
     - uses: ./.github/actions/direct-simulation
       with:
         api: ${{ inputs.direct_simulation_api }}
         apk: apk/debug/app-debug.apk
+    permissions:
+      contents: read
+      actions: read

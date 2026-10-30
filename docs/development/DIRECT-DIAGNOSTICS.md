@@ -29,3 +29,9 @@ Android target 37 补本地网络权限；API 35+ 记录公开建组事件，旧
 环境要求 Emulator 36.5+、可读写 KVM 与支持 P2P 的镜像。预检或测试失败保存 result.json、双端系统与应用日志。双 AVD 不能验证 Windows WinRT/WDI 或 OPPO/Huawei ROM。
 
 最终交付既有分发证书签署的非 debuggable release APK，配合同提交 Windows EXE/DLL、许可及对应源码；不以 CI 代替实体配对和音频验收。
+
+### 只调整测试脚本时复用 APK
+
+标准 CI 可设置 `direct_artifact_run_id` 为已有 Android 构建的 run ID，并设置 `direct_simulation_api=35/37`。此模式不重新构建客户端；必须通过产物 SHA256、原构建成功状态和应用构建输入的 Git diff 三重核对。报告同时保留 APK 源码提交与测试脚本提交；应用源码或构建输入有变化则拒绝复用。
+
+独立 `direct-validation.yml` 在默认分支注册前可能无法用 API dispatch；当前使用已注册的 `ci.yml` 入口，不为运行测试改动稳定 main。

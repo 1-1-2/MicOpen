@@ -32,18 +32,31 @@ def events(log):
     return out
 
 
-def accept_p2p(serial):
-    # Only system P2P confirmation, on disposable CI AVDs.
+def p2p_accept_bounds(xml):
+    try: root = ET.fromstring(xml[xml.index('<?xml'):])
+    except (ValueError, ET.ParseError): return None
+    trusted = {'android', 'com.android.settings', 'com.android.wifi.dialog', 'com.google.android.wifi.dialog'}
+    nodes = list(root.iter('node'))
+    # Restrict to the P2P invitation, not any positive system dialog.
+    context = ' '.join(n.get('text', '')+' '+n.get('resource-id', '') for n in nodes if n.get('package') in trusted).lower()
+    if not any(x in context for x in ['wi-fi direct', 'wifi direct', 'wi‑fi direct', 'p2p', 'invitation to connect']): return None
+    for node in nodes:
+        if node.get('package') not in trusted: continue
+        positive = node.get('resource-id') == 'android:id/button1' or node.get('resource-id', '').endswith('/positive_button')
+        if not positive or node.get('enabled') == 'false': continue
+        coords = [int(x) for x in re.findall(r'\d+', node.get('bounds', ''))]
+        if len(coords) == 4: return ((coords[0]+coords[2])//2, (coords[1]+coords[3])//2)
+    return None
+
+
+def accept_p2p(serial, output):
     run(['adb', '-s', serial, 'shell', 'uiautomator', 'dump', '/sdcard/p2p-ui.xml'], check=False)
     xml = run(['adb', '-s', serial, 'shell', 'cat', '/sdcard/p2p-ui.xml'], check=False)
-    if not any(x in xml.lower() for x in ['wi-fi direct', 'wifi direct', 'wi‑fi direct', 'p2p']): return
-    try: root = ET.fromstring(xml[xml.index('<?xml'):])
-    except (ValueError, ET.ParseError): return
-    for node in root.iter('node'):
-        if node.get('resource-id') == 'android:id/button1' and node.get('package') in ['android', 'com.android.settings']:
-            coords = [int(x) for x in re.findall(r'\d+', node.get('bounds', ''))]
-            if len(coords) == 4:
-                run(['adb', '-s', serial, 'shell', 'input', 'tap', str((coords[0]+coords[2])//2), str((coords[1]+coords[3])//2)])
+    (output / (serial+'-latest-ui.xml')).write_text(xml)
+    bounds = p2p_accept_bounds(xml)
+    if bounds:
+        run(['adb', '-s', serial, 'shell', 'input', 'tap', str(bounds[0]), str(bounds[1])])
+        print('P2P system invitation accepted on '+serial, flush=True)
 
 
 def main():
@@ -54,6 +67,11 @@ def main():
     a = p.parse_args(); a.output.mkdir(parents=True, exist_ok=True)
     report = {'scope': 'Android-emulator-P2P', 'windows_pairing_tested': False,
               'api': a.api, 'status': 'preflight', 'rounds': []}
+    manifest = a.apk.parent.parent/'manifest.json'
+    if manifest.exists():
+        source = json.loads(manifest.read_text())
+        report.update(application_source=source['sha'], artifact_run=source['run_id'])
+    report['harness_source'] = os.environ.get('GITHUB_SHA', 'local')
     processes = []; streams = []
     sdk = Path(os.environ['ANDROID_HOME']); emulator = sdk/'emulator/emulator'
     serials = ['emulator-5554', 'emulator-5556']
@@ -90,6 +108,8 @@ def main():
                 run(['adb', '-s', serial, 'shell', 'pm', 'grant', 'com.miclink.open', 'android.permission.'+perm])
             run(['adb', '-s', serial, 'shell', 'cmd', 'location', 'set-location-enabled', 'true'])
             run(['adb', '-s', serial, 'shell', 'svc', 'wifi', 'enable'])
+            run(['adb', '-s', serial, 'shell', 'input', 'keyevent', '82'])
+            run(['adb', '-s', serial, 'shell', 'wm', 'dismiss-keyguard'], check=False)
         report['status'] = 'testing'
         for round_index in range(2):
             owner, client = serials
@@ -109,7 +129,7 @@ def main():
                 owner_events = events(run(['adb', '-s', owner, 'logcat', '-d', '-s', 'DirectProbe:I', '*:S']))
                 if any(e['event']=='passed' for e in client_events) and any(e['event']=='owner_has_client' for e in owner_events): break
                 if any(e['event']=='error' for e in client_events+owner_events): raise RuntimeError('probe reported error; see logs')
-                accept_p2p(owner)
+                accept_p2p(owner, a.output)
                 time.sleep(1)
             else: raise RuntimeError('P2P/echo timeout; shared WLAN echo is not accepted as P2P evidence')
             formed = next(e for e in client_events if e['event']=='client_ready')
