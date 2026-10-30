@@ -20,6 +20,17 @@ def image_package(api):
     return f'system-images;android-{version};google_apis;x86_64'
 
 
+def validate_avd_metadata(path, api):
+    metadata = path.read_text()
+    expected = image_package(api).split(';')[1]
+    target = next((line.split('=', 1)[1].strip() for line in metadata.splitlines()
+                   if line.startswith('target=')), None)
+    if target != expected:
+        raise RuntimeError(f'Invalid AVD target {target!r}; expected {expected!r}. '
+                           'Recreate with Command-line Tools 22.0; old avdmanager can write android-0.')
+    return metadata
+
+
 def run(args, timeout=30, check=True):
     return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           timeout=timeout, check=check).stdout
@@ -97,9 +108,14 @@ def main():
         os.environ['ANDROID_AVD_HOME'] = str(a.output.resolve()/'avds')
         Path(os.environ['ANDROID_AVD_HOME']).mkdir(exist_ok=True)
         image = image_package(a.api)
+        report['avd_targets'] = []
         for i, name in enumerate(names):
             subprocess.run(['avdmanager', 'create', 'avd', '-n', name, '-k', image, '--force'],
                            input='no\n', text=True, check=True, timeout=90)
+            metadata_path = Path(os.environ['ANDROID_AVD_HOME']) / (name+'.ini')
+            metadata = validate_avd_metadata(metadata_path, a.api)
+            (a.output / (name+'-metadata.txt')).write_text(metadata)
+            report['avd_targets'].append(image.split(';')[1])
             # A fresh Android 17 image can exhaust the default userdata size
             # before PackageInstaller accepts even the first APK.
             config = Path(os.environ['ANDROID_AVD_HOME']) / (name+'.avd') / 'config.ini'

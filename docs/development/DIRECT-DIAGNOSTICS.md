@@ -42,3 +42,4 @@ Android target 37 补本地网络权限；API 35+ 记录公开建组事件，旧
 - 修正系统窗口识别后，复用同一 APK 的 API 35 双 AVD 两轮建组、地址绑定、TCP 与 UDP 回显及重连通过（CI `41040790473`）。此证据仅覆盖 Android 模拟器 P2P。
 - API 37 使用官方 `android-37.0` 镜像；CI `41042860836` 在 APK 安装前失败，原始错误为 `Requested internal only, but not enough space`。尚未运行应用，不能据此判断直连成功或失败。
 - 测试环境现显式分配 4 GiB userdata，记录安装前及退出时 `/data` 空间，再复测 API 37。Windows 实机配对仍待作者 A/B 验收，暂不发布 Release。
+- CI `41074749196` 的 `/data` 剩余约 3 GiB，存储问题已消除，但安装时系统重启；两端日志均出现 SurfaceFlinger / RegionSampling 的 `hasReadColorBufferDma` 断言。该轮使用托管镜像的 Command-line Tools 12.0，与[上游复现实验](https://github.com/actions/runner-images/issues/14484)报告的旧 avdmanager 问题相符，仍需本仓复测确认。模拟试验现单独固定 Command-line Tools 22.0，并在启动前验证实际生成的 AVD `target`；不改动应用构建工具链，不禁用 SystemUI 或系统配对提示。

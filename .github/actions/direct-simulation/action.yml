@@ -26,6 +26,14 @@ runs:
   - name: SDK tools
     run: bash .github/scripts/setup-android-sdk.sh
     shell: bash
+  - name: Pin AVD tools with major.minor platform support
+    run: |
+      sdkmanager --licenses >/dev/null 2>&1 || true
+      python .github/scripts/ci.py run --seconds 900 -- sdkmanager "cmdline-tools;22.0"
+      test -x "$ANDROID_HOME/cmdline-tools/22.0/bin/avdmanager"
+      echo "$ANDROID_HOME/cmdline-tools/22.0/bin" >> "$GITHUB_PATH"
+      "$ANDROID_HOME/cmdline-tools/22.0/bin/sdkmanager" --version
+    shell: bash
   - name: Emulator prerequisites
     env:
       DIRECT_API: ${{ inputs.api }}

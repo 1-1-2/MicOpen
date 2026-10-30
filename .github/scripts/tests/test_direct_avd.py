@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import tempfile
 
 path = Path(__file__).resolve().parents[1] / 'direct-avd.py'
 spec = importlib.util.spec_from_file_location('direct_avd', path)
@@ -9,6 +10,14 @@ spec.loader.exec_module(module)
 
 
 class DirectAvdReportTests(unittest.TestCase):
+    def test_broken_major_minor_avd_is_rejected_before_boot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            metadata = Path(folder)/'phone.ini'
+            metadata.write_text('avd.ini.encoding=UTF-8\ntarget=android-0\n')
+            with self.assertRaisesRegex(RuntimeError, 'Invalid AVD target'):
+                module.validate_avd_metadata(metadata, 37)
+            metadata.write_text('avd.ini.encoding=UTF-8\ntarget=android-37.0\n')
+            self.assertIn('target=android-37.0', module.validate_avd_metadata(metadata, 37))
     def test_official_image_package_versions(self):
         self.assertEqual(module.image_package(35), 'system-images;android-35;google_apis;x86_64')
         self.assertEqual(module.image_package(37), 'system-images;android-37.0;google_apis;x86_64')
