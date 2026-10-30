@@ -1,0 +1,56 @@
+name: Android Direct simulation
+description: Two disposable AVDs, real P2P group and bound TCP/UDP echo; no Windows radio test.
+inputs:
+  api:
+    default: '35'
+    description: Emulator API
+  apk:
+    required: true
+    description: Debug APK path
+runs:
+  using: composite
+  steps:
+  - name: Record coverage before environment preparation
+    env:
+      DIRECT_API: ${{ inputs.api }}
+    run: 'mkdir -p probe-results/direct-avd
+
+      python -c ''import json,os,pathlib; pathlib.Path("probe-results/direct-avd/result.json").write_text(json.dumps({"status":"prerequisite-not-completed","api":os.environ["DIRECT_API"],"scope":"Android-emulator-P2P","windows_pairing_tested":False})+"\n")''
+
+      '
+    shell: bash
+  - uses: actions/setup-java@v6
+    with:
+      distribution: temurin
+      java-version: '17'
+  - name: SDK tools
+    run: bash .github/scripts/setup-android-sdk.sh
+    shell: bash
+  - name: Emulator prerequisites
+    env:
+      DIRECT_API: ${{ inputs.api }}
+    run: 'sdkmanager --licenses >/dev/null 2>&1 || true
+
+      python .github/scripts/ci.py run --seconds 900 -- sdkmanager platform-tools emulator "system-images;android-$DIRECT_API;google_apis;x86_64"
+
+      sudo apt-get update -qq
+
+      sudo apt-get install -y -qq libpulse0 libnss3 libglu1-mesa
+
+      sudo chmod 666 /dev/kvm
+
+      '
+    shell: bash
+  - name: Real Android P2P adapter and bound TCP/UDP echo
+    env:
+      DIRECT_API: ${{ inputs.api }}
+    run: python .github/scripts/ci.py run --seconds 1100 -- python .github/scripts/direct-avd.py --api "$DIRECT_API" --apk
+      "${{ inputs.apk }}"
+    shell: bash
+  - uses: actions/upload-artifact@v7
+    if: always()
+    with:
+      name: direct-simulation-${{ inputs.api }}-${{ github.run_id }}
+      path: probe-results/direct-avd/
+      retention-days: 7
+      if-no-files-found: warn

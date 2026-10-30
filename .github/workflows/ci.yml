@@ -1,4 +1,3 @@
-# 编排只保留任务、依赖和组件调用；历史原因随对应组件迁移。
 name: CI
 run-name: CI · ${{ inputs.task || 'verify' }} · ${{ github.ref_name }}
 'on':
@@ -30,6 +29,14 @@ run-name: CI · ${{ inputs.task || 'verify' }} · ${{ github.ref_name }}
         description: Agent 关联编号（可留空）
         type: string
         default: ''
+      direct_simulation_api:
+        description: Optional dual Android AVD P2P experiment
+        type: choice
+        options:
+        - none
+        - '35'
+        - '37'
+        default: none
 permissions:
   contents: read
 concurrency:
@@ -102,7 +109,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [debug, release]
+        variant:
+        - debug
+        - release
     steps:
     - *id001
     - name: Download android artifact
@@ -124,12 +133,15 @@ jobs:
     - uses: actions/upload-artifact@v7
       if: ${{ always() }}
       with:
-        name: report-${{ github.job }}-${{ matrix.variant }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os }}
+        name: report-${{ github.job }}-${{ matrix.variant }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ runner.os
+          }}
         path: _public/report/
         retention-days: 7
         if-no-files-found: error
   build-direct:
-    needs: [plan, checks]
+    needs:
+    - plan
+    - checks
     if: needs.plan.outputs.windows == 'true'
     runs-on: windows-latest
     timeout-minutes: 15
@@ -190,6 +202,7 @@ jobs:
     - build-windows
     - verify-windows
     - build-direct
+    - direct-simulation
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -197,3 +210,25 @@ jobs:
     - env:
         NEEDS_JSON: ${{ toJSON(needs) }}
       run: python .github/scripts/ci.py summary
+  direct-simulation:
+    needs:
+    - plan
+    - build-android
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.direct_simulation_api != 'none' && inputs.direct_simulation_api
+      != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - uses: actions/download-artifact@v8
+      with:
+        name: build-android-${{ github.run_id }}-${{ github.run_attempt }}
+        path: apk
+    - name: Verify exact source
+      run: python .github/scripts/ci.py verify apk --sha "$GITHUB_SHA"
+    - uses: ./.github/actions/direct-simulation
+      with:
+        api: ${{ inputs.direct_simulation_api }}
+        apk: apk/debug/app-debug.apk

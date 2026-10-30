@@ -11,6 +11,7 @@
 #include <winrt/Windows.Networking.h>
 #include <dwmapi.h>
 #include <appmodel.h>
+#include <objbase.h>
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -436,7 +437,7 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* c
     try {
         init_apartment(apartment_type::single_threaded);session->apartment=true;
         createPicker(p);
-        DWORD packageLength=0;
+        UINT32 packageLength=0;
         auto identity=GetCurrentPackageFullName(&packageLength,nullptr);
         APTTYPE apartment;APTTYPEQUALIFIER qualifier;
         auto apartmentResult=CoGetApartmentType(&apartment,&qualifier);

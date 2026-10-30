@@ -252,7 +252,7 @@ def main():
     s.add_parser('plan')
     a=s.add_parser('watch');a.add_argument('--run',type=int,required=True);a.add_argument('--timeout',type=int,default=60)
     a=s.add_parser('barrier');a.add_argument('--phase',choices=['ready','closed'],required=True)
-    a=s.add_parser('dispatch');a.add_argument('workflow',choices=['ci.yml','lab.yml']);a.add_argument('--ref',default='main');a.add_argument('--input',action='append',default=[])
+    a=s.add_parser('dispatch');a.add_argument('workflow',choices=['ci.yml','lab.yml','direct-validation.yml']);a.add_argument('--ref',default='main');a.add_argument('--input',action='append',default=[])
     for name in ['status','connection','exec','finish','ssh-config']:
         a=s.add_parser(name);a.add_argument('--run',type=int);a.add_argument('--connection-file');a.add_argument('--role',default='windows');a.add_argument('--attempt',type=int);a.add_argument('--timeout',type=int,default=600);a.add_argument('--identity',default=os.environ.get('SSH_IDENTITY'))
         a.add_argument('--transport',choices=['auto','tailnet','relay'],default='auto')

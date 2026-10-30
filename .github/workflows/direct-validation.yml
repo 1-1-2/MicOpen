@@ -1,0 +1,51 @@
+name: Direct Android simulation
+run-name: Direct simulation · API ${{ inputs.api }} · ${{ github.ref_name }}
+'on':
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: CI run containing a debug APK from this exact commit
+        required: true
+        type: string
+      api:
+        description: Emulator API
+        type: choice
+        options:
+        - '35'
+        - '37'
+        default: '35'
+      request_id:
+        description: Agent correlation ID
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+jobs:
+  p2p:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - uses: actions/download-artifact@v8
+      with:
+        github-token: ${{ github.token }}
+        run-id: ${{ inputs.artifact_run_id }}
+        pattern: build-android-*
+        merge-multiple: true
+        path: apk
+    - name: Require exact source provenance
+      run: python .github/scripts/ci.py verify apk --sha "$GITHUB_SHA"
+    - name: Find debug APK
+      id: apk
+      run: 'apk_path=$(find apk -name ''*debug*.apk'' -print -quit)
+
+        test -n "$apk_path"
+
+        echo "path=$apk_path" >> "$GITHUB_OUTPUT"'
+    - uses: ./.github/actions/direct-simulation
+      with:
+        api: ${{ inputs.api }}
+        apk: ${{ steps.apk.outputs.path }}

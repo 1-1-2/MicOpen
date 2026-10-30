@@ -12,12 +12,13 @@ ROOT=Path(__file__).resolve().parents[2]
 def inspect(apk,tools):
     badging=subprocess.check_output([str(tools/'aapt'),'dump','badging',str(apk)],text=True)
     cert=subprocess.check_output([str(tools/'apksigner'),'verify','--verbose','--print-certs',str(apk)],text=True)
+    manifest=subprocess.check_output([str(tools/'aapt'),'dump','xmltree',str(apk),'AndroidManifest.xml'],text=True)
     with zipfile.ZipFile(apk) as z:
         dex=sum(i.file_size for i in z.infolist() if i.filename.endswith('.dex'))
         abis=sorted({n.split('/')[1] for n in z.namelist() if n.startswith('lib/') and n.endswith('/libmiclink_opus.so')})
     fingerprint=re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-f]+)',cert)
     if not fingerprint:raise ValueError('missing verified APK signer')
-    return dict(bytes=apk.stat().st_size,dex_bytes=dex,debuggable='application-debuggable' in badging,abis=abis,certificate_sha256=fingerprint[1])
+    return dict(direct_probe='DirectProbeActivity' in manifest,bytes=apk.stat().st_size,dex_bytes=dex,debuggable='application-debuggable' in badging,abis=abis,certificate_sha256=fingerprint[1])
 
 def main():
     tools=Path(os.environ.get('ANDROID_HOME') or os.environ['ANDROID_SDK_ROOT'])/'build-tools/36.0.0'
@@ -25,6 +26,8 @@ def main():
     variants={v:inspect(outputs/f'apk/{v}/app-{v}.apk',tools) for v in ['debug','release']}
     if not variants['debug']['debuggable'] or variants['release']['debuggable']:
         raise ValueError('APK debuggable flag does not match its variant')
+    if variants['release']['direct_probe'] or not variants['debug']['direct_probe']:
+        raise ValueError('Direct probe must exist only in debug APK')
     expected=['arm64-v8a','armeabi-v7a','x86_64']
     if any(v['abis']!=expected for v in variants.values()):raise ValueError('incomplete Android ABI set')
     mapping=outputs/'mapping/release/mapping.txt'
