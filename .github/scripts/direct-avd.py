@@ -14,6 +14,12 @@ class PrerequisiteUnavailable(RuntimeError):
     pass
 
 
+def image_package(api):
+    # Official repository names Android 17's base image android-37.0.
+    version = {35: '35', 37: '37.0'}[api]
+    return f'system-images;android-{version};google_apis;x86_64'
+
+
 def run(args, timeout=30, check=True):
     return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           timeout=timeout, check=check).stdout
@@ -61,10 +67,15 @@ def accept_p2p(serial, output):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--apk', type=Path, required=True)
+    p.add_argument('--apk', type=Path)
+    p.add_argument('--print-image-package', type=int, choices=[35, 37])
     p.add_argument('--api', type=int, default=35)
     p.add_argument('--output', type=Path, default=Path('probe-results/direct-avd'))
-    a = p.parse_args(); a.output.mkdir(parents=True, exist_ok=True)
+    a = p.parse_args()
+    if a.print_image_package:
+        print(image_package(a.print_image_package)); return
+    if a.apk is None: p.error('--apk is required for a test')
+    a.output.mkdir(parents=True, exist_ok=True)
     report = {'scope': 'Android-emulator-P2P', 'windows_pairing_tested': False,
               'api': a.api, 'status': 'preflight', 'rounds': []}
     manifest = a.apk.parent.parent/'manifest.json'
@@ -85,7 +96,7 @@ def main():
         if not os.access('/dev/kvm', os.R_OK | os.W_OK): raise PrerequisiteUnavailable('KVM unavailable')
         os.environ['ANDROID_AVD_HOME'] = str(a.output.resolve()/'avds')
         Path(os.environ['ANDROID_AVD_HOME']).mkdir(exist_ok=True)
-        image = f'system-images;android-{a.api};google_apis;x86_64'
+        image = image_package(a.api)
         for i, name in enumerate(names):
             subprocess.run(['avdmanager', 'create', 'avd', '-n', name, '-k', image, '--force'],
                            input='no\n', text=True, check=True, timeout=90)

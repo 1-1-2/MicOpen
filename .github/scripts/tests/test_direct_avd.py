@@ -9,6 +9,9 @@ spec.loader.exec_module(module)
 
 
 class DirectAvdReportTests(unittest.TestCase):
+    def test_official_image_package_versions(self):
+        self.assertEqual(module.image_package(35), 'system-images;android-35;google_apis;x86_64')
+        self.assertEqual(module.image_package(37), 'system-images;android-37.0;google_apis;x86_64')
     def test_logcat_prefix_and_unrelated_lines(self):
         text = '10-30 12:00:00 I DirectProbe: {"event":"client_ready","formed":true}\nnot JSON\n{"other":"ignored"}'
         self.assertEqual(module.events(text), [{'event': 'client_ready', 'formed': True}])

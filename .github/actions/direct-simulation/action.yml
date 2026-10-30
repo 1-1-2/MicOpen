@@ -31,7 +31,9 @@ runs:
       DIRECT_API: ${{ inputs.api }}
     run: 'sdkmanager --licenses >/dev/null 2>&1 || true
 
-      python .github/scripts/ci.py run --seconds 900 -- sdkmanager platform-tools emulator "system-images;android-$DIRECT_API;google_apis;x86_64"
+      image_package=$(python .github/scripts/direct-avd.py --print-image-package "$DIRECT_API")
+
+      python .github/scripts/ci.py run --seconds 900 -- sdkmanager platform-tools emulator "$image_package"
 
       sudo apt-get update -qq
 
