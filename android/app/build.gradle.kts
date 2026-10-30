@@ -30,6 +30,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "SOURCE_REV", "\"${providers.environmentVariable("GITHUB_SHA").orElse("local").get()}\"")
 
         // ---- WO Mic 协议默认值（唯一事实来源：docs/protocol/womic-wifi-protocol-v1.md）----
         // 手机侧 TCP 控制端口，官方 app SharedPreferences "controlPort"（证据 V1/f.java）

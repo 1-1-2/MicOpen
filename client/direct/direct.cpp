@@ -10,6 +10,7 @@
 #include <winrt/Windows.Devices.WiFiDirect.h>
 #include <winrt/Windows.Networking.h>
 #include <dwmapi.h>
+#include <appmodel.h>
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -34,7 +35,10 @@ struct PairPrompt {
 };
 struct Picker {
     volatile LONG *cancel{};
-    HWND window{}, status{}, button{}, reject{}, pin{}, owner{};
+    HWND window{}, status{}, button{}, reject{}, pin{}, mode{}, owner{};
+    bool directOpen{};
+    ULONGLONG started=GetTickCount64();
+    unsigned requestNumber{};
     MicDirectTheme theme{RGB(245,246,248),RGB(235,237,241),RGB(25,28,33),RGB(100,105,115),RGB(0,110,180),0};
     HBRUSH background{}, surface{};
     std::mutex mutex;
@@ -56,6 +60,9 @@ struct Picker {
         if (surface) DeleteObject(surface);
     }
 };
+void trace(Picker const& p, std::string const& message) {
+    emitStage(("无线直连：attempt="+std::to_string(GetCurrentProcessId())+"-"+std::to_string(p.started)+" +"+std::to_string(GetTickCount64()-p.started)+"ms request="+std::to_string(p.requestNumber)+" path="+(p.directOpen?"DirectOpen":"ExplicitPair")+" "+message).c_str());
+}
 bool cancelled(Picker const& p) {
     return InterlockedCompareExchange(p.cancel, 0, 0) != 0 || p.aborted;
 }
@@ -92,14 +99,21 @@ LRESULT CALLBACK windowProc(HWND w, UINT m, WPARAM a, LPARAM b) {
         p->status = CreateWindowW(L"STATIC",L"正在初始化无线直连…",WS_CHILD|WS_VISIBLE,
             14,12,width-28,82,w,nullptr,nullptr,nullptr);
         p->pin = CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_TABSTOP|ES_NUMBER|ES_CENTER,
-            14,100,width-28,28,w,(HMENU)101,nullptr,nullptr);
+            14,164,width-28,28,w,(HMENU)101,nullptr,nullptr);
         SendMessageW(p->pin,EM_SETLIMITTEXT,8,0);
+        CreateWindowW(L"STATIC",L"本轮连接流程（先选，再在手机点选电脑）",WS_CHILD|WS_VISIBLE,
+            14,96,width-28,20,w,nullptr,nullptr,nullptr);
+        p->mode=CreateWindowW(L"COMBOBOX",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,
+            14,118,width-28,120,w,(HMENU)102,nullptr,nullptr);
+        SendMessageW(p->mode,CB_ADDSTRING,0,(LPARAM)L"A · 显式系统配对（原流程）");
+        SendMessageW(p->mode,CB_ADDSTRING,0,(LPARAM)L"B · 直接建立会话（对照流程）");
+        SendMessageW(p->mode,CB_SETCURSEL,0,0);
         p->button = CreateWindowW(L"BUTTON",L"允许连接",WS_CHILD|WS_TABSTOP|BS_OWNERDRAW,
-            width-282,164,82,30,w,(HMENU)IDOK,nullptr,nullptr);
+            width-282,216,82,30,w,(HMENU)IDOK,nullptr,nullptr);
         p->reject = CreateWindowW(L"BUTTON",L"拒绝",WS_CHILD|WS_TABSTOP|BS_OWNERDRAW,
-            width-190,164,82,30,w,(HMENU)1001,nullptr,nullptr);
+            width-190,216,82,30,w,(HMENU)1001,nullptr,nullptr);
         CreateWindowW(L"BUTTON",L"停止等待",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,
-            width-96,164,82,30,w,(HMENU)IDCANCEL,nullptr,nullptr);
+            width-96,216,82,30,w,(HMENU)IDCANCEL,nullptr,nullptr);
         for (HWND c=GetWindow(w,GW_CHILD);c;c=GetWindow(c,GW_HWNDNEXT))
             SendMessageW(c,WM_SETFONT,(WPARAM)GetStockObject(DEFAULT_GUI_FONT),TRUE);
         EnableWindow(p->button,FALSE);
@@ -200,10 +214,12 @@ struct Session {
     WiFiDirectConnectionListener listener{nullptr};
     WiFiDirectConnectionListener::ConnectionRequested_revoker registration;
     WiFiDirectAdvertisementPublisher publisher{nullptr};
+    WiFiDirectAdvertisementPublisher::StatusChanged_revoker publisherEvents;
+    WiFiDirectDevice::ConnectionStatusChanged_revoker deviceEvents;
     WiFiDirectDevice device{nullptr};
     WiFiDirectConnectionRequest request{nullptr};
     ~Session() {
-        incoming->shutdown();registration.revoke();
+        incoming->shutdown();registration.revoke();publisherEvents.revoke();deviceEvents.revoke();
         try {if (device) device.Close();} catch (...) {}
         try {if (request) request.Close();} catch (...) {}
         try {if (publisher) publisher.Stop();} catch (...) {}
@@ -224,13 +240,13 @@ void createPicker(std::shared_ptr<Picker> const& p,int x=CW_USEDEFAULT,int y=CW_
     if (x!=CW_USEDEFAULT) {
         POINT point{x,y};MONITORINFO mi{sizeof(mi)};
         if (GetMonitorInfoW(MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST),&mi)) {
-            x=std::clamp<LONG>(x,mi.rcWork.left,std::max(mi.rcWork.left,mi.rcWork.right-380));
-            y=std::clamp<LONG>(y,mi.rcWork.top,std::max(mi.rcWork.top,mi.rcWork.bottom-240));
+            x=std::clamp<LONG>(x,mi.rcWork.left,std::max(mi.rcWork.left,mi.rcWork.right-420));
+            y=std::clamp<LONG>(y,mi.rcWork.top,std::max(mi.rcWork.top,mi.rcWork.bottom-300));
         }
     }
     p->window=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_CONTROLPARENT,className,
         L"MicLink · 等待手机连接",
-        WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_VISIBLE,x,y,380,240,p->owner,nullptr,wc.hInstance,p.get());
+        WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_VISIBLE,x,y,420,300,p->owner,nullptr,wc.hInstance,p.get());
     if (!p->window) throw_last_error();
     BOOL dark=p->theme.dark;DwmSetWindowAttribute(p->window,20,&dark,sizeof(dark));
 
@@ -245,6 +261,10 @@ void advertise(Session& session,Picker& p) {
     methods.Append(WiFiDirectConfigurationMethod::DisplayPin);
     methods.Append(WiFiDirectConfigurationMethod::ProvidePin);
     session.publisher.Advertisement().LegacySettings().IsEnabled(false);
+    session.publisherEvents=session.publisher.StatusChanged(auto_revoke, [](auto const&, WiFiDirectAdvertisementPublisherStatusChangedEventArgs const& e) noexcept {
+        try { emitStage(("无线直连：publisher status="+std::to_string((int)e.Status())+" error="+std::to_string((int)e.Error())).c_str()); } catch (...) {}
+    });
+    trace(p,"advertising autoGO=true methods=PBC,DisplayPin,ProvidePin legacy=false");
     session.publisher.Start();ULONGLONG start=GetTickCount64();
     while (session.publisher.Status()!=WiFiDirectAdvertisementPublisherStatus::Started && GetTickCount64()-start<5000 && !cancelled(p)) {
         if (session.publisher.Status()==WiFiDirectAdvertisementPublisherStatus::Aborted)
@@ -258,7 +278,7 @@ void advertise(Session& session,Picker& p) {
 }
 bool ipv4(std::string const& s) {
     unsigned a,b,c,d;char tail;
-    return sscanf_s(s.c_str(),"%u.%u.%u.%u%c",&a,&b,&c,&d,&tail,1)==4 && a>0 && a<224 && a!=127 && b<256 && c<256 && d<256;
+    return sscanf_s(s.c_str(),"%u.%u.%u.%u%c",&a,&b,&c,&d,&tail,1)==4 && a>0 && a<224 && a!=127 && !(a==169 && b==254) && b<256 && c<256 && d<256;
 }
 const wchar_t* pairingStatus(DevicePairingResultStatus status) {
     switch (status) {
@@ -304,9 +324,8 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
     SetWindowTextW(p->status,L"正在配对与连接… 请查看手机上的确认提示。");
     WiFiDirectConnectionParameters params;
     params.GroupOwnerIntent(15);
-    // Android initiates with PBC. Let the initiating peer choose the method
-    // through GO negotiation, rather than forcing an Invitation in response.
-    // Keep Windows' GO preference; this changes no audio client/server roles.
+    // Baseline preference, not an observation of the over-the-air stage.
+    // DirectOpen does not apply these explicit pairing parameters.
     params.PreferredPairingProcedure(WiFiDirectPairingProcedure::GroupOwnerNegotiation);
     params.PreferenceOrderedConfigurationMethods().Append(WiFiDirectConfigurationMethod::PushButton);
     params.PreferenceOrderedConfigurationMethods().Append(WiFiDirectConfigurationMethod::DisplayPin);
@@ -319,7 +338,7 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
     bool isPaired=paired.value_or(target.Pairing().IsPaired());
     auto present=aepFlag(target,L"System.Devices.Aep.IsPresent");
     p->pairingState=hstring(L"记录类型=")+to_hstring((int)target.Kind())+L"，端点已配对="+flagName(paired)+L"，可配对="+flagName(canPair)+L"，在场="+flagName(present);
-    if (!isPaired) {
+    if (!p->directOpen && !isPaired) {
         p->stage=L"系统配对";
         ULONGLONG started=GetTickCount64();
         emitStage("无线直连：系统配对开始，过程=GroupOwnerNegotiation；请按两端实际提示确认");
@@ -327,8 +346,9 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
         auto pairing=custom.PairingRequested(auto_revoke,[p](auto const&,DevicePairingRequestedEventArgs const& e) noexcept {
             try {
                 p->ceremony=(int)e.PairingKind();
+                trace(*p,"PairingRequested kind="+std::to_string(p->ceremony.load()));
                 if (cancelled(*p)) return;
-                if (e.PairingKind()==DevicePairingKinds::ConfirmOnly) {e.Accept();p->accepted=true;return;}
+                if (e.PairingKind()==DevicePairingKinds::ConfirmOnly) {e.Accept();p->accepted=true;trace(*p,"ConfirmOnly Accept submitted (system/peer result pending)");return;}
                 if (e.PairingKind()==DevicePairingKinds::DisplayPin || e.PairingKind()==DevicePairingKinds::ProvidePin) {
                     auto prompt=std::make_shared<PairPrompt>();prompt->args=e;prompt->deferral=e.GetDeferral();
                     std::lock_guard lock(p->mutex);p->prompts.push_back(prompt);
@@ -338,6 +358,7 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
         });
         auto result=await(*p,custom.PairAsync(kinds,DevicePairingProtectionLevel::Default,params));
         auto pairElapsed=GetTickCount64()-started;
+        trace(*p,"PairAsync result="+std::to_string((int)result.Status())+" elapsedMs="+std::to_string(pairElapsed));
         pairing.revoke();p->pendingPin.reset();
         bool freshlyPaired=false;
         if (result.Status()==DevicePairingResultStatus::Failed) {
@@ -360,18 +381,27 @@ void connectDevice(Session& session,std::shared_ptr<Picker> const& p,DeviceInfor
                 L"，确认已提交="+(p->accepted.load()?L"是":L"否")+
                 L"，耗时="+to_hstring(pairElapsed)+L"ms。尚未进入音频握手。");
     }
-    emitStage("无线直连：系统配对条件已满足，正在建立会话");
+    trace(*p,p->directOpen?"DirectOpen selected before request; no explicit PairAsync this attempt":"explicit pairing conditions satisfied");
+    emitStage("无线直连：正在建立会话，请查看两端实际系统提示");
     p->stage=L"建立直连会话";
     // Pairing settings were applied above. Reuse the resulting profile as in
     // Microsoft's sample, without starting a second pairing operation.
+    trace(*p,"FromIdAsync begin");
     session.device=await(*p,WiFiDirectDevice::FromIdAsync(target.Id()));
+    trace(*p,"FromIdAsync completed");
     if (!session.device) throw hresult_error(E_FAIL,L"无法建立无线直连会话");
+    session.deviceEvents=session.device.ConnectionStatusChanged(auto_revoke, [](WiFiDirectDevice const& device, IInspectable const&) noexcept {
+        try { emitStage(("无线直连：device connection status="+std::to_string((int)device.ConnectionStatus())).c_str()); } catch (...) {}
+    });
     p->stage=L"读取直连地址";
+    std::string lastEndpoints;
     auto addressDeadline=GetTickCount64()+10000;
     while (GetTickCount64()<addressDeadline && !cancelled(*p)) {
         if (session.device.ConnectionStatus()==WiFiDirectConnectionStatus::Connected) {
             for (auto const& pair:session.device.GetConnectionEndpointPairs()) {
                 auto r=to_string(pair.RemoteHostName().CanonicalName()),l=to_string(pair.LocalHostName().CanonicalName());
+                auto endpoints="endpoint local="+l+" remote="+r;
+                if (endpoints!=lastEndpoints) { trace(*p,endpoints);lastEndpoints=endpoints; }
                 if (ipv4(r) && ipv4(l)) {emitStage("无线直连：IPv4 端点就绪，继续音频握手");snprintf(remote,rcap,"%s",r.c_str());snprintf(local,lcap,"%s",l.c_str());return;}
             }
         }
@@ -406,6 +436,11 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* c
     try {
         init_apartment(apartment_type::single_threaded);session->apartment=true;
         createPicker(p);
+        DWORD packageLength=0;
+        auto identity=GetCurrentPackageFullName(&packageLength,nullptr);
+        APTTYPE apartment;APTTYPEQUALIFIER qualifier;
+        auto apartmentResult=CoGetApartmentType(&apartment,&qualifier);
+        trace(*p,"context thread="+std::to_string(GetCurrentThreadId())+" apartment="+(SUCCEEDED(apartmentResult)?std::to_string((int)apartment):"unknown")+" package="+(identity==APPMODEL_ERROR_NO_PACKAGE?"none":"present-or-error"));
         session->listener=WiFiDirectConnectionListener();
         auto incoming=session->incoming;
         session->registration=session->listener.ConnectionRequested(auto_revoke,
@@ -416,7 +451,10 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* c
                     {std::lock_guard lock(incoming->mutex);
                         reject=!incoming->active || incoming->occupied;
                         if (!reject) {incoming->occupied=true;incoming->pending=request;}}
-                    if (reject) request.Close();
+                    if (reject) {
+                        emitStage("无线直连：额外入站请求已关闭（会话已占用或正在停止）");
+                        request.Close();
+                    } else emitStage("无线直连：ConnectionRequested 回调已接收入站请求");
                 } catch (hresult_error const& e) {incoming->error=e.code().value;}
                 catch (...) {incoming->error=E_FAIL;}
             });
@@ -433,6 +471,11 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* c
             if (!session->request) {pump(*p);continue;}
             emitStage("无线直连：收到手机连接请求，等待本机允许");
             p->incoming=true;p->decision=0;
+            p->requestNumber++;
+            p->directOpen=SendMessageW(p->mode,CB_GETCURSEL,0,0)==1;
+            EnableWindow(p->mode,FALSE);
+            trace(*p,"incoming request admitted; mode frozen until this attempt ends");
+            trace(*p,p->directOpen?"effective session parameters=system defaults; no explicit PairAsync parameters":"explicit parameters intent=15 preferred=GroupOwnerNegotiation methods=PBC,DisplayPin,ProvidePin");
             auto target=session->request.DeviceInformation();
             auto name=target.Name();if (name.empty()) name=L"未命名手机";
             auto prompt=hstring(L"允许这台手机连接？\n")+name+L"\n请核对手机名称后选择允许。";
@@ -445,6 +488,7 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* c
             if (p->decision<0) {
                 session->request.Close();session->request=nullptr;
                 {std::lock_guard lock(incoming->mutex);incoming->occupied=false;}
+                EnableWindow(p->mode,TRUE);
                 p->deadline=~0ull;ShowWindow(p->button,SW_HIDE);ShowWindow(p->reject,SW_HIDE);
                 SetWindowTextW(p->status,waiting.c_str());continue;
             }
@@ -460,6 +504,7 @@ extern "C" __declspec(dllexport) void* __cdecl ml_direct_listen(volatile LONG* c
 extern "C" __declspec(dllexport) int __cdecl ml_direct_test_pairing_policy(int status,int fresh) {
     return mic_direct_pairing_allows_session(static_cast<DevicePairingResultStatus>(status),fresh!=0);
 }
+extern "C" __declspec(dllexport) int __cdecl ml_direct_test_ipv4(const char* address) { return address && ipv4(address); }
 // Native window/pump/cancellation fixture; no radio required.
 extern "C" __declspec(dllexport) int __cdecl ml_direct_test_wait(volatile LONG* cancel,unsigned timeout,unsigned mode) {
     auto p=std::make_shared<Picker>();p->cancel=cancel;UiScope ui{p};
@@ -476,7 +521,10 @@ extern "C" __declspec(dllexport) int __cdecl ml_direct_test_wait(volatile LONG* 
             SendMessageW(p->pin,EM_SETREADONLY,TRUE,0);
             SetWindowTextW(p->pin,L"01234567");
         }
-        while (!p->done && !cancelled(*p) && !p->decision) pump(*p);return cancelled(*p)?1:p->decision>0?2:3;}
+        while (!p->done && !cancelled(*p) && !p->decision) pump(*p);
+        if (cancelled(*p)) return 1;
+        if (mode&8) return p->decision>0 ? (SendMessageW(p->mode,CB_GETCURSEL,0,0)==1?4:2) : 3;
+        return p->decision>0?2:3;}
     catch (...) {return -1;}
 }
 #endif

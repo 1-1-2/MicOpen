@@ -575,6 +575,12 @@ class MicCaptureService : Service() {
 
         // 4) TCP 控制服务器（手机 = server，等 PC 客户端连入）
         connectionMode = ConnectionMode.read(this)
+        if (LocalNetworkPermission.required(android.os.Build.VERSION.SDK_INT,
+                connectionMode == ConnectionMode.WIFI || connectionMode == ConnectionMode.DIRECT) &&
+            androidx.core.content.ContextCompat.checkSelfPermission(this, LocalNetworkPermission.NAME) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            fail("缺少本地网络权限，请返回连接页点击启动并授权")
+            return
+        }
         if (connectionMode == ConnectionMode.DIRECT) {
             isRunning = true
             directHint = "正在准备无线直连…"

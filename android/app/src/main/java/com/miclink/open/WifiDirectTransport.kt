@@ -10,6 +10,7 @@ import android.net.wifi.WpsInfo
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -18,6 +19,7 @@ import java.io.Closeable
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
+import java.util.concurrent.atomic.AtomicLong
 
 data class DirectPeer(val id: String, val name: String, val groupOwner: Boolean)
 
@@ -28,6 +30,13 @@ class WifiDirectTransport(
     private val message: (String) -> Unit,
     private val failed: (String) -> Unit
 ) : Closeable {
+    companion object { private val ids = AtomicLong() }
+    private val attemptId = ids.incrementAndGet()
+    private val born = SystemClock.elapsedRealtime()
+    private val attempt = DirectAttempt { SystemClock.elapsedRealtime() }
+    private var diagnostics: Closeable? = null
+    private var lastSnapshot = ""
+    private val poll = Runnable { inspect() }
     private val handler = Handler(Looper.getMainLooper())
     private var manager: WifiP2pManager? = null
     private var channel: WifiP2pManager.Channel? = null
@@ -46,7 +55,8 @@ class WifiDirectTransport(
         private set
     private val retryDiscovery = Runnable { if (!closed && selected == null) discover() }
     private val deadline = Runnable { error("连接电脑超时，请检查电脑是否处于等待状态及两端系统配对提示") }
-    private fun log(text: String) = AppLog.i("WifiDirectTransport", text)
+    private fun log(text: String) = AppLog.i("WifiDirectTransport", "attempt=$attemptId +${SystemClock.elapsedRealtime() - born}ms phase=${attempt.phase} $text")
+    private fun snapshot(text: String) { if (text != lastSnapshot) { lastSnapshot = text; log(text) } }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, intent: Intent) {
             if (closed) return
@@ -54,6 +64,11 @@ class WifiDirectTransport(
                 WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
                     if (intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1) == WifiP2pManager.WIFI_P2P_STATE_DISABLED)
                         error("无线直连已关闭，请开启 Wi-Fi 后重试")
+                }
+                WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION -> {
+                    @Suppress("DEPRECATION")
+                    val device = intent.getParcelableExtra<WifiP2pDevice>(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE)
+                    log("this device status=${device?.status} (0=CONNECTED 1=INVITED 2=FAILED 3=AVAILABLE 4=UNAVAILABLE)")
                 }
                 WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> refreshPeers()
                 WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> if (selected != null) inspect()
@@ -86,11 +101,17 @@ class WifiDirectTransport(
         try {
             ContextCompat.registerReceiver(context, receiver, IntentFilter().apply {
                 addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
+                addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION)
                 addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
                 addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
                 addAction(WifiP2pManager.WIFI_P2P_DISCOVERY_CHANGED_ACTION)
             }, ContextCompat.RECEIVER_EXPORTED)
             registered = true
+            log("starting sdk=${Build.VERSION.SDK_INT} permissions=${Permissions.describeMissing(context)}")
+            if (Build.VERSION.SDK_INT >= 35) {
+                try { diagnostics = DirectDiagnostics35(m, context.mainExecutor, { if (!closed) log(it) }, { if (!closed && selected != null) inspect() }) }
+                catch (e: RuntimeException) { log("API35 diagnostics unavailable: ${e.javaClass.simpleName}") }
+            }
             m.requestGroupInfo(ch) { existing ->
                 if (!closed) {
                     if (existing != null) error("已有其他直连会话，请先在系统中断开后启动")
@@ -134,13 +155,18 @@ class WifiDirectTransport(
                     .take(64).map { DirectPeer(it.deviceAddress, it.deviceName?.takeIf(String::isNotBlank) ?: "未命名设备", it.isGroupOwner) }
                     .sortedWith(compareByDescending<DirectPeer> { it.groupOwner }.thenBy { it.name })
                 log("peers=${peers.size} groupOwners=${peers.count { it.groupOwner }}")
+                found.deviceList.take(64).forEachIndexed { index, d ->
+                    log("peer[$index] status=${d.status} groupOwner=${d.isGroupOwner} pbc=${d.wpsPbcSupported()} display=${d.wpsDisplaySupported()} keypad=${d.wpsKeypadSupported()}")
+                }
             }
         } catch (_: SecurityException) { error("获取附近设备的权限已被撤销") }
     }
     fun connect(id: String) {
         val m = manager ?: return
         val ch = channel ?: return
-        if (closed || !prepared || selected != null || peers.none { it.id == id }) return
+        if (closed || !prepared || selected != null) return
+        if (peers.none { it.id == id }) { log("selected peer is no longer in current discovery results"); return }
+        if (!attempt.begin()) return
         log("selected peer groupOwner=${peers.first { it.id == id }.groupOwner}; submitting connect without explicit stopDiscovery")
         selected = id
         isConnecting = true
@@ -175,19 +201,38 @@ class WifiDirectTransport(
         } catch (_: SecurityException) { error("连接权限已被撤销") }
         catch (e: RuntimeException) { error("连接失败：${e.message}") }
     }
+    private fun retryInspection(token: Long) {
+        attempt.inspected(token)
+        if (closed || !attempt.current(token)) return
+        handler.removeCallbacks(poll)
+        handler.postDelayed(poll, 300)
+    }
     private fun inspect() {
         val m = manager ?: return
         val ch = channel ?: return
         if (closed || selected == null) return
+        val token = attempt.inspect() ?: return
+        handler.removeCallbacks(poll)
         try {
             m.requestConnectionInfo(ch) { info ->
-                if (closed) return@requestConnectionInfo
+                if (closed || !attempt.current(token)) return@requestConnectionInfo
+                snapshot("connectionInfo groupFormed=${info.groupFormed} isGroupOwner=${info.isGroupOwner} goAddress=${info.groupOwnerAddress?.hostAddress}")
                 if (!info.groupFormed) {
+                    attempt.inspected(token)
                     if (delivered) error("电脑直连网络已断开，请停止后重新选择电脑")
                     return@requestConnectionInfo
                 }
+                attempt.group(token)
                 m.requestGroupInfo(ch) { group ->
-                    if (closed || group == null) return@requestGroupInfo
+                    if (closed || !attempt.current(token)) return@requestGroupInfo
+                    if (group == null) {
+                        if (delivered) { error("直连组信息已丢失，请停止后重新连接"); return@requestGroupInfo }
+                        snapshot("groupInfo=null after groupFormed")
+                        if (attempt.ipTimedOut()) error("直连组已形成，但系统未提供组接口，请复制日志")
+                        else retryInspection(token)
+                        return@requestGroupInfo
+                    }
+                    log("groupInfo role=${if (info.isGroupOwner) "GO" else "GC"} interface=${group.`interface`} clients=${group.clientList.size} ownerMatches=${selected.equals(group.owner?.deviceAddress, true)}")
                     if (DirectGroupOwnership.foreign(selected, group.owner?.deviceAddress)) {
                         error("当前直连组不属于所选电脑，请先检查系统中的其他直连会话")
                         return@requestGroupInfo
@@ -197,32 +242,40 @@ class WifiDirectTransport(
                         error("系统本次把手机分配为组主，与此实验方向不一致；请停止后检查这对设备的旧直连配对记录")
                         return@requestGroupInfo
                     }
-                    // The GO address belongs to Windows. Bind only our own
-                    // group interface's IPv4, after DHCP has assigned it.
-                    val local = try {
-                        NetworkInterface.getByName(group.`interface`)?.inetAddresses?.toList()
-                            ?.filterIsInstance<Inet4Address>()?.firstOrNull {
-                                !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isAnyLocalAddress
-                            }
-                    } catch (_: Exception) { null }
+                    val addresses = try { NetworkInterface.getByName(group.`interface`)?.inetAddresses?.toList().orEmpty() }
+                        catch (_: Exception) { emptyList() }
+                    val local = addresses.filterIsInstance<Inet4Address>().firstOrNull {
+                        !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isAnyLocalAddress
+                    }
                     if (local == null) {
-                        handler.postDelayed({ inspect() }, 300)
-                    } else if (!delivered) {
-                        delivered = true
-                        isConnecting = false
-                        handler.removeCallbacks(deadline)
-                        log("group joined role=client interface=${group.`interface`}; local IPv4 ready")
-                        ready(local)
-                        if (!closed) message("已加入电脑直连组，等待音频会话")
+                        if (delivered) { error("直连网络的本机 IPv4 已丢失，请停止后重新连接"); return@requestGroupInfo }
+                        snapshot("waiting IPv4 interface=${group.`interface`} addresses=${addresses.map { it.hostAddress }}")
+                        if (attempt.ipTimedOut()) error("直连组已形成，但 20 秒内未取得本机 IPv4（DHCP），请复制日志")
+                        else retryInspection(token)
+                    } else {
+                        if (attempt.deliver(token)) {
+                            delivered = true
+                            isConnecting = false
+                            handler.removeCallbacks(deadline)
+                            log("group joined role=client interface=${group.`interface`} local=${local.hostAddress}; IPv4 ready")
+                            ready(local)
+                            if (!closed) message("已加入电脑直连组，等待音频会话")
+                        }
+                        attempt.inspected(token)
                     }
                 }
             }
         } catch (_: SecurityException) { error("无线直连权限已被撤销") }
+        catch (e: RuntimeException) { error("读取直连组失败：${e.message}") }
     }
     private fun error(text: String) { if (!closed) { close(); failed(text) } }
     override fun close() {
         if (closed) return
+        log("stopping; delivered=$delivered selected=${selected != null}")
         closed = true
+        attempt.close()
+        try { diagnostics?.close() } catch (e: RuntimeException) { log("diagnostics unregister: ${e.javaClass.simpleName}") }
+        diagnostics = null
         peers = emptyList(); isDiscovering = false; isConnecting = false
         handler.removeCallbacksAndMessages(null)
         if (registered) { context.unregisterReceiver(receiver); registered = false }
@@ -250,7 +303,7 @@ class WifiDirectTransport(
                         override fun onSuccess() { finishChannel() }
                         override fun onFailure(reason: Int) { log("leave group failed reason=$reason"); finishChannel() }
                     })
-                } else finishChannel()
+                } else { log("leave skipped: group ownership unconfirmed or no group"); finishChannel() }
             }
         } catch (_: RuntimeException) { finishChannel() }
     }

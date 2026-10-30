@@ -33,6 +33,10 @@ object Permissions {
     /** 尚未授予的权限列表。 */
     fun missing(context: Context): List<String> {
         val required = requiredPermissions().toMutableList()
+        val mode = ConnectionMode.read(context)
+        if (LocalNetworkPermission.required(Build.VERSION.SDK_INT, mode == ConnectionMode.WIFI || mode == ConnectionMode.DIRECT)) {
+            required.add(LocalNetworkPermission.NAME)
+        }
         if (Build.VERSION.SDK_INT >= 31 && ConnectionMode.read(context) == ConnectionMode.BLUETOOTH) {
             required.add(Manifest.permission.BLUETOOTH_CONNECT)
         }
@@ -65,6 +69,7 @@ object Permissions {
         Manifest.permission.NEARBY_WIFI_DEVICES -> "附近的 Wi-Fi 设备"
         Manifest.permission.ACCESS_FINE_LOCATION -> "定位（无线直连发现设备所需）"
         Manifest.permission.BLUETOOTH_CONNECT -> "附近的蓝牙设备"
+        LocalNetworkPermission.NAME -> "本地网络（连接电脑所需）"
         else -> permission
     }
 }

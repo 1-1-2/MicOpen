@@ -41,6 +41,13 @@ print('PASS Wi-Fi Direct ABI / invalid arguments / cancellation / repeated calls
 
 if len(sys.argv) > 2:
     fixture = ctypes.CDLL(str(pathlib.Path(sys.argv[2]).resolve()))
+    fixture.ml_direct_test_ipv4.argtypes = [ctypes.c_char_p]
+    fixture.ml_direct_test_ipv4.restype = ctypes.c_int
+    for address in [b'192.168.49.1', b'10.0.0.2', b'172.16.10.4']:
+        assert fixture.ml_direct_test_ipv4(address), address
+    for address in [None, b'', b'0.0.0.0', b'127.0.0.1', b'169.254.8.9', b'224.0.0.1', b'256.1.1.1', b'1.2.3.4x', b'fe80::1']:
+        assert not fixture.ml_direct_test_ipv4(address), address
+    print('PASS Direct IPv4 rejects loopback, unspecified, link-local and malformed endpoints')
     fixture.ml_direct_test_pairing_policy.argtypes = [ctypes.c_int, ctypes.c_int]
     fixture.ml_direct_test_pairing_policy.restype = ctypes.c_int
     # Only successful results or Failed+fresh positive AEP state can advance.
@@ -120,6 +127,22 @@ if len(sys.argv) > 2:
     user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
     user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
     user32.SendMessageW.restype = ctypes.c_ssize_t
+    for choice, expected in [(0, 2), (1, 4)]:
+        cancel = ctypes.c_long(0); results = []
+        t = threading.Thread(target=lambda: results.append(fixture.ml_direct_test_wait(ctypes.byref(cancel), 5000, 2 | 8)))
+        t.start(); window = selector = None
+        for _ in range(200):
+            window = user32.FindWindowW('MicLink.WiFiDirect.Listener.v1', None)
+            if window:
+                selector = user32.GetDlgItem(window, 102)
+                if selector: break
+            time.sleep(.01)
+        assert selector
+        user32.SendMessageW(selector, 0x014E, choice, 0)
+        user32.PostMessageW(window, 0x0111, 1, 0)
+        t.join(timeout=3)
+        assert not t.is_alive() and results == [expected], (choice, results)
+    print('PASS Direct native A/B selector and explicit consent (no radio test)')
     gdi = ctypes.WinDLL('gdi32')
     gdi.GetBkColor.argtypes = [ctypes.c_void_p]; gdi.GetBkColor.restype = ctypes.c_uint
     for dark, expected in [(0, 235 | (237 << 8) | (241 << 16)), (1, 20 | (23 << 8) | (28 << 16))]:
