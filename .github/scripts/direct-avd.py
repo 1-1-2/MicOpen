@@ -114,7 +114,16 @@ def main():
             features = run(['adb', '-s', serial, 'shell', 'pm', 'list', 'features'])
             (a.output/f'{serial}-features.txt').write_text(features)
             if 'android.hardware.wifi.direct' not in features: raise PrerequisiteUnavailable('image lacks wifi.direct feature')
-            run(['adb', '-s', serial, 'install', '-r', str(a.apk)], timeout=120)
+            run(['adb', '-s', serial, 'shell', 'input', 'keyevent', '82'])
+            run(['adb', '-s', serial, 'shell', 'wm', 'dismiss-keyguard'], check=False)
+            ready_deadline = time.monotonic()+90
+            while time.monotonic() < ready_deadline:
+                user_state = run(['adb','-s',serial,'shell','am','get-started-user-state','0'], check=False)
+                if 'RUNNING_UNLOCKED' in user_state: break
+                time.sleep(2)
+            else: raise RuntimeError('Android user storage not unlocked: '+user_state.strip())
+            print('Installing debug probe on '+serial, flush=True)
+            print(run(['adb', '-s', serial, 'install', '-r', str(a.apk)], timeout=120), flush=True)
             for perm in ['NEARBY_WIFI_DEVICES'] + (['ACCESS_LOCAL_NETWORK'] if a.api >= 37 else []):
                 run(['adb', '-s', serial, 'shell', 'pm', 'grant', 'com.miclink.open', 'android.permission.'+perm])
             run(['adb', '-s', serial, 'shell', 'cmd', 'location', 'set-location-enabled', 'true'])
@@ -157,7 +166,9 @@ def main():
         report['status']='unavailable'; report['error']=str(e)
         print('::warning::P2P experiment NOT EXECUTED: '+str(e))
     except Exception as e:
-        report['status']='failed'; report['error']=str(e)
+        detail = e.stdout if isinstance(e, subprocess.CalledProcessError) else ''
+        report['status']='failed'; report['error']=str(e)+(('\n'+detail) if detail else '')
+        if detail: print(detail, flush=True)
         raise
     finally:
         for serial in serials:
