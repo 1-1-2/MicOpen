@@ -100,10 +100,17 @@ def main():
         for i, name in enumerate(names):
             subprocess.run(['avdmanager', 'create', 'avd', '-n', name, '-k', image, '--force'],
                            input='no\n', text=True, check=True, timeout=90)
+            # A fresh Android 17 image can exhaust the default userdata size
+            # before PackageInstaller accepts even the first APK.
+            config = Path(os.environ['ANDROID_AVD_HOME']) / (name+'.avd') / 'config.ini'
+            settings = config.read_text().splitlines()
+            settings = [line for line in settings if not line.startswith('disk.dataPartition.size=')]
+            config.write_text('\n'.join(settings+['disk.dataPartition.size=4G'])+'\n')
             stream = (a.output/f'emulator-{i}.log').open('w'); streams.append(stream)
             processes.append(subprocess.Popen([str(emulator), '-avd', name, '-port', str(5554+i*2),
                 '-no-window', '-no-audio', '-no-snapshot', '-no-boot-anim', '-no-metrics', '-accel', 'on',
-                '-gpu', 'swiftshader_indirect', '-memory', '2048', '-cores', '2'], stdout=stream, stderr=subprocess.STDOUT))
+                '-gpu', 'swiftshader_indirect', '-memory', '2048', '-cores', '2',
+                '-partition-size', '4096'], stdout=stream, stderr=subprocess.STDOUT))
         deadline = time.monotonic()+480
         for serial in serials:
             while time.monotonic() < deadline:
@@ -122,6 +129,7 @@ def main():
                 if 'RUNNING_UNLOCKED' in user_state: break
                 time.sleep(2)
             else: raise RuntimeError('Android user storage not unlocked: '+user_state.strip())
+            print(run(['adb', '-s', serial, 'shell', 'df', '-h', '/data']), flush=True)
             print('Installing debug probe on '+serial, flush=True)
             print(run(['adb', '-s', serial, 'install', '-r', str(a.apk)], timeout=120), flush=True)
             for perm in ['NEARBY_WIFI_DEVICES'] + (['ACCESS_LOCAL_NETWORK'] if a.api >= 37 else []):
@@ -172,7 +180,7 @@ def main():
         raise
     finally:
         for serial in serials:
-            for name, args in [('logcat',['logcat','-d','-v','threadtime']), ('p2p',['shell','dumpsys','wifip2p']), ('addr',['shell','ip','addr'])]:
+            for name, args in [('logcat',['logcat','-d','-v','threadtime']), ('p2p',['shell','dumpsys','wifip2p']), ('addr',['shell','ip','addr']), ('storage',['shell','df','-h','/data'])]:
                 try: (a.output/f'{serial}-{name}.txt').write_text(run(['adb','-s',serial]+args, timeout=15, check=False))
                 except Exception: pass
         (a.output/'result.json').write_text(json.dumps(report, indent=2)+'\n')

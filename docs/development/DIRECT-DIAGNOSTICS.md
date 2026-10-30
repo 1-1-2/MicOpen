@@ -35,3 +35,10 @@ Android target 37 补本地网络权限；API 35+ 记录公开建组事件，旧
 标准 CI 可设置 `direct_artifact_run_id` 为已有 Android 构建的 run ID，并设置 `direct_simulation_api=35/37`。此模式不重新构建客户端；必须通过产物 SHA256、原构建成功状态和应用构建输入的 Git diff 三重核对。报告同时保留 APK 源码提交与测试脚本提交；应用源码或构建输入有变化则拒绝复用。
 
 独立 `direct-validation.yml` 在默认分支注册前可能无法用 API dispatch；当前使用已注册的 `ci.yml` 入口，不为运行测试改动稳定 main。
+
+### 2026-10-30 验证进度
+
+- 应用提交 `e1b38a6` 的双端构建、协议及 Windows / Android debug、release 回归通过（CI `41038250075`）；该轮总体失败，原因是旧模拟脚本未识别 Google 系统配对确认窗口，不能称整轮 CI 通过。
+- 修正系统窗口识别后，复用同一 APK 的 API 35 双 AVD 两轮建组、地址绑定、TCP 与 UDP 回显及重连通过（CI `41040790473`）。此证据仅覆盖 Android 模拟器 P2P。
+- API 37 使用官方 `android-37.0` 镜像；CI `41042860836` 在 APK 安装前失败，原始错误为 `Requested internal only, but not enough space`。尚未运行应用，不能据此判断直连成功或失败。
+- 测试环境现显式分配 4 GiB userdata，记录安装前及退出时 `/data` 空间，再复测 API 37。Windows 实机配对仍待作者 A/B 验收，暂不发布 Release。
