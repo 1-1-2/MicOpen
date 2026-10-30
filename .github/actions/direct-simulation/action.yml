@@ -51,6 +51,10 @@ runs:
     if: always()
     with:
       name: direct-simulation-${{ inputs.api }}-${{ github.run_id }}
-      path: probe-results/direct-avd/
+      path: 'probe-results/direct-avd/*.json
+
+        probe-results/direct-avd/*.log
+
+        probe-results/direct-avd/*.txt'
       retention-days: 7
       if-no-files-found: warn

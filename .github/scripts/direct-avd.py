@@ -10,6 +10,10 @@ import time
 import xml.etree.ElementTree as ET
 
 
+class PrerequisiteUnavailable(RuntimeError):
+    pass
+
+
 def run(args, timeout=30, check=True):
     return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           timeout=timeout, check=check).stdout
@@ -59,8 +63,8 @@ def main():
         report['emulator_version'] = version
         match = re.search(r'version\s+(\d+)\.(\d+)', version)
         if not match or tuple(map(int, match.groups())) < (36, 5):
-            raise RuntimeError('prerequisite: emulator 36.5+ required')
-        if not os.access('/dev/kvm', os.R_OK | os.W_OK): raise RuntimeError('prerequisite: KVM unavailable')
+            raise PrerequisiteUnavailable('emulator 36.5+ required')
+        if not os.access('/dev/kvm', os.R_OK | os.W_OK): raise PrerequisiteUnavailable('KVM unavailable')
         os.environ['ANDROID_AVD_HOME'] = str(a.output.resolve()/'avds')
         Path(os.environ['ANDROID_AVD_HOME']).mkdir(exist_ok=True)
         image = f'system-images;android-{a.api};google_apis;x86_64'
@@ -80,7 +84,7 @@ def main():
             else: raise RuntimeError('prerequisite: emulator boot timeout')
             features = run(['adb', '-s', serial, 'shell', 'pm', 'list', 'features'])
             (a.output/f'{serial}-features.txt').write_text(features)
-            if 'android.hardware.wifi.direct' not in features: raise RuntimeError('prerequisite: image lacks wifi.direct feature')
+            if 'android.hardware.wifi.direct' not in features: raise PrerequisiteUnavailable('image lacks wifi.direct feature')
             run(['adb', '-s', serial, 'install', '-r', str(a.apk)], timeout=120)
             for perm in ['NEARBY_WIFI_DEVICES'] + (['ACCESS_LOCAL_NETWORK'] if a.api >= 37 else []):
                 run(['adb', '-s', serial, 'shell', 'pm', 'grant', 'com.miclink.open', 'android.permission.'+perm])
@@ -118,6 +122,9 @@ def main():
                 (a.output/f'round-{round_index+1}-{serial}.log').write_text(run(['adb', '-s', serial, 'logcat', '-d', '-v', 'threadtime']))
             time.sleep(6)
         report['status']='passed'
+    except PrerequisiteUnavailable as e:
+        report['status']='unavailable'; report['error']=str(e)
+        print('::warning::P2P experiment NOT EXECUTED: '+str(e))
     except Exception as e:
         report['status']='failed'; report['error']=str(e)
         raise
