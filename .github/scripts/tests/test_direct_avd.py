@@ -31,6 +31,11 @@ class DirectAvdReportTests(unittest.TestCase):
     def test_google_wifi_invitation(self):
         xml = '<?xml version="1.0"?><hierarchy><node package="com.google.android.wifi.dialog" text="Invitation to connect"/><node package="com.google.android.wifi.dialog" resource-id="android:id/button1" enabled="true" bounds="[20,100][100,140]"/></hierarchy>'
         self.assertEqual(module.p2p_accept_bounds(xml), (60,120))
+    def test_android17_wifi_device_connection(self):
+        xml = '<?xml version="1.0"?><hierarchy><node package="com.google.android.wifi.dialog" text="Device connection"/><node package="com.google.android.wifi.dialog" text="Android_tUb7 wants to connect to your device."/><node package="com.google.android.wifi.dialog" text="Connect" resource-id="android:id/button1" enabled="true" bounds="[216,359][292,407]"/></hierarchy>'
+        self.assertEqual(module.p2p_accept_bounds(xml), (254,383))
+        # A similarly named Settings dialog is insufficient evidence of P2P.
+        self.assertIsNone(module.p2p_accept_bounds(xml.replace('com.google.android.wifi.dialog', 'com.android.settings')))
     def test_arbitrary_positive_button_is_not_accepted(self):
         xml = '<?xml version="1.0"?><hierarchy><node package="android" text="Delete everything?"/><node package="android" resource-id="android:id/button1" bounds="[0,0][10,10]"/></hierarchy>'
         self.assertIsNone(module.p2p_accept_bounds(xml))

@@ -56,7 +56,13 @@ def p2p_accept_bounds(xml):
     nodes = list(root.iter('node'))
     # Restrict to the P2P invitation, not any positive system dialog.
     context = ' '.join(n.get('text', '')+' '+n.get('resource-id', '') for n in nodes if n.get('package') in trusted).lower()
-    if not any(x in context for x in ['wi-fi direct', 'wifi direct', 'wi‑fi direct', 'p2p', 'invitation to connect']): return None
+    wifi_dialog_nodes = [n for n in nodes if n.get('package') in
+                         {'com.android.wifi.dialog', 'com.google.android.wifi.dialog'}]
+    # API 37 renamed this system P2P prompt; require both its title and
+    # request text inside the Wi-Fi dialog package, not generic Settings UI.
+    device_connection = (any(n.get('text', '').strip().lower() == 'device connection' for n in wifi_dialog_nodes)
+                         and any('wants to connect to your device' in n.get('text', '').lower() for n in wifi_dialog_nodes))
+    if not device_connection and not any(x in context for x in ['wi-fi direct', 'wifi direct', 'wi‑fi direct', 'p2p', 'invitation to connect']): return None
     for node in nodes:
         if node.get('package') not in trusted: continue
         positive = node.get('resource-id') == 'android:id/button1' or node.get('resource-id', '').endswith('/positive_button')
