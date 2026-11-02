@@ -65,7 +65,7 @@ Android target 37 补本地网络权限；API 35+ 记录公开建组事件，旧
 
 作者在 OPPO Android 17 更新至 `e1b38a6` 后复测：A 提交 ConfirmOnly 确认后约 31.7 秒返回 Failed（19）；B 的 FromIdAsync 约 30.3 秒后返回空对象。手机权限就绪，接收了建组请求，但未报告组形成；A 的手机端随后达到 90 秒等待期限。华为 Android 10 的已有结果同样未建立连接。两条 Windows 路径共有的环节仍待定位，不能据此断言网卡驱动故障。
 
-本轮保持 Android 的 PBC 请求、Windows 自主 GO、GO intent=15、A/B 调用顺序、同意/拒绝与音频协议不变，只收窄 Windows 公布及 A 显式配对使用的 WPS 方法：
+本轮保持 Android 的 PBC 请求、Windows 自主 GO、A 的 GO intent=15、A/B 调用顺序、同意/拒绝与音频协议不变，只收窄 Windows 公布及 A 显式配对使用的 WPS 方法：
 
 | 项目 | 上轮 | 本轮 |
 | --- | --- | --- |
@@ -78,3 +78,5 @@ Android target 37 补本地网络权限；API 35+ 记录公开建组事件，旧
 测试包附 `collect-direct-environment.cmd/.ps1`，用 Windows 自带 PowerShell 5.1 查询系统版本、网卡、网络驱动及 WLAN 服务，执行有 20 秒期限的 `netsh wlan show drivers`，在本地输出 JSON、文本与 ZIP。无需管理员或 Python。原生 Windows CI 另验证此脚本可处理中文和空格路径，结果标明 `pairing_tested=false`；没有无线硬件不能算配对成功。
 
 先用新版 OPPO 各测 A/B 一次；失败后采集电脑环境，再回传两端日志和环境 ZIP。仅 PBC 是受控排查实验，不是已确认的修复。PIN 流程暂不启用，留作后续单独对照；实机验收前不发布 Release。
+
+本轮应用提交 `ddc5aca0cdde4e495ec77cf4daf3e6453dca512e` 的 [CI 41427481108](https://github.com/1-1-2/MicOpen/actions/runs/41427481108) 已整轮通过：双端构建、协议、Windows 运行时、Android debug/release 运行时、原生 PBC-only 配置及 A/B 窗口、PowerShell 5.1 环境采集工具均通过。Android 17 双 AVD 使用本次构建的 debug APK，完成两轮建组、绑定组地址的 TCP/10 包 UDP 回显及重连；报告明确 `windows_pairing_tested=false`。该模拟试验没有运行 Windows 广播器，不能代替对本轮 PBC-only 变更的实体配对验收。
