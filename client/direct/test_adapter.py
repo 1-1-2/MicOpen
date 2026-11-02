@@ -41,6 +41,9 @@ print('PASS Wi-Fi Direct ABI / invalid arguments / cancellation / repeated calls
 
 if len(sys.argv) > 2:
     fixture = ctypes.CDLL(str(pathlib.Path(sys.argv[2]).resolve()))
+    fixture.ml_direct_test_pbc_configuration.restype = ctypes.c_int
+    assert fixture.ml_direct_test_pbc_configuration() == 7, 'PBC experiment must clear PIN from both real WinRT method collections'
+    print('PASS Direct PBC-only advertisement and explicit pairing configuration (real WinRT properties, no radio)')
     fixture.ml_direct_test_ipv4.argtypes = [ctypes.c_char_p]
     fixture.ml_direct_test_ipv4.restype = ctypes.c_int
     for address in [b'192.168.49.1', b'10.0.0.2', b'172.16.10.4']:

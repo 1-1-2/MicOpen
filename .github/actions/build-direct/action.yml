@@ -14,6 +14,16 @@ runs:
     run: |
       python client/direct/test_adapter.py client/build/miclink-direct.dll client/build/test_direct.dll
       if ($LASTEXITCODE -ne 0) { throw 'Direct ABI test failed' }
+  - name: Verify one-click inventory with Windows PowerShell 5.1
+    shell: pwsh
+    run: |
+      $destination = Join-Path $env:RUNNER_TEMP 'MicLink 环境 with spaces'
+      & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File client/tools/collect-direct-environment.ps1 -OutputDirectory $destination
+      if ($LASTEXITCODE -ne 0) { throw 'Environment inventory failed' }
+      $report = Get-Content -Raw -LiteralPath (Join-Path $destination 'environment.json') | ConvertFrom-Json
+      if ($report.schema -ne 1 -or $report.pairing_tested -ne $false -or !$report.windows.BuildNumber) { throw 'Invalid environment evidence' }
+      if (!(Test-Path -LiteralPath ($destination + '.zip'))) { throw 'Inventory ZIP missing' }
+      Write-Host 'PASS Windows PowerShell 5.1 local inventory and ZIP (no radio success inferred)'
   - uses: actions/upload-artifact@v7
     with:
       name: build-direct-${{ github.run_id }}-${{ github.run_attempt }}
